@@ -267,16 +267,23 @@
                     int tCount = (level == 1) ? (isBig ? 2 : 3) : (level == 2 ? (isBig ? 3 : 5) : (isBig ? 5 : 8));
                     int totalCount = (level == 1) ? 7 : (level == 2 ? 12 : 20);
 
+                    // Scale hình học phụ thuộc tổng số hình đang hiển thị
+                    double shapeScale = 1.0;
+                    if (!isAnimal)
+                    {
+                        shapeScale = Math.Clamp(1.0 - (totalCount - 7) * 0.02, 0.70, 1.0);
+                    }
+
                     var items = new List<GameItem>();
                     for (int i = 0; i < tCount; i++) 
-                        items.Add(new GameItem { Key = targetPair.Key, Value = targetPair.Value, Scale = tScale, IsTarget = true, ColorHex = isAnimal ? "" : RandomColor() });
+                        items.Add(new GameItem { Key = targetPair.Key, Value = targetPair.Value, Scale = isAnimal ? tScale : shapeScale, IsTarget = true, ColorHex = isAnimal ? "" : RandomColor() });
                     for (int i = 0; i < Math.Max(3, totalCount - tCount); i++)
                     {
                         var o = source[_rnd.Next(source.Count)];
                         while ((isAnimal && o.Key == targetPair.Key) || (!isAnimal && o.Value == targetPair.Value)) 
                             o = source[_rnd.Next(source.Count)];
                         double os = (isAnimal && GameData.AnimalScales.TryGetValue(o.Key, out double _s)) ? _s : 1.0;
-                        items.Add(new GameItem { Key = o.Key, Value = o.Value, Scale = os, IsTarget = false, ColorHex = isAnimal ? "" : RandomColor() });
+                        items.Add(new GameItem { Key = o.Key, Value = o.Value, Scale = isAnimal ? os : shapeScale, IsTarget = false, ColorHex = isAnimal ? "" : RandomColor() });
                     }
                     Data = items.OrderBy(static _ => _rnd.Next()).ToList();
                     break;
