@@ -44,7 +44,13 @@ public partial class SplashPage : ContentPage
         // Dùng IServiceProvider để AppShell được tạo với đầy đủ DI
         var appShell = _serviceProvider.GetRequiredService<AppShell>();
         var window = Application.Current?.Windows.FirstOrDefault();
-        if (window != null)
+        if (window is not null)
+        {
             window.Page = appShell;
+        }
+        else
+        {
+            Application.Current!.MainPage = appShell;
+        }
     }
 }
