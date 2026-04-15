@@ -10,6 +10,8 @@ public partial class SplashPage : ContentPage
     private readonly ITtsService _ttsService;
     private readonly IServiceProvider _serviceProvider;
 
+    private bool _isTransitioning;
+
     public SplashPage(ITtsService ttsService, IServiceProvider serviceProvider)
     {
         InitializeComponent();
@@ -20,6 +22,10 @@ public partial class SplashPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+
+        if (_isTransitioning) return;
+
+        _isTransitioning = true;
 
         // Cập nhật UI progress từ luồng chính
         var progress = new Progress<int>(p =>
@@ -44,14 +50,18 @@ public partial class SplashPage : ContentPage
         // Chuyển sang AppShell (có MainPage bên trong)
         // Dùng IServiceProvider để AppShell được tạo với đầy đủ DI
         var appShell = _serviceProvider.GetRequiredService<AppShell>();
-        var window = Application.Current?.Windows.FirstOrDefault();
-        if (window is not null)
+        
+        MainThread.BeginInvokeOnMainThread(() =>
         {
-            window.Page = appShell;
-        }
-        else
-        {
-            Application.Current!.MainPage = appShell;
-        }
+            var window = Application.Current?.Windows.FirstOrDefault();
+            if (window != null)
+            {
+                window.Page = appShell;
+            }
+            else
+            {
+                Application.Current!.MainPage = appShell;
+            }
+        });
     }
 }
