@@ -46,6 +46,11 @@
 		<PublishTrimmed>false</PublishTrimmed>
 		<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
 		<AndroidPackageFormat>apk</AndroidPackageFormat>
+		<AndroidKeyStore>true</AndroidKeyStore>
+		<AndroidSigningKeyStore>$(HOME)/.android/debug.keystore</AndroidSigningKeyStore>
+		<AndroidSigningKeyAlias>androiddebugkey</AndroidSigningKeyAlias>
+		<AndroidSigningKeyPass>android</AndroidSigningKeyPass>
+		<AndroidSigningStorePass>android</AndroidSigningStorePass>
 	</PropertyGroup>
 
 	<ItemGroup>
