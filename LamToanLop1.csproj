@@ -61,10 +61,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<MauiImage Remove="Resources\Images\hinhnen_lam_toan_lop_1.webp" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<PackageReference Include="Microsoft.Maui.Controls" Version="9.0.12" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.0" />

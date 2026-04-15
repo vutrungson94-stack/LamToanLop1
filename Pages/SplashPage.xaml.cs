@@ -27,37 +27,70 @@ public partial class SplashPage : ContentPage
 
         _isTransitioning = true;
 
-        // Cập nhật UI progress từ luồng chính
-        var progress = new Progress<int>(p =>
+        try
         {
-            MainThread.BeginInvokeOnMainThread(() =>
+            // Cập nhật UI progress từ luồng chính
+            var progress = new Progress<int>(p =>
             {
-                PreloadProgressBar.Progress = p / 100.0;
-                ProgressLabel.Text = p < 100 ? $"Đang tải giọng đọc... {p}%" : "Hoàn tất!";
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    PreloadProgressBar.Progress = p / 100.0;
+                    ProgressLabel.Text = p < 100 ? $"Đang tải giọng đọc... {p}%" : "Hoàn tất!";
+                });
             });
-        });
 
-        // Chạy preload trên luồng phụ, đồng thời hiển thị Splash tối thiểu 2 giây
-        var preloadTask = Task.Run(async () =>
-        {
-            var animalNames = GameData.AnimalList.Select(x => x.Value).ToList();
-            await _ttsService.PreCacheAnimalVoicesAsync(animalNames, progress);
-        });
-
-        // Chờ cả hai: đủ thời gian splash + preload xong
-        await Task.WhenAll(Task.Delay(2000), preloadTask);
-
-        // Chuyển sang AppShell (có MainPage bên trong)
-        // Dùng IServiceProvider để AppShell được tạo với đầy đủ DI
-        var appShell = _serviceProvider.GetRequiredService<AppShell>();
-        
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            var window = Application.Current?.Windows.FirstOrDefault();
-            if (window != null)
+            // Chạy preload trên luồng phụ với timeout 10 giây
+            var preloadTask = Task.Run(async () =>
             {
-                window.Page = appShell;
-            }
-        });
+                try
+                {
+                    var animalNames = GameData.AnimalList.Select(x => x.Value).ToList();
+                    await _ttsService.PreCacheAnimalVoicesAsync(animalNames, progress);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Preload error: {ex.Message}");
+                }
+            });
+
+            // Chờ cả hai: tối thiểu 1 giây splash + preload (hoặc timeout 10 giây)
+            var delayTask = Task.Delay(1000);
+            var timeoutTask = Task.Delay(10000);
+            
+            await Task.WhenAny(
+                Task.WhenAll(delayTask, preloadTask),
+                timeoutTask
+            );
+
+            // Chuyển sang AppShell (có MainPage bên trong)
+            await NavigateToAppShell();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SplashPage Error: {ex.Message}");
+            // Vẫn chuyển trang dù có lỗi
+            await NavigateToAppShell();
+        }
+    }
+
+    private async Task NavigateToAppShell()
+    {
+        try
+        {
+            var appShell = _serviceProvider.GetRequiredService<AppShell>();
+            
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                var window = Application.Current?.Windows.FirstOrDefault();
+                if (window != null)
+                {
+                    window.Page = appShell;
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
+        }
     }
 }
