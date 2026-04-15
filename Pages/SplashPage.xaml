@@ -5,7 +5,7 @@
 
     <Grid>
         <!-- Lúc này AspectFill sẽ thực sự tràn viền 100% màn hình -->
-        <Image Source="hinhnen_lam_toan_lop_1.webp" 
+        <Image Source="Resources/Images/hinhnen_lam_toan_lop_1.webp" 
                Aspect="AspectFill" 
                HorizontalOptions="Fill" 
                VerticalOptions="Fill" />
