@@ -48,12 +48,11 @@
 		<PublishTrimmed>false</PublishTrimmed>
 		<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
 		<AndroidPackageFormat>apk</AndroidPackageFormat>
-		<!-- Tạm thời tắt signing để test -->
-		<!-- <AndroidKeyStore>true</AndroidKeyStore>
+		<AndroidKeyStore>true</AndroidKeyStore>
 		<AndroidSigningKeyStore>$(HOME)/.android/debug.keystore</AndroidSigningKeyStore>
 		<AndroidSigningKeyAlias>androiddebugkey</AndroidSigningKeyAlias>
 		<AndroidSigningKeyPass>android</AndroidSigningKeyPass>
-		<AndroidSigningStorePass>android</AndroidSigningStorePass> -->
+		<AndroidSigningStorePass>android</AndroidSigningStorePass>
 		<AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
 	</PropertyGroup>
 

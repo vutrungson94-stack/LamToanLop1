@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LamToanLop1")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0+f25c5d560d514cf9393c57fe81e3818b8c65cd51")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0+8a6fa76b6c54adade20e269dd595e2268b4082c5")]
 [assembly: System.Reflection.AssemblyProductAttribute("LamToanLop1")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LamToanLop1")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

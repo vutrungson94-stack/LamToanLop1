@@ -57,10 +57,19 @@ public partial class SplashPage : ContentPage
             var delayTask = Task.Delay(1000);
             var timeoutTask = Task.Delay(10000);
             
-            await Task.WhenAny(
-                Task.WhenAll(delayTask, preloadTask),
-                timeoutTask
-            );
+            // Chờ preload hoàn thành hoặc timeout
+            var preloadCompletedTask = await Task.WhenAny(preloadTask, timeoutTask);
+            
+            // Sau đó chờ thêm delay 1 giây nếu cần
+            if (preloadCompletedTask == preloadTask)
+            {
+                // Preload hoàn thành trước, chờ thêm delay nếu chưa đủ 1 giây
+                await delayTask;
+            }
+            // Nếu timeout, delayTask có thể đã hoàn thành hoặc chưa
+            
+            // Đảm bảo ít nhất 1 giây đã trôi qua
+            await Task.WhenAll(delayTask, Task.CompletedTask);
 
             // Chuyển sang AppShell (có MainPage bên trong)
             await NavigateToAppShell();
