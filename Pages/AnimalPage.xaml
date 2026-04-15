@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" 
+	xmlns:viewmodels="clr-namespace:LamToanLop1.ViewModels" 
+	x:DataType="viewmodels:GameViewModel"
+	x:Class="LamToanLop1.Pages.AnimalPage"
+    Title="Khám phá động vật"
+	BackgroundColor="#E0F7FA">
+
+	<VerticalStackLayout 
+		Padding="20" 
+		Spacing="20" 
+		VerticalOptions="Center">
+
+		<Border 
+			StrokeShape="RoundRectangle 20" 
+			Padding="20" 
+			Stroke="#4CAF50" 
+			StrokeThickness="3"
+			BackgroundColor="#FFFFFF" 
+			HorizontalOptions="Center" 
+			HeightRequest="365" 
+			WidthRequest="365">
+            <Border.GestureRecognizers>
+                <TapGestureRecognizer 
+					Tapped="OnAnimalImageTapped"  />
+            </Border.GestureRecognizers>
+            
+            <Image
+				x:Name="AnimalImage">
+			</Image>
+
+		</Border>
+
+        <HorizontalStackLayout HorizontalOptions="Center" Spacing="15" VerticalOptions="Center">
+            <ImageButton
+                Source="bieutuong_loa.png"
+                BackgroundColor="#FFE0B2"
+                CornerRadius="22"
+                HeightRequest="44"
+                WidthRequest="44"
+                Aspect="AspectFit"
+                BorderColor="#FF9800"
+                BorderWidth="2"
+                Clicked="OnReplaySound"
+                VerticalOptions="Center">
+                <ImageButton.Shadow>
+                    <Shadow Brush="Gray" Offset="1,1" Opacity="0.5"/>
+                </ImageButton.Shadow>
+            </ImageButton>
+            
+            <Label 
+				x:Name="AnimalName" 
+				FontFamily="BalooTammudu2ExtraBold"
+				FontSize="34" 
+				FontAttributes="Bold" 
+				TextColor="#2E7D32" 
+				HorizontalOptions="Center" 
+				HorizontalTextAlignment="Center">
+                <Label.Shadow>
+                    <Shadow 
+						Brush="Black" 
+						Offset="2,2" 
+						Opacity="0.3"/>
+                </Label.Shadow>
+            </Label>
+        </HorizontalStackLayout>
+        <Grid 
+			ColumnDefinitions="*,*" 
+			ColumnSpacing="20" 
+			Margin="0,20,0,0">
+			<Button 
+				x:Name="BtnBack" 
+                FontFamily="NunitoExtraBold"
+				Text="⬅️ Xem lại" 
+				Clicked="OnBack"
+                BackgroundColor="#90A4AE" 
+				CornerRadius="25" 
+				HeightRequest="60"
+				FontAttributes="Bold" 
+				TextColor="White"/>
+
+			<Button 
+				Grid.Column="1" 
+				Text="Tiếp theo ➡️" 
+                FontFamily="NunitoExtraBold"
+				Clicked="OnNext"
+                BackgroundColor="#FF9800" 
+				CornerRadius="25" 
+				HeightRequest="60"
+				FontAttributes="Bold" 
+				TextColor="White"/>
+		</Grid>
+	</VerticalStackLayout>
+</ContentPage>

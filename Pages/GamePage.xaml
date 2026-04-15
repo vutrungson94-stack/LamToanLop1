@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:LamToanLop1.ViewModels"
+             xmlns:shapes="clr-namespace:Microsoft.Maui.Controls.Shapes;assembly=Microsoft.Maui.Controls"
+             x:Class="LamToanLop1.Pages.GamePage"
+             x:DataType="vm:GameViewModel"
+             Title="BÉ HỌC TOÁN"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="White">
+
+    <Grid>
+        <Image 
+            x:Name="FarmBackground" 
+            Source="hinhnen_nong_trai.png" 
+            Aspect="AspectFill" 
+            IsVisible="False" 
+            HorizontalOptions="Fill" 
+            VerticalOptions="Fill"/>
+
+        <Image 
+            x:Name="MathBackground" 
+            Source="hinhnen_lam_toan.png" 
+            Aspect="AspectFill" 
+            IsVisible="False" 
+            HorizontalOptions="Fill" 
+            VerticalOptions="Fill"/>
+
+        <Grid x:Name="MainContentGrid" RowDefinitions="Auto,*,Auto" Padding="15,40,15,20">
+
+            <Border Grid.Row="0" Stroke="#795548" StrokeThickness="3" BackgroundColor="#F5F5F5" 
+                    Padding="5,10" Margin="0,0,0,10" StrokeShape="RoundRectangle 20"
+                    HorizontalOptions="Fill" VerticalOptions="Center" ZIndex="10"
+                    MinimumHeightRequest="70">
+                <Border.Shadow>
+                    <Shadow Brush="Black" Offset="2,2" Opacity="0.3" Radius="5"/>
+                </Border.Shadow>
+                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" VerticalOptions="Center">
+                    <ImageButton
+                        Grid.Column="0"
+                        Source="bieutuong_loa.png"
+                        BackgroundColor="#FFE0B2"
+                        CornerRadius="22"
+                        HeightRequest="44"
+                        WidthRequest="44"
+                        Aspect="AspectFit"
+                        BorderColor="#FF9800"
+                        BorderWidth="2"
+                        Clicked="OnReplayQuestion"
+                        VerticalOptions="Center"
+                        HorizontalOptions="Start">
+                        <ImageButton.Shadow>
+                            <Shadow Brush="Gray" Offset="1,1" Opacity="0.5"/>
+                        </ImageButton.Shadow>
+                    </ImageButton>
+
+                    <Label 
+                        x:Name="QuestionText" 
+                        FontFamily="NunitoExtraBold"
+                        Grid.Column="1"
+                        Text="{Binding CurrentQuestion.Title}" 
+                        FontSize="22" 
+                        FontAttributes="Bold" 
+                        TextColor="#D84315" 
+                        HorizontalTextAlignment="Justify" 
+                        VerticalTextAlignment="Center" 
+                        MaxLines="4" 
+                        LineBreakMode="WordWrap"/>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" Padding="5">
+
+                <AbsoluteLayout 
+                    x:Name="FarmContainer" 
+                    IsVisible="False" 
+                    HorizontalOptions="Fill" 
+                    VerticalOptions="Fill"/>
+
+                <Border 
+                    x:Name="SourceNumberBorder" 
+                    IsVisible="False" 
+                    Stroke="Transparent" 
+                    BackgroundColor="Transparent" 
+                    HorizontalOptions="Fill" 
+                    VerticalOptions="Fill">
+                    <AbsoluteLayout x:Name="SourceNumberContainer" />
+                </Border>
+
+                <Label 
+                    x:Name="ClassicText" 
+                    Text="15 - 6 = ?" 
+                    FontFamily="BalooTammudu2ExtraBold"
+                    FontSize="54" 
+                    FontAttributes="Bold" 
+                    TextColor="#3F51B5" 
+                    HorizontalOptions="Center" 
+                    VerticalOptions="Center" 
+                    LineBreakMode="NoWrap" 
+                    IsVisible="False"/>
+
+                <Grid x:Name="ShapeContainer" HorizontalOptions="Center" VerticalOptions="Center" IsVisible="False"/>
+
+                <AbsoluteLayout x:Name="ClockContainer" 
+                                HorizontalOptions="Center" VerticalOptions="Center" 
+                                WidthRequest="260" HeightRequest="260" 
+                                IsVisible="False"
+                                BackgroundColor="Transparent">
+
+                    <Border Stroke="#5D4037" StrokeThickness="8" BackgroundColor="White"
+                            WidthRequest="260" HeightRequest="260"
+                            StrokeShape="RoundRectangle 130">
+                        <Border.Shadow>
+                            <Shadow Brush="Black" Offset="4,4" Opacity="0.3" Radius="5"/>
+                        </Border.Shadow>
+                    </Border>
+
+                    <AbsoluteLayout x:Name="ClockFaceNumbers" WidthRequest="260" HeightRequest="260" />
+
+                    <BoxView x:Name="ClockHourHand" Color="#333" CornerRadius="5"
+                             WidthRequest="10" HeightRequest="70"
+                             AnchorX="0.5" AnchorY="1.0"
+                             AbsoluteLayout.LayoutBounds="125, 60, 10, 70"/>
+
+                    <BoxView x:Name="ClockMinuteHand" Color="#D32F2F" CornerRadius="3"
+                             WidthRequest="6" HeightRequest="100"
+                             AnchorX="0.5" AnchorY="1.0"
+                             AbsoluteLayout.LayoutBounds="127, 30, 6, 100"/>
+
+                    <Ellipse Fill="#D32F2F" Stroke="White" StrokeThickness="2"
+                             WidthRequest="16" HeightRequest="16"
+                             AbsoluteLayout.LayoutBounds="122, 122, 16, 16"/>
+                </AbsoluteLayout>
+
+                <Grid x:Name="OrderingSlots" ColumnSpacing="6" HorizontalOptions="Fill" VerticalOptions="Center" Padding="5,0" HeightRequest="90" IsVisible="False"/>
+
+                <Border 
+                    x:Name="CollectionBin" 
+                    IsVisible="False" 
+                    HorizontalOptions="End" 
+                    VerticalOptions="Start" 
+                    Margin="0,5,5,0" 
+                    BackgroundColor="#EEFFFFFF" 
+                    Stroke="#2196F3" 
+                    StrokeThickness="3" 
+                    StrokeShape="RoundRectangle 20" 
+                    HeightRequest="60" 
+                    WidthRequest="180" 
+                    ZIndex="100">
+                    <Border.Shadow>
+                        <Shadow Brush="Black" Offset="2,2" Opacity="0.3" Radius="5"/>
+                    </Border.Shadow>
+                    <Grid ColumnDefinitions="Auto,*">
+                        <ContentView Grid.Column="0" x:Name="TargetIconContainer" HorizontalOptions="Center" VerticalOptions="Center" Scale="0.8" Margin="10,0,0,0"/>
+                        <Label Grid.Column="1" x:Name="CounterLabel" Text="0/?" FontSize="22" FontAttributes="Bold" TextColor="#1565C0" VerticalTextAlignment="Center" HorizontalTextAlignment="Center"/>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <VerticalStackLayout Grid.Row="2" Spacing="10" Margin="0,5">
+                <Grid x:Name="AnswerLayout" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="15" RowSpacing="15" HorizontalOptions="Fill" Padding="0,0,0,10" VerticalOptions="End"/>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="20" Padding="0">
+                    <Button Text="⏩ Bỏ qua" Clicked="OnSkip" Grid.Column="0" BackgroundColor="#FF9800" TextColor="White" FontAttributes="Bold" CornerRadius="25" HeightRequest="55">
+                        <Button.Shadow>
+                            <Shadow Brush="Black" Offset="2,2" Opacity="0.3"/>
+                        </Button.Shadow>
+                    </Button>
+                    <Button Text="🔙 Quay lại" Clicked="OnBack" Grid.Column="1" BackgroundColor="#607D8B" TextColor="White" FontAttributes="Bold" CornerRadius="25" HeightRequest="55">
+                        <Button.Shadow>
+                            <Shadow Brush="Black" Offset="2,2" Opacity="0.3"/>
+                        </Button.Shadow>
+                    </Button>
+                </Grid>
+            </VerticalStackLayout>
+        </Grid>
+
+        <AbsoluteLayout x:Name="FlyingLayer" InputTransparent="True" VerticalOptions="Fill" HorizontalOptions="Fill" ZIndex="9999"/>
+
+        <Grid x:Name="CongratulationOverlay" IsVisible="False" BackgroundColor="#80000000" ZIndex="10000">
+            <Border x:Name="CongratulationBorder" BackgroundColor="White" WidthRequest="300" VerticalOptions="Center" HorizontalOptions="Center" Stroke="#FFD700" StrokeThickness="5">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="30" />
+                </Border.StrokeShape>
+                <Grid>
+                    <Image Source="anhdong_phao_chuc_mung.gif" IsAnimationPlaying="True" Aspect="AspectFill" HorizontalOptions="Fill" VerticalOptions="Fill" Opacity="0.6"/>
+                    <VerticalStackLayout Spacing="10" Padding="20" VerticalOptions="Center" HorizontalOptions="Center">
+                        <Label 
+                            Text="GIỎI QUÁ!" 
+                            FontSize="45" 
+                            FontFamily="PatrickHandRegular"
+                            FontAttributes="Bold" 
+                            TextColor="#E91E63" 
+                            HorizontalTextAlignment="Center"/>
+                        <Image Source="anhdong_vo_tay.gif" IsAnimationPlaying="True" HeightRequest="100" WidthRequest="100" HorizontalOptions="Center" />
+                        <Label 
+                            Text="Bé làm tốt lắm!" 
+                            FontFamily="NunitoExtraBold"
+                            FontSize="22" 
+                            TextColor="#333" 
+                            FontAttributes="Bold" 
+                            HorizontalTextAlignment="Center"/>
+                        <Label x:Name="StarsLabel" Text="⭐⭐⭐" FontSize="50" HorizontalTextAlignment="Center" TextColor="#FFD700"/>
+                    </VerticalStackLayout>
+                </Grid>
+            </Border>
+        </Grid>
+
+    </Grid>
+</ContentPage>

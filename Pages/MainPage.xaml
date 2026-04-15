@@ -1,0 +1,77 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:LamToanLop1" 
+             xmlns:viewmodels="clr-namespace:LamToanLop1.ViewModels" 
+             x:DataType="viewmodels:GameViewModel"
+             x:Class="LamToanLop1.MainPage"
+             BackgroundColor="#E3F2FD"
+             Shell.NavBarIsVisible="False">
+
+    <ContentPage.Resources>
+        <Style x:Key="MenuButtonStyle" TargetType="Button">
+            <Setter Property="FontFamily" Value="NunitoExtraBold"/>
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontAttributes" Value="Bold"/>
+            <Setter Property="TextColor" Value="White"/>
+            <Setter Property="CornerRadius" Value="25"/>
+            <Setter Property="HeightRequest" Value="65"/>
+            <Setter Property="WidthRequest" Value="280"/>
+            <Setter Property="Margin" Value="0,10"/>
+            <Setter Property="Shadow">
+                <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
+            </Setter>
+        </Style>
+    </ContentPage.Resources>
+
+    <Grid>
+        <Image Source="hinhnen_lam_toan_lop_1.webp" Aspect="AspectFill" Opacity="0.3"/>
+
+        <Grid x:Name="MainMenuView" IsVisible="True" RowDefinitions="Auto, *, Auto" VerticalOptions="Center" HorizontalOptions="Center" Padding="20">
+            <VerticalStackLayout Grid.Row="0" Spacing="15" VerticalOptions="Center">
+                <Label 
+                    Text="BÉ HỌC VUI" 
+                    FontFamily="BalooTammudu2ExtraBold"
+                    TextColor="#1565C0" 
+                    FontSize="48" 
+                    FontAttributes="Bold" 
+                    HorizontalOptions="Center">
+                    <Label.Shadow>
+                        <Shadow Brush="White" Offset="2,2" Radius="2" />
+                    </Label.Shadow>
+                </Label>
+
+                <Button Text="🧮 BÉ LUYỆN TOÁN" Clicked="OnOpenMathMenu" BackgroundColor="#2196F3" Style="{StaticResource MenuButtonStyle}" />
+                <Button Text="🐾 KHÁM PHÁ ĐỘNG VẬT" Clicked="OnAnimalDiscoveryClicked" BackgroundColor="#4CAF50" Style="{StaticResource MenuButtonStyle}" />
+            </VerticalStackLayout>
+        </Grid>
+
+        <Grid x:Name="ModeMenu" IsVisible="False" BackgroundColor="#DDFFFFFF" Padding="20">
+            <VerticalStackLayout Spacing="20" VerticalOptions="Center" HorizontalOptions="Center">
+                <Label 
+                    Text="CHỌN CẤP ĐỘ" 
+                    FontFamily="PatrickHandRegular"
+                    TextColor="#333" 
+                    FontSize="36" 
+                    FontAttributes="Bold" 
+                    HorizontalOptions="Center" />
+
+                <Button Text="🌟 CƠ BẢN" Clicked="OnBasicModeClicked" BackgroundColor="#FF9800" Style="{StaticResource MenuButtonStyle}" />
+                <Button Text="🚀 NÂNG CAO" Clicked="OnAdvancedModeClicked" BackgroundColor="#9C27B0" Style="{StaticResource MenuButtonStyle}" />
+                <Button Text="🔙 QUAY LẠI" Clicked="OnBackToMenuClicked" BackgroundColor="#757575" WidthRequest="150" HeightRequest="50" CornerRadius="25" FontAttributes="Bold" TextColor="White"/>
+            </VerticalStackLayout>
+        </Grid>
+
+        <Grid x:Name="LevelMenu" IsVisible="False" BackgroundColor="#DDFFFFFF" Padding="20">
+            <VerticalStackLayout VerticalOptions="Center" Spacing="20" HorizontalOptions="Center">
+                <Label x:Name="lblLevelTitle" Text="CHỌN ĐỘ KHÓ" TextColor="#333" FontSize="32" FontAttributes="Bold" HorizontalOptions="Center" />
+
+                <Button Text="⭐ DỄ" Clicked="OnLevelEasyClicked" BackgroundColor="#8BC34A" Style="{StaticResource MenuButtonStyle}" />
+                <Button Text="⭐⭐ VỪA" Clicked="OnLevelMediumClicked" BackgroundColor="#FFC107" Style="{StaticResource MenuButtonStyle}" />
+                <Button Text="⭐⭐⭐ KHÓ" Clicked="OnLevelHardClicked" BackgroundColor="#F44336" Style="{StaticResource MenuButtonStyle}" />
+
+                <Button Text="🔙 QUAY LẠI" Clicked="OnBackToModeClicked" BackgroundColor="#757575" WidthRequest="150" HeightRequest="50" CornerRadius="25" FontAttributes="Bold" TextColor="White" />
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+</ContentPage>
