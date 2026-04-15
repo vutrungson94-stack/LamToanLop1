@@ -86,12 +86,10 @@ public partial class SplashPage : ContentPage
     {
         try
         {
-            var appShell = _serviceProvider.GetRequiredService<AppShell>();
-            
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            // Sử dụng Shell navigation để chuyển sang MainPage
+            await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                var window = Application.Current?.Windows.FirstOrDefault();
-                window?.Page = appShell;
+                await Shell.Current.GoToAsync("//MainPage");
             });
         }
         catch (Exception ex)

@@ -10,17 +10,17 @@ public partial class App : Microsoft.Maui.Controls.Application
     // Sự kiện báo App đã quay lại -> THÊM DÒNG NÀY
     public static event Action? AppResumed;
 
-    private readonly SplashPage _splashPage;
+    private readonly AppShell _appShell;
 
-    public App(SplashPage splashPage)
+    public App(AppShell appShell)
     {
         InitializeComponent();
-        _splashPage = splashPage;
+        _appShell = appShell;
     }
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        return new Window(_splashPage);
+        return new Window(_appShell);
     }
 
     protected override void OnSleep()
