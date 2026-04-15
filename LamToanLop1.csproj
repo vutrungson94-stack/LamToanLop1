@@ -27,6 +27,8 @@
 
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
 		<RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+		<!-- Tự động sử dụng Android SDK từ thư mục mặc định nếu tồn tại -->
+		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' AND Exists('$(HOME)/android-sdk')">$(HOME)/android-sdk</AndroidSdkDirectory>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
