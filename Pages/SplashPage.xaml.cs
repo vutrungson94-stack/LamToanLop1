@@ -6,17 +6,15 @@ namespace LamToanLop1.Pages;
 
 public partial class SplashPage : ContentPage
 {
-    // tiêm các dich vụ cần thiết vào constructor nếu có, ví dụ:
+    // tiêm các dịch vụ cần thiết vào constructor.
     private readonly ITtsService _ttsService;
-    private readonly IServiceProvider _serviceProvider;
 
     private bool _isTransitioning;
 
-    public SplashPage(ITtsService ttsService, IServiceProvider serviceProvider)
+    public SplashPage(ITtsService ttsService)
     {
         InitializeComponent();
         _ttsService = ttsService;
-        _serviceProvider = serviceProvider;
     }
 
     protected override async void OnAppearing()
@@ -86,10 +84,9 @@ public partial class SplashPage : ContentPage
     {
         try
         {
-            // Sử dụng Shell navigation để chuyển sang MainPage
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                await Shell.Current.GoToAsync("//MainPage");
+                await Shell.Current.GoToAsync($"//{nameof(MainPage)}");
             });
         }
         catch (Exception ex)

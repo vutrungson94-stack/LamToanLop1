@@ -11,6 +11,7 @@ public partial class AppShell : Shell
         // Đăng ký đường dẫn cho các trang con
         Routing.RegisterRoute(nameof(GamePage), typeof(GamePage));
 		Routing.RegisterRoute(nameof(AnimalPage), typeof(AnimalPage));
+		Routing.RegisterRoute(nameof(MainPage), typeof(MainPage));
 
         // Mặc định hiển thị SplashPage
         this.CurrentItem = this.Items[0]; // SplashPage là item đầu tiên
