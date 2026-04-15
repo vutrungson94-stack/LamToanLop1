@@ -17,8 +17,6 @@ public partial class MainPage : ContentPage
     // 1 = Cơ bản (PV 10), 2 = Nâng cao (PV 100)
     private int _selectedRange = 1;
 
-    private bool _preloadDone = false;
-
     public MainPage(ITtsService tts, ISoundService soundService)
     {
         InitializeComponent();
