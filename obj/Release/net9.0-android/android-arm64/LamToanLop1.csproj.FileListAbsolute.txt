@@ -14,10 +14,6 @@
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/mauiimage.inputs
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/mauifont.inputs
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/mauisplash.inputs
-/workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/resizetizer/sp/drawable-v31/maui_splash_image.xml
-/workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/resizetizer/sp/drawable/icon_lam_toan_lop_1.png
-/workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/resizetizer/sp/drawable/maui_splash_image.xml
-/workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/resizetizer/sp/values/maui_colors.xml
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/mauisplash.stamp
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/mauifont.stamp
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/resizetizer/f/BalooTammudu2-ExtraBold.ttf
@@ -130,7 +126,6 @@
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/case_map.txt
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/__Microsoft.Android.Resource.Designer.cs
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/res.flag
-/workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/resizetizer/948BEB26562E9E4A-files.cache
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/resizetizer/2E3809EF14E08487-files.cache
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/lp/98/jl/files.cache
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/lp/99/jl/files.cache
@@ -1002,3 +997,4 @@
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/stamp/_GenerateJavaStubs.stamp
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/stamp/_GeneratePackageManagerJava.stamp
 /workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/stamp/_ResolveLibraryProjectImports.stamp
+/workspaces/LamToanLop1/obj/Release/net9.0-android/android-arm64/resizetizer/r/drawable/hinhnen_lam_toan_lop_1.webp
