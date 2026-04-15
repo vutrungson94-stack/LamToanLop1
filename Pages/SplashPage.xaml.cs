@@ -82,10 +82,7 @@ public partial class SplashPage : ContentPage
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
                 var window = Application.Current?.Windows.FirstOrDefault();
-                if (window != null)
-                {
-                    window.Page = appShell;
-                }
+                window?.Page = appShell;
             });
         }
         catch (Exception ex)
