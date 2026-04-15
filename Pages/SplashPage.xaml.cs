@@ -58,10 +58,6 @@ public partial class SplashPage : ContentPage
             {
                 window.Page = appShell;
             }
-            else
-            {
-                Application.Current!.MainPage = appShell;
-            }
         });
     }
 }
