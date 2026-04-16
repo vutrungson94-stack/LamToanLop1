@@ -382,8 +382,15 @@ public partial class GamePage : ContentPage
         GamePage.CleanupLayout(AnswerLayout);
         GamePage.CleanupLayout(SourceNumberContainer);
         GamePage.CleanupLayout(FlyingLayer);
+        if (FarmBackground?.Source != null)
+        {
+            FarmBackground.Source = null;
+        }
         FarmBackground?.Source = null;
-        MathBackground?.Source = null;
+        if (MathBackground?.Source != null)
+        {
+            MathBackground.Source = null;
+        }
 
         // Dọn sạch Object Pool
         while (_viewPool.Count > 0)
@@ -1792,7 +1799,7 @@ public partial class GamePage : ContentPage
         ShapeContainer.Children.Add(s);
     }
 
-    private void RenderOrderingGame(List<int> numbers, string correctAnswer)
+    private async Task RenderOrderingGame(List<int> numbers, string correctAnswer)
     {
         _orderingResult.Clear();
         _orderingTarget.Clear();
@@ -1845,7 +1852,7 @@ public partial class GamePage : ContentPage
             ch = DeviceDisplay.MainDisplayInfo.Height / DeviceDisplay.MainDisplayInfo.Density - 20;
         }
 
-        double answerH = AnswerLayout.isVisible ? AnswerLayout.Height : 0;
+        double answerH = AnswerLayout.IsVisible ? AnswerLayout.Height : 0;
         ch = Math.Max(ch - answerH - 10, 180); // Trừ đi khoảng trống cho answer và slot, đảm bảo còn đủ chỗ rải số (ít nhất 150px)
 
         Rect scatterZone = new(10, 10, cw - 20, ch - 20);

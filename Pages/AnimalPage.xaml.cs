@@ -67,7 +67,10 @@ public partial class AnimalPage : ContentPage
         _tts.Stop();
 
         // Ngắt kết nối ảnh để giải phóng RAM
-        AnimalImage?.Source = null;
+		if (AnimalImage?.Source != null)
+        {
+            AnimalImage.Source = null;
+        }
     }
 
     private void OnAppResumedHandler()
