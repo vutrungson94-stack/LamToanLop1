@@ -27,15 +27,23 @@ jobs:
       run: |
         $csproj = Get-ChildItem *.csproj | Select-Object -First 1
         [xml]$xml = Get-Content $csproj.FullName
+
         $tfs = @()
         foreach ($pg in $xml.Project.PropertyGroup) {
           if ($pg.TargetFramework) { $tfs += $pg.TargetFramework }
           if ($pg.TargetFrameworks) { $tfs += ($pg.TargetFrameworks -split ';') }
         }
+
         $android = $tfs | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "android" } | Select-Object -First 1
+
+        if (-not $android) {
+          Write-Error "Không tìm thấy TargetFramework Android"
+          exit 1
+        }
+
         echo "TFM=$android" >> $env:GITHUB_ENV
 
-    - name: Publish APK (Release)
+    - name: Publish APK
       run: |
         dotnet publish `
           -c Release `
@@ -43,7 +51,7 @@ jobs:
           -p:AndroidPackageFormat=apk `
           -p:PublishTrimmed=true
 
-    - name: Upload APK artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: android-apk
