@@ -17,7 +17,7 @@ jobs:
       uses: actions/checkout@v4
 
     # --------------------------------------------------
-    # 2. Auto bump Android versionCode (bắt buộc cho Play)
+    # 2. Auto bump Android versionCode
     # --------------------------------------------------
     - name: Auto bump Android versionCode
       shell: pwsh
@@ -25,7 +25,7 @@ jobs:
         [xml]$xml = Get-Content *.csproj
         $pg = $xml.Project.PropertyGroup | Where-Object { $_.ApplicationVersion }
         if (-not $pg) {
-          Write-Error "❌ Không tìm thấy ApplicationVersion trong csproj"
+          Write-Error "Không tìm thấy ApplicationVersion"
           exit 1
         }
 
@@ -37,20 +37,63 @@ jobs:
         Write-Host "✅ Android versionCode bumped: $old -> $new"
 
     # --------------------------------------------------
-    # 3. Đọc .NET SDK version từ global.json (NGUỒN CHUẨN)
+    # 3. Read .NET SDK version from global.json
     # --------------------------------------------------
-    - name: Read .NET version from global.json
+    - name: Read .NET SDK version
       shell: pwsh
       run: |
-        if (-not (Test-Path global.json)) {
-          Write-Error "❌ Không tìm thấy global.json"
-          exit 1
+        $json = Get-Content global.json | ConvertFrom-Json
+        $majorMinor = $json.sdk.version.Substring(0, $json.sdk.version.LastIndexOf("."))
+        echo "SDK_VERSION=$majorMinor.x" >> $env:GITHUB_ENV
+
+    # --------------------------------------------------
+    # 4. Setup .NET SDK
+    # --------------------------------------------------
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.SDK_VERSION }}
+
+    # --------------------------------------------------
+    # 5. Install MAUI workload
+    # --------------------------------------------------
+    - name: Install MAUI workload
+      run: dotnet workload install maui
+
+    # --------------------------------------------------
+    # 6. Detect Android TargetFramework
+    # --------------------------------------------------
+    - name: Detect Android TargetFramework
+      shell: pwsh
+      run: |
+        $csproj = Get-ChildItem *.csproj | Select-Object -First 1
+        [xml]$xml = Get-Content $csproj.FullName
+
+        $tfs = @()
+        foreach ($pg in $xml.Project.PropertyGroup) {
+          if ($pg.TargetFramework)  { $tfs += $pg.TargetFramework }
+          if ($pg.TargetFrameworks) { $tfs += ($pg.TargetFrameworks -split ';') }
         }
 
-        $json = Get-Content global.json | ConvertFrom-Json
-        $sdk = $json.sdk.version
+        $android = $tfs | Where-Object { $_ -match "android" } | Select-Object -First 1
+        echo "TFM=$android" >> $env:GITHUB_ENV
 
-        # Lấy major.minor.x (ví dụ: 9.0.x)
-        $majorMinor = $sdk.Substring(0, $sdk.LastIndexOf("."))
+    # --------------------------------------------------
+    # 7. BUILD & PUBLISH APK  ✅✅✅ (ĐÂY LÀ NƠI RA FILE APK)
+    # --------------------------------------------------
+    - name: Publish APK
+      run: |
+        dotnet publish `
+          -c Release `
+          -f $env:TFM `
+          -p:AndroidPackageFormat=apk `
+          -p:PublishTrimmed=true
 
-        echo "SDK_VERSION=$majorMinor.x" >> $env:GITHUB_ENV
+    # --------------------------------------------------
+    # 8. UPLOAD APK ĐỂ TẢI VỀ (Artifacts)
+    # --------------------------------------------------
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-apk
+        path: bin/Release/**/publish/*.apk
