@@ -2,7 +2,7 @@ name: Build MAUI Android APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -10,49 +10,47 @@ jobs:
     runs-on: windows-latest
 
     steps:
+    # --------------------------------------------------
+    # 1. Checkout source code
+    # --------------------------------------------------
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup .NET SDK
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 9.0.x
-
-    - name: Install MAUI workload
-      run: dotnet workload install maui
-
-    - name: Detect Android TargetFramework
-      id: detect
+    # --------------------------------------------------
+    # 2. Auto bump Android versionCode (bắt buộc cho Play)
+    # --------------------------------------------------
+    - name: Auto bump Android versionCode
       shell: pwsh
       run: |
-        $csproj = Get-ChildItem *.csproj | Select-Object -First 1
-        [xml]$xml = Get-Content $csproj.FullName
-
-        $tfs = @()
-        foreach ($pg in $xml.Project.PropertyGroup) {
-          if ($pg.TargetFramework) { $tfs += $pg.TargetFramework }
-          if ($pg.TargetFrameworks) { $tfs += ($pg.TargetFrameworks -split ';') }
-        }
-
-        $android = $tfs | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "android" } | Select-Object -First 1
-
-        if (-not $android) {
-          Write-Error "Không tìm thấy TargetFramework Android"
+        [xml]$xml = Get-Content *.csproj
+        $pg = $xml.Project.PropertyGroup | Where-Object { $_.ApplicationVersion }
+        if (-not $pg) {
+          Write-Error "❌ Không tìm thấy ApplicationVersion trong csproj"
           exit 1
         }
 
-        echo "TFM=$android" >> $env:GITHUB_ENV
+        $old = [int]$pg.ApplicationVersion
+        $new = $old + 1
+        $pg.ApplicationVersion = $new
+        $xml.Save((Resolve-Path "*.csproj").Path)
 
-    - name: Publish APK
+        Write-Host "✅ Android versionCode bumped: $old -> $new"
+
+    # --------------------------------------------------
+    # 3. Đọc .NET SDK version từ global.json (NGUỒN CHUẨN)
+    # --------------------------------------------------
+    - name: Read .NET version from global.json
+      shell: pwsh
       run: |
-        dotnet publish `
-          -c Release `
-          -f $env:TFM `
-          -p:AndroidPackageFormat=apk `
-          -p:PublishTrimmed=true
+        if (-not (Test-Path global.json)) {
+          Write-Error "❌ Không tìm thấy global.json"
+          exit 1
+        }
 
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: android-apk
-        path: bin/Release/**/publish/*.apk
+        $json = Get-Content global.json | ConvertFrom-Json
+        $sdk = $json.sdk.version
+
+        # Lấy major.minor.x (ví dụ: 9.0.x)
+        $majorMinor = $sdk.Substring(0, $sdk.LastIndexOf("."))
+
+        echo "SDK_VERSION=$majorMinor.x" >> $env:GITHUB_ENV
