@@ -35,10 +35,9 @@ Write-Host "📂 Các file đã thay đổi:"
 $status
 
 # 6. Nhập commit message
-$commitMsg = Read-Host "✏️ Nhập nội dung commit"
+$commitMsg = Read-Host "✏️ Nhập nội dung commit (Enter để dùng tự động)"
 if ([string]::IsNullOrWhiteSpace($commitMsg)) {
-    Write-Host "❌ Commit message không được để trống"
-    exit 1
+    $commitMsg = "Auto commit " + (Get-Date -Format "yyyy-MM-dd HH:mm")
 }
 
 # 7. Commit
@@ -53,10 +52,11 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "🚀 Đang push code lên GitHub..."
 git push origin main
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "⚠️ Push thông thường thất bại. Thử force-with-lease..."
-    git push origin main --force-with-lease
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Push thất bại hoàn toàn"
+    $answer = Read-Host "⚠️ Push thường thất bại. Có force-with-lease không? (y/n)"
+    if ($answer -eq "y") {
+        git push origin main --force-with-lease
+    } else {
+        Write-Host "⏹️ Đã huỷ force push"
         exit 1
     }
 }
