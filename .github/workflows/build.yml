@@ -1,23 +1,50 @@
-name: Build MAUI Android
+name: Build MAUI Android APK
+
 on:
   push:
-    branches: [ "main" ] # Khi bạn lưu code lên branch main, nó sẽ tự chạy
-  workflow_dispatch:     # Cho phép kích hoạt build bằng tay trên giao diện GitHub
+    branches: [ "main" ]
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
-      - name: Install MAUI
-        run: dotnet workload install maui
-      - name: Build App
-        run: dotnet build -c Release -f net9.0-android
-      - name: Archive APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: App-LamToanLop1
-          path: "**/*.apk"
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: global.json
+
+    - name: Install MAUI workload
+      run: dotnet workload install maui
+
+    - name: Detect Android TargetFramework
+      id: detect
+      shell: pwsh
+      run: |
+        $csproj = Get-ChildItem *.csproj | Select-Object -First 1
+        [xml]$xml = Get-Content $csproj.FullName
+        $tfs = @()
+        foreach ($pg in $xml.Project.PropertyGroup) {
+          if ($pg.TargetFramework) { $tfs += $pg.TargetFramework }
+          if ($pg.TargetFrameworks) { $tfs += ($pg.TargetFrameworks -split ';') }
+        }
+        $android = $tfs | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "android" } | Select-Object -First 1
+        echo "TFM=$android" >> $env:GITHUB_ENV
+
+    - name: Publish APK (Release)
+      run: |
+        dotnet publish `
+          -c Release `
+          -f $env:TFM `
+          -p:AndroidPackageFormat=apk `
+          -p:PublishTrimmed=true
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-apk
+        path: bin/Release/**/publish/*.apk
