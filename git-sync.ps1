@@ -1,4 +1,26 @@
-﻿Write-Host "=============================="
+﻿# Tự động tìm file .csproj trong thư mục hiện tại
+$projectFile = Get-ChildItem -Filter *.csproj | Select-Object -First 1
+
+if ($projectFile) {
+    # Đọc nội dung file và tìm TargetFramework chứa "-android"
+    [xml]$projectXml = Get-Content $projectFile.FullName
+    $androidFramework = ($projectXml.Project.PropertyGroup.TargetFrameworks -split ';' | Select-String -Pattern "-android")
+    
+    # Nếu dùng TargetFramework (số ít)
+    if (-not $androidFramework) {
+        $androidFramework = $projectXml.Project.PropertyGroup.TargetFramework | Select-String -Pattern "-android"
+    }
+}
+
+# Nếu tìm thấy thì thông báo, nếu không thì dùng mặc định để tránh lỗi
+if ($androidFramework) {
+    Write-Host "🔍 Đã tự động nhận diện Framework: $androidFramework"
+} else {
+    $androidFramework = "net9.0-android" 
+    Write-Host "⚠️ Không tự động nhận diện được, dùng mặc định: $androidFramework"
+}
+
+Write-Host "=============================="
 Write-Host "  Git Tự Động Sync – Build – Push  "
 Write-Host "=============================="
 
