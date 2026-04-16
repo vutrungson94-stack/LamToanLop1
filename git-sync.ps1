@@ -2,13 +2,12 @@
 $projectFile = Get-ChildItem -Filter *.csproj | Select-Object -First 1
 
 if ($projectFile) {
-    # Đọc nội dung file và tìm TargetFramework chứa "-android"
     [xml]$projectXml = Get-Content $projectFile.FullName
-    $androidFramework = ($projectXml.Project.PropertyGroup.TargetFrameworks -split ';' | Select-String -Pattern "-android")
+    # Lấy framework chứa "-android" và lọc lấy bản net9
+    $androidFramework = ($projectXml.Project.PropertyGroup.TargetFrameworks -split ';' | Select-String -Pattern "net9.0-android")
     
-    # Nếu dùng TargetFramework (số ít)
     if (-not $androidFramework) {
-        $androidFramework = $projectXml.Project.PropertyGroup.TargetFramework | Select-String -Pattern "-android"
+        $androidFramework = $projectXml.Project.PropertyGroup.TargetFramework | Select-String -Pattern "net9.0-android"
     }
 }
 
