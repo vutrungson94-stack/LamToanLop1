@@ -2,46 +2,45 @@
 Write-Host "  MAUI Android APK Builder  "
 Write-Host "=============================="
 
-# 1. Kiểm tra dotnet
+# Kiểm tra dotnet
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     Write-Host "❌ dotnet SDK chưa được cài"
     exit 1
 }
 
-# 2. Tìm file csproj
+# Tìm csproj
 $csproj = Get-ChildItem -Filter *.csproj | Select-Object -First 1
 if (-not $csproj) {
     Write-Host "❌ Không tìm thấy file .csproj"
     exit 1
 }
+Write-Host "📄 Project: $($csproj.Name)"
 
-Write-Host "📄 Sử dụng project: $($csproj.Name)"
-
-# 3. Đọc TargetFramework Android từ csproj
+# ---- PHẦN SỬA LỖI QUAN TRỌNG ----
 [xml]$projXml = Get-Content $csproj.FullName
 
-$frameworkNode = $projXml.Project.PropertyGroup.TargetFramework
-if (-not $frameworkNode) {
-    $frameworkNode = $projXml.Project.PropertyGroup.TargetFrameworks
+$allFrameworks = @()
+foreach ($pg in $projXml.Project.PropertyGroup) {
+    if ($pg.TargetFramework) { $allFrameworks += $pg.TargetFramework }
+    if ($pg.TargetFrameworks) { $allFrameworks += ($pg.TargetFrameworks -split ';') }
 }
 
-if (-not $frameworkNode) {
-    Write-Host "❌ Không tìm thấy TargetFramework trong csproj"
-    exit 1
-}
+$allFrameworks = $allFrameworks | ForEach-Object { $_.Trim() } |
+    Where-Object { $_ } | Select-Object -Unique
 
-$androidFramework = $frameworkNode -split ";" | Where-Object { $_ -match "android" } | Select-Object -First 1
-
+$androidFramework = $allFrameworks | Where-Object { $_ -match "android" } | Select-Object -First 1
 if (-not $androidFramework) {
     Write-Host "❌ Không tìm thấy TargetFramework Android"
+    Write-Host "👉 Các framework tìm được:"
+    $allFrameworks | ForEach-Object { Write-Host " - $_" }
     exit 1
 }
 
 Write-Host "✅ Android TargetFramework: $androidFramework"
+# --------------------------------
 
-# 4. Build APK
-Write-Host "🔧 Đang build APK (Release)..."
-
+# Build APK
+Write-Host "🔧 Đang build APK..."
 dotnet publish `
     $csproj.FullName `
     -f $androidFramework `
@@ -54,13 +53,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 5. Tìm APK
-$apk = Get-ChildItem -Recurse -Filter *.apk bin\Release -ErrorAction SilentlyContinue | Select-Object -First 1
-
-if (-not $apk) {
-    Write-Host "❌ Không tìm thấy file APK"
-    exit 1
-}
-
-Write-Host "✅ Build APK thành công 🎉"
+$apk = Get-ChildItem -Recurse -Filter *.apk bin\Release | Select-Object -First 1
+Write-Host "✅ Build thành công"
 Write-Host "📦 APK: $($apk.FullName)"
