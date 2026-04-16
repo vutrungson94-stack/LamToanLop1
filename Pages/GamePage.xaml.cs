@@ -1925,6 +1925,8 @@ public partial class GamePage : ContentPage
 
             if (OrderingSlots.Children[slotIndex] is not Border slotBorder) return;
 
+            AbortSpecificAnimations(view);
+
             // Ẩn số đã chọn
             await view.ScaleTo(0, 200);
             view.IsVisible = false;
