@@ -595,7 +595,31 @@ public partial class GamePage : ContentPage
                                 {
                                     try
                                     {
-                                        var pre = await ComputeScatterLayoutAsync(items, renderToken, useFarmDepth: !isShapeGame);
+                                        var limitZone = Rect.Zero;
+                                        var reservedBottom = 120.0;
+
+                                        await MainThread.InvokeOnMainThreadAsync(() =>
+                                        {
+                                            if (AnswerLayout.Height > 0)
+                                            {
+                                                reservedBottom = Math.Max(120, AnswerLayout.Height + 20);
+                                            }
+
+                                            if (FarmContainer.Width > 0 && FarmContainer.Height > 0)
+                                            {
+                                                limitZone = new Rect(0, 0, FarmContainer.Width, Math.Max(0, FarmContainer.Height - reservedBottom));
+                                            }
+                                        });
+
+                                        if (limitZone == Rect.Zero)
+                                        {
+                                            var density = DeviceDisplay.MainDisplayInfo.Density;
+                                            var screenWidth = DeviceDisplay.MainDisplayInfo.Width / density;
+                                            var screenHeight = DeviceDisplay.MainDisplayInfo.Height / density;
+                                            limitZone = new Rect(0, 0, screenWidth, Math.Max(0, screenHeight - reservedBottom));
+                                        }
+
+                                        var pre = await ComputeScatterLayoutAsync(items, renderToken, useFarmDepth: !isShapeGame, limitZone: limitZone);
                                         if (renderToken.IsCancellationRequested) return;
 
                                         await RenderItemsScatterFromPrecomputedAsync(pre, renderToken); // Hàm mới có hỗ trợ async loading ảnh
@@ -899,7 +923,7 @@ public partial class GamePage : ContentPage
     private const double FARM_DEPTH_MIN = 0.55; // Tỷ lệ scale nhỏ nhất (cho item ở "xa")
     private const double FARM_DEPTH_MAX = 1.25; // Tỷ lệ scale lớn nhất (cho item ở "gần")
 
-    private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameItem> items, CancellationToken token, bool useFarmDepth = false, Rect limitZone = default, List<Rect>? forbiddenZones = null)
+    private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameItem> items, CancellationToken token, bool useFarmDepth = false, Rect limitZone = default, List<Rect>? forbiddenZones = null, bool enforceExactScale = false)
     {
         // Giữ mọi tính toán nặng ở đây (khoảng cách, tránh chồng lấp, scale)
         // Trả về danh sách bounds (Rect) và depth/scale để render
@@ -1004,7 +1028,7 @@ public partial class GamePage : ContentPage
             else
             {
                 // --- FLAT MODEL (hình học) ---
-                double randomScale = 0.8 + rand.NextDouble() * 0.4; // Scale ngẫu nhiên ±20% để tạo sự đa dạng
+                double randomScale = enforceExactScale ? 1.0 : 0.8 + rand.NextDouble() * 0.4; // Nếu cần exact scale thì giữ nguyên tỷ lệ thật
                 double sz = baseSize * it.Scale * randomScale;
                 sz = Math.Clamp(sz, 35, cw * 0.25);
 
@@ -1278,9 +1302,8 @@ public partial class GamePage : ContentPage
         {
             try
             {
-                // Dùng flat model nhưng kích thước được baked từ Scale thực của từng con
-                // (ComputeScatterLayoutAsync đã nhân baseSize * item.Scale)
-                var pre = await ComputeScatterLayoutAsync(items, renderToken, useFarmDepth: false);
+                // Dùng flat model với kích thước đúng theo Scale thật của từng con
+                var pre = await ComputeScatterLayoutAsync(items, renderToken, useFarmDepth: false, enforceExactScale: true);
                 if (renderToken.IsCancellationRequested) return;
 
                 // Load ảnh
@@ -1902,6 +1925,8 @@ public partial class GamePage : ContentPage
 
             if (OrderingSlots.Children[slotIndex] is not Border slotBorder) return;
 
+            AbortSpecificAnimations(view);
+
             // Ẩn số đã chọn
             await view.ScaleTo(0, 200);
             view.IsVisible = false;
@@ -2138,13 +2163,22 @@ public partial class GamePage : ContentPage
         var token = _cts?.Token ?? CancellationToken.None;
         if (token.IsCancellationRequested) return;
 
-        CongratulationOverlay.IsVisible = true;
-        CongratulationBorder.Scale = 0;
-        StarsLabel.Rotation = 0;
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            CongratulationOverlay.IsVisible = true;
+            CongratulationOverlay.InputTransparent = false;
+            CongratulationOverlay.Opacity = 1;
+            CongratulationBorder.Scale = 0;
+            CongratulationBorder.Opacity = 1;
+            StarsLabel.Opacity = 1;
+            StarsLabel.Rotation = 0;
+        });
+
+        await Task.Yield();
 
         try
         {
-            // Chay song song am thanh va animation de tiet kiem thoi gian
+            // Chạy song song âm thanh và animation để tiết kiệm thời gian
             var soundTask = Task.Run(async () =>
             {
                 await _soundService.PlayPhaoAsync();
@@ -2158,6 +2192,7 @@ public partial class GamePage : ContentPage
 
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
+                if (token.IsCancellationRequested || !_isGameActive) return;
                 await CongratulationBorder.ScaleTo(1.0, 600, Easing.SpringOut);
                 if (token.IsCancellationRequested || !_isGameActive) return;
                 await StarsLabel.RotateTo(360, 1000, Easing.CubicOut);
@@ -2165,12 +2200,15 @@ public partial class GamePage : ContentPage
 
             if (token.IsCancellationRequested || !_isGameActive) return;
 
-            // Doi cac tac vu nen hoan thanh va them mot khoang cho
+            // Đợi các tác vụ nền hoàn thành và thêm thời gian hiển thị
             await Task.WhenAll(soundTask, ttsTask, Task.Delay(1500, token));
 
             if (token.IsCancellationRequested || !_isGameActive) return;
 
-            await CongratulationBorder.ScaleTo(0, 200, Easing.CubicIn);
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await CongratulationBorder.ScaleTo(0, 200, Easing.CubicIn);
+            });
         }
         catch (TaskCanceledException)
         {
@@ -2182,7 +2220,10 @@ public partial class GamePage : ContentPage
         }
         finally
         {
-            CongratulationOverlay?.IsVisible = false;
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                CongratulationOverlay.IsVisible = false;
+            });
         }
     }
 }

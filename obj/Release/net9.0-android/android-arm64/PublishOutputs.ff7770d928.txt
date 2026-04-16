@@ -1,0 +1,3 @@
+/workspaces/LamToanLop1/bin/Release/net9.0-android/android-arm64/publish/com.vutrungson.lamtoanlop1-Signed.apk
+/workspaces/LamToanLop1/bin/Release/net9.0-android/android-arm64/publish/com.vutrungson.lamtoanlop1.apk
+/workspaces/LamToanLop1/bin/Release/net9.0-android/android-arm64/publish/_Microsoft.Android.Resource.Designer.dll
