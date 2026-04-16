@@ -1796,7 +1796,9 @@ public partial class GamePage : ContentPage
     {
         _orderingResult.Clear();
         _orderingTarget.Clear();
-        _orderingTarget.AddRange(correctAnswer.Split(',').Select(int.Parse));
+        _orderingTarget.AddRange(correctAnswer.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse));
+
+        _isProcessing = false;
 
         string[] colors = ["#F44336", "#4CAF50", "#2196F3", "#FF9800", "#9C27B0", "#00BCD4"];
         var rand = System.Random.Shared;
@@ -1827,46 +1829,53 @@ public partial class GamePage : ContentPage
             Grid.SetColumn(slot, i);
         }
 
+        await MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            await Task.Delay(1); // Delay nhỏ để đảm bảo các slot đã được vẽ trước khi rải số
+        });
+
         // 2. Rải số nguồn vào SourceNumberContainer
         RecycleViewsInLayout(SourceNumberContainer);
-        double cw = SourceNumberContainer.Width > 0 ? SourceNumberContainer.Width
-            : DeviceDisplay.MainDisplayInfo.Width / DeviceDisplay.MainDisplayInfo.Density;
-        double ch = SourceNumberContainer.Height > 0 ? SourceNumberContainer.Height : 300;
+        double cw = SourceNumberContainer.Width;
+        double ch = SourceNumberContainer.Height;
 
-        // Tính vùng cấm quanh giữa (nơi OrderingSlots nằm)
-        double centerY = ch / 2.0;
-        double halfSlotH = (slotH / 2.0) + 55;
-        Rect topZone = new(10, 10, cw - 20, Math.Max(50, centerY - halfSlotH - 10));
-        Rect bottomZone = new(10, centerY + halfSlotH, cw - 20, Math.Max(50, ch - (centerY + halfSlotH) - 30));
+        if (cw <= 0 || ch <= 0)
+        {
+            cw = DeviceDisplay.MainDisplayInfo.Width / DeviceDisplay.MainDisplayInfo.Density - 20;
+            ch = DeviceDisplay.MainDisplayInfo.Height / DeviceDisplay.MainDisplayInfo.Density - 20;
+        }
+
+        double answerH = AnswerLayout.isVisible ? AnswerLayout.Height : 0;
+        ch = Math.Max(ch - answerH - 10, 180); // Trừ đi khoảng trống cho answer và slot, đảm bảo còn đủ chỗ rải số (ít nhất 150px)
+
+        Rect scatterZone = new(10, 10, cw - 20, ch - 20);
 
         var occupied = new List<Rect>();
         var shuffled = numbers.OrderBy(_ => rand.Next()).ToList();
-        int distMode = rand.Next(3); // 0=top, 1=bottom, 2=mixed
 
         for (int i = 0; i < shuffled.Count; i++)
         {
             int num = shuffled[i];
-            Rect targetZone = distMode == 0 ? topZone
-                            : distMode == 1 ? bottomZone
-                            : (i % 2 == 0 ? topZone : bottomZone);
-
-            double sz = Math.Clamp(rand.Next(55, 85), 40, Math.Min(targetZone.Height, 80));
+            double size = rand.Next(55, 85);
 
             // Tìm vị trí không chồng
             Rect pos = Rect.Zero;
             // Tang so lan thu de tranh co cum
-            for (int attempt = 0; attempt < 150 && pos == Rect.Zero; attempt++)
+            for (int attempt = 0; attempt < 150; attempt++)
             {
-                double x = targetZone.X + rand.NextDouble() * Math.Max(0, targetZone.Width - sz);
-                double y = targetZone.Y + rand.NextDouble() * Math.Max(0, targetZone.Height - sz);
-                Rect candidate = new(x, y, sz, sz);
+                double x = scatterZone.X + rand.NextDouble() * Math.Max(0, scatterZone.Width - size);
+                double y = scatterZone.Y + rand.NextDouble() * Math.Max(0, scatterZone.Height - size);
+                Rect candidate = new(x, y, size, size);
                 if (!occupied.Any(r => r.IntersectsWith(candidate)))
+                {
                     pos = candidate;
+                    break;
+                }
             }
 
             // Neu van that bai, dat o vi tri ngau nhien thay vi xep hang
             if (pos == Rect.Zero) // fallback
-                pos = new Rect(targetZone.X + rand.NextDouble() * (targetZone.Width - sz), targetZone.Y + rand.NextDouble() * (targetZone.Height - sz), sz, sz);
+                pos = new Rect(scatterZone.X, scatterZone.Y, size, size);
 
             occupied.Add(pos);
 
@@ -1875,14 +1884,14 @@ public partial class GamePage : ContentPage
                 Stroke = Colors.White,
                 StrokeThickness = 3,
                 BackgroundColor = Color.FromArgb(colors[i % colors.Length]),
-                HeightRequest = sz,
-                WidthRequest = sz,
-                StrokeShape = new RoundRectangle { CornerRadius = (float)(sz / 2.5) },
+                HeightRequest = size,
+                WidthRequest = size,
+                StrokeShape = new RoundRectangle { CornerRadius = (float)(size / 2.5) },
                 Rotation = rand.Next(-25, 26),
                 Content = new Label
                 {
                     Text = num.ToString(),
-                    FontSize = sz * 0.42,
+                    FontSize = size * 0.42,
                     FontAttributes = FontAttributes.Bold,
                     HorizontalOptions = LayoutOptions.Center,
                     VerticalOptions = LayoutOptions.Center,
@@ -1897,10 +1906,9 @@ public partial class GamePage : ContentPage
             border.Scale = 0;
             _ = border.ScaleTo(1.0, 400, Easing.SpringOut);
 
-            var capturedBorder = border;
             var capturedNum = num;
             var tap = new TapGestureRecognizer();
-            tap.Tapped += async (s, e) => await OnNumberTapped(capturedBorder, capturedNum);
+            tap.Tapped += async (s, e) => await OnNumberTapped(border, capturedNum);
             border.GestureRecognizers.Add(tap);
         }
     }
@@ -1908,46 +1916,54 @@ public partial class GamePage : ContentPage
     private async Task OnNumberTapped(Border view, int number)
     {
         if (_isProcessing) return;
+        _isProcessing = true;
 
-        int slotIndex = _orderingResult.Count;
-        if (slotIndex >= OrderingSlots.Children.Count) return;
-
-        if (OrderingSlots.Children[slotIndex] is not Border slotBorder) return;
-
-        // Ẩn số đã chọn
-        await view.ScaleTo(0, 200);
-        view.IsVisible = false;
-
-        // Điền vào ô trống
-        slotBorder.BackgroundColor = Colors.White;
-        slotBorder.StrokeDashArray = null;
-        slotBorder.Stroke = Colors.Orange;
-        slotBorder.Content = new Label
+        try
         {
-            Text = number.ToString(),
-            FontSize = 30,
-            FontAttributes = FontAttributes.Bold,
-            HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions = LayoutOptions.Center,
-            TextColor = Colors.Black
-        };
+            int slotIndex = _orderingResult.Count;
+            if (slotIndex >= OrderingSlots.Children.Count) return;
 
-        _orderingResult.Add(number);
+            if (OrderingSlots.Children[slotIndex] is not Border slotBorder) return;
 
-        if (_orderingResult.Count == _orderingTarget.Count)
+            // Ẩn số đã chọn
+            await view.ScaleTo(0, 200);
+            view.IsVisible = false;
+
+            // Điền vào ô trống
+            slotBorder.BackgroundColor = Colors.White;
+            slotBorder.StrokeDashArray = null;
+            slotBorder.Stroke = Colors.Orange;
+            slotBorder.Content = new Label
+            {
+                Text = number.ToString(),
+                FontSize = 30,
+                FontAttributes = FontAttributes.Bold,
+                HorizontalOptions = LayoutOptions.Center,
+                VerticalOptions = LayoutOptions.Center,
+                TextColor = Colors.Black
+            };
+
+            _orderingResult.Add(number);
+
+            if (_orderingResult.Count == _orderingTarget.Count)
+            {
+                if (_orderingResult.SequenceEqual(_orderingTarget))
+                {
+                    _isProcessing = true;
+                    await Task.Delay(600);
+                    await HandleWinCondition();
+                }
+                else
+                {
+                    _ = _tts.SpeakWithMoodAsync("Sai rồi, thử lại nhé!", VoiceMood.Sad);
+                    await Task.Delay(900);
+                    RenderQuestion(); // Vẽ lại câu hỏi
+                }
+            }
+        } 
+        finally
         {
-            if (_orderingResult.SequenceEqual(_orderingTarget))
-            {
-                _isProcessing = true;
-                await Task.Delay(600);
-                await HandleWinCondition();
-            }
-            else
-            {
-                _ = _tts.SpeakWithMoodAsync("Sai rồi, thử lại nhé!", VoiceMood.Sad);
-                await Task.Delay(900);
-                RenderQuestion(); // Vẽ lại câu hỏi
-            }
+            _isProcessing = false;
         }
     }
 
