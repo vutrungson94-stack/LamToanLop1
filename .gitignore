@@ -1,0 +1,91 @@
+##################################################
+# .NET / MAUI – BUILD OUTPUT (BẮT BUỘC IGNORE)
+##################################################
+
+# .NET build output
+bin/
+obj/
+
+# Rider / VS build artifacts
+**/bin/
+**/obj/
+
+##################################################
+# MAUI ANDROID (CỰC QUAN TRỌNG – TRÁNH PATH QUÁ DÀI)
+##################################################
+
+**/android/bin/
+**/android/obj/
+
+# Generated Java / class files
+**/*.class
+**/*.dex
+**/*.apk
+**/*.aab
+
+##################################################
+# MAUI iOS / MacCatalyst
+##################################################
+
+**/iOS/bin/
+**/iOS/obj/
+**/MacCatalyst/bin/
+**/MacCatalyst/obj/
+
+##################################################
+# MAUI Windows
+##################################################
+
+**/Windows/bin/
+**/Windows/obj/
+
+##################################################
+# Visual Studio / VS Code
+##################################################
+
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+##################################################
+# OS / SYSTEM FILES
+##################################################
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+##################################################
+# LOGS / CACHE / TEMP
+##################################################
+
+*.log
+*.tmp
+*.temp
+*.cache
+
+##################################################
+# TEST / COVERAGE
+##################################################
+
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+##################################################
+# OPTIONAL – PUBLISH / PACKAGE
+##################################################
+
+publish/
+artifacts/
