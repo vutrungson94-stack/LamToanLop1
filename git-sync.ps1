@@ -48,14 +48,25 @@ if ($forbidden) {
     exit 1
 }
 
-# 8. BUILD TRƯỚC KHI COMMIT
-Write-Host "🔧 Đang build MAUI (Android)..."
-dotnet build -f net9.0-android
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Build thất bại – KHÔNG commit, KHÔNG push!"
-    exit 1
+# 8. BUILD TRƯỚC KHI COMMIT (nếu có dotnet)
+Write-Host "🔧 Kiểm tra môi trường build..."
+
+if (Get-Command dotnet -ErrorAction SilentlyContinue) {
+    Write-Host "🔧 Đang build MAUI (Android)..."
+    dotnet build -f $androidFramework
+    if ($LASTEXITCODE -ne 0) {
+        $answer = Read-Host "⚠️ Build thất bại. Có bỏ qua build để tiếp tục commit/push không? (y/n)"
+        if ($answer -ne "y") {
+            Write-Host "⏹️ Dừng script theo yêu cầu"
+            exit 1
+        }
+        Write-Host "⚠️ Bỏ qua bước build theo yêu cầu người dùng"
+    } else {
+        Write-Host "✅ Build thành công"
+    }
+} else {
+    Write-Host "⚠️ Không tìm thấy dotnet SDK – bỏ qua bước build"
 }
-Write-Host "✅ Build thành công"
 
 # 9. Nhập commit message (hoặc tự sinh)
 $commitMsg = Read-Host "✏️ Nhập nội dung commit (Enter để tự sinh)"
