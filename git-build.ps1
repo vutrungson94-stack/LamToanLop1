@@ -12,8 +12,20 @@ if (Test-Path $sshKeyPath) {
     $env:GIT_SSH_COMMAND = "ssh -i `"$sshKeyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
 }
 
-# 1. Tự động nhận diện lệnh GitHub CLI (gh hay gh.exe)
-$gh = if (Get-Command gh.exe -ErrorAction SilentlyContinue) { "gh.exe" } else { "gh" }
+# 1. Xác định GitHub CLI (ưu tiên gh.exe cùng thư mục script)
+$ghExePath = Join-Path $PSScriptRoot "gh.exe"
+
+if (Test-Path $ghExePath) {
+    $gh = $ghExePath
+}
+elseif (Get-Command gh -ErrorAction SilentlyContinue) {
+    $gh = "gh"
+}
+else {
+    Write-Host "❌ Không tìm thấy GitHub CLI (gh.exe hoặc gh)." -ForegroundColor Red
+    Write-Host "👉 Hãy đặt gh.exe cùng thư mục với git-build.ps1" -ForegroundColor Yellow
+    exit 1
+}
 
 Write-Host "`n==============================" -ForegroundColor Cyan
 Write-Host "   Kích Hoạt Build APK Từ Xa   " -ForegroundColor Cyan
