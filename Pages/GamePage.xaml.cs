@@ -1799,7 +1799,7 @@ public partial class GamePage : ContentPage
         ShapeContainer.Children.Add(s);
     }
 
-    private async Task RenderOrderingGame(List<int> numbers, string correctAnswer)
+    private void RenderOrderingGame(List<int> numbers, string correctAnswer)
     {
         _orderingResult.Clear();
         _orderingTarget.Clear();
@@ -1836,10 +1836,7 @@ public partial class GamePage : ContentPage
             Grid.SetColumn(slot, i);
         }
 
-        await MainThread.InvokeOnMainThreadAsync(async () =>
-        {
-            await Task.Delay(1); // Delay nhỏ để đảm bảo các slot đã được vẽ trước khi rải số
-        });
+        _ = DelayOnMainThread(1);
 
         // 2. Rải số nguồn vào SourceNumberContainer
         RecycleViewsInLayout(SourceNumberContainer);
@@ -1917,6 +1914,21 @@ public partial class GamePage : ContentPage
             var tap = new TapGestureRecognizer();
             tap.Tapped += async (s, e) => await OnNumberTapped(border, capturedNum);
             border.GestureRecognizers.Add(tap);
+        }
+    }
+
+    private async Task DelayOnMainThread(int ms)
+    {
+        try
+        {
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await Task.Delay(ms); // Delay nhỏ để đảm bảo các slot đã được vẽ trước khi rải số
+            });
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Delay error: {ex}");
         }
     }
 
