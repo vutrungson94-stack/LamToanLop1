@@ -87,7 +87,8 @@ jobs:
           -c Release `
           -f $env:TFM `
           -p:AndroidPackageFormat=apk `
-          -p:PublishTrimmed=true
+          -p:PublishTrimmed=true `
+          -p:AndroidEnableResourceShrinking=false 
 
     # --------------------------------------------------
     # 8. UPLOAD APK ĐỂ TẢI VỀ (Artifacts)
