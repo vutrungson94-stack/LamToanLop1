@@ -1,51 +1,24 @@
 ﻿#!/usr/bin/env pwsh
 
 # ==============================================================================
-# SCRIPT: git-sync.ps1
-# MỤC TIÊU: Tự động hóa quy trình Pull -> Build -> Commit -> Push
-# HỖ TRỢ: Chạy trên mọi máy (Cá nhân & Công ty không có quyền Admin)
+# SCRIPT: git-sync.ps1 (VIP PRO VERSION)
+# MỤC TIÊU: Tự động hóa Sync -> Build Test -> Push an toàn
+# TÍNH NĂNG: Hỗ trợ SSH, Auto-Branch, Nhận diện Codespaces, Silent Build
 # ==============================================================================
 
-# 0. Cấu hình SSH Di động (Giải quyết vấn đề máy công ty khóa quyền Admin/Service)
-# Tự tìm file ssh_id nằm cùng thư mục với script
+# 0. Cấu hình SSH Di động (Vượt rào máy công ty)
 $sshKeyPath = Join-Path $PSScriptRoot "ssh_id"
 if (Test-Path $sshKeyPath) {
-    # Ép Git dùng file key này trực tiếp, không cần bật dịch vụ ssh-agent của Windows
     $env:GIT_SSH_COMMAND = "ssh -i `"$sshKeyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
 }
 
-Write-Host "`n==============================" -ForegroundColor Cyan
-Write-Host "  Git Tự Động Sync – Build – Push  " -ForegroundColor Cyan
-Write-Host "==============================" -ForegroundColor Cyan
+Write-Host "`n=======================================" -ForegroundColor Cyan
+Write-Host " 🚀 GIT SYNC PRO – AUTO BUILD & PUSH " -ForegroundColor Cyan
+Write-Host "=======================================`n" -ForegroundColor Cyan
 
-# 1. Tự động nhận diện Framework từ file .csproj
-$projectFile = Get-ChildItem -Filter *.csproj | Select-Object -First 1
-$androidFramework = ""
-
-if ($projectFile) {
-    try {
-        [xml]$projectXml = Get-Content $projectFile.FullName -ErrorAction SilentlyContinue
-        # Tìm trong danh sách TargetFrameworks (số nhiều)
-        $androidFramework = ($projectXml.Project.PropertyGroup.TargetFrameworks -split ';' | Select-String -Pattern "net9.0-android")
-        
-        # Nếu không thấy (có thể dùng số ít TargetFramework)
-        if (-not $androidFramework) {
-            $androidFramework = $projectXml.Project.PropertyGroup.TargetFramework | Select-String -Pattern "net9.0-android"
-        }
-    } catch {
-        Write-Host "⚠️ Lỗi đọc file .csproj, sử dụng giá trị mặc định." -ForegroundColor Yellow
-    }
-}
-
-# Nếu không nhận diện được bản net9, mặc định về net9.0-android
-if ($androidFramework) {
-    Write-Host "🔍 Đã tự động nhận diện Framework: $androidFramework" -ForegroundColor Green
-} else {
-    $androidFramework = "net9.0-android" 
-    Write-Host "⚠️ Không tự nhận diện được, sử dụng mặc định: $androidFramework" -ForegroundColor Yellow
-}
-
-# 2. Kiểm tra môi trường Git
+# ==========================================================
+# 1. Kiểm tra môi trường Git & Nhận diện Nhánh
+# ==========================================================
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "❌ Lỗi: Git chưa được cài đặt hoặc chưa có trong PATH." -ForegroundColor Red
     exit 1
@@ -57,77 +30,132 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 3. Xử lý Pull code (Chỉ pull khi repo đang sạch để tránh conflict tự động)
+# [PRO UPGRADE]: Tự động lấy tên nhánh hiện tại
+$currentBranch = git branch --show-current
+if ([string]::IsNullOrWhiteSpace($currentBranch)) {
+    $currentBranch = "main" # Fallback an toàn
+}
+Write-Host "🌿 Đang làm việc trên nhánh: [$currentBranch]" -ForegroundColor Green
+
+# ==========================================================
+# 2. Xử lý Pull Code thông minh
+# ==========================================================
 $statusBefore = git status --porcelain
 if (-not $statusBefore) {
-    Write-Host "🔄 Repo sạch – đang pull code mới nhất từ GitHub..." -ForegroundColor Magenta
-    git pull --rebase origin main
+    Write-Host "🔄 Repo sạch – Đang đồng bộ code mới nhất từ GitHub..." -ForegroundColor Magenta
+    git pull --rebase origin $currentBranch
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Pull thất bại – vui lòng kiểm tra conflict thủ công!" -ForegroundColor Red
+        Write-Host "❌ Pull thất bại – Có conflict, vui lòng giải quyết thủ công!" -ForegroundColor Red
         exit 1
     }
 } else {
-    Write-Host "✏️ Phát hiện có thay đổi chưa commit – bỏ qua bước pull để tránh conflict." -ForegroundColor Gray
+    Write-Host "✏️ Phát hiện thay đổi cục bộ – Tạm bỏ qua Pull để bảo vệ code của bạn." -ForegroundColor DarkGray
 }
 
-# 4. Kiểm tra thay đổi sau khi sửa code
+# ==========================================================
+# 3. Kiểm tra thay đổi & Chặn rác
+# ==========================================================
 $status = git status --porcelain
 if (-not $status) {
-    Write-Host "✅ Không có thay đổi nào cần đồng bộ." -ForegroundColor Green
+    Write-Host "✅ Không có thay đổi nào mới để Push. Đi pha cafe thôi!" -ForegroundColor Green
     exit 0
 }
 
-Write-Host "📂 Các file đã thay đổi:" -ForegroundColor Yellow
-Write-Host $status
+Write-Host "`n📂 Các file đã sửa đổi:" -ForegroundColor Yellow
+$status | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
 
-# 5. Chặn các file rác (bin/obj) lọt vào commit
-$forbidden = $status | Select-String -Pattern "bin/|obj/"
-if ($forbidden) {
-    Write-Host "❌ Lỗi: Phát hiện file trong bin/ hoặc obj/ chưa được ignore. Commit bị chặn!" -ForegroundColor Red
+# Chặn file rác
+if ($status -match "bin/|obj/") {
+    Write-Host "`n❌ CẢNH BÁO: Phát hiện thư mục bin/ hoặc obj/ lọt vào Git!" -ForegroundColor Red
+    Write-Host "👉 Hãy thêm 'bin/' và 'obj/' vào file .gitignore trước khi tiếp tục." -ForegroundColor Yellow
     exit 1
 }
 
-# 6. Build thử nghiệm trước khi Push
-Write-Host "`n🔧 Đang build kiểm tra lỗi ($androidFramework)..." -ForegroundColor Cyan
-if (Get-Command dotnet -ErrorAction SilentlyContinue) {
-    dotnet build -f $androidFramework
+# ==========================================================
+# 4. Nhận diện Framework & Môi trường Build
+# ==========================================================
+Write-Host "`n🔍 Đang kiểm tra môi trường Build..." -ForegroundColor Cyan
+
+# [PRO UPGRADE]: Dò Framework an toàn và chính xác hơn
+$projectFile = Get-ChildItem -Filter *.csproj | Select-Object -First 1
+$androidFramework = "net9.0-android" # Mặc định
+
+if ($projectFile) {
+    try {
+        [xml]$xml = Get-Content $projectFile.FullName -ErrorAction SilentlyContinue
+        $foundTfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match 'android' } | Select-Object -First 1
+        if ($foundTfm) { $androidFramework = $foundTfm }
+    } catch {}
+}
+
+# ==========================================================
+# 5. Build Kiểm thử (Có nhận diện Codespaces)
+# ==========================================================
+if ($env:CODESPACES -eq "true") {
+    # Đang chạy trên GitHub Web Codespaces -> Bỏ qua Build cục bộ
+    Write-Host "☁️  Môi trường: Codespaces (Thiếu Android SDK cục bộ)." -ForegroundColor Yellow
+    Write-Host "👉 Tự động bỏ qua Build Test. Việc Build sẽ giao cho GitHub Actions!" -ForegroundColor Green
+}
+elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
+    # Đang chạy trên máy tính cá nhân -> Build kiểm tra
+    Write-Host "💻 Môi trường: Local. Đang build ngầm kiểm tra cú pháp ($androidFramework)..." -ForegroundColor Cyan
+    
+    # [PRO UPGRADE]: Chạy build ẩn danh (quiet), chỉ văng lỗi khi thực sự hỏng
+    dotnet build -f $androidFramework -v q --nologo
+    
     if ($LASTEXITCODE -ne 0) {
-        $answer = Read-Host "⚠️ Build thất bại. Bạn có muốn BỎ QUA lỗi để tiếp tục Push không? (y/n)"
+        Write-Host "`n❌ LỖI CODE: Quá trình Build thất bại!" -ForegroundColor Red
+        $answer = Read-Host "⚠️ Bạn có muốn BỎ QUA lỗi và cứ thế Push lên không? (y/n)"
         if ($answer -ne "y") {
-            Write-Host "⏹️ Đã dừng script theo yêu cầu của bạn." -ForegroundColor Red
+            Write-Host "⏹️ Đã dừng script để bạn sửa code." -ForegroundColor DarkGray
             exit 1
         }
     } else {
-        Write-Host "✅ Build thành công. Sẵn sàng Push." -ForegroundColor Green
+        Write-Host "✅ Code chuẩn Không có lỗi cú pháp!" -ForegroundColor Green
     }
 } else {
-    Write-Host "⚠️ Không tìm thấy dotnet SDK – bỏ qua bước build." -ForegroundColor Yellow
+    Write-Host "⚠️ Không tìm thấy .NET SDK cục bộ – Bỏ qua bước Build test." -ForegroundColor DarkGray
 }
 
-# 7. Thực hiện Commit
-$commitMsg = Read-Host "`n✏️ Nhập nội dung commit (Nhấn Enter để tự sinh tên)"
+# ==========================================================
+# 6. Commit an toàn
+# ==========================================================
+Write-Host "`n✍️  Đóng gói Commit..." -ForegroundColor Cyan
+$commitMsg = Read-Host "👉 Nhập nội dung cập nhật (Nhấn Enter để dùng giờ hệ thống)"
 if ([string]::IsNullOrWhiteSpace($commitMsg)) {
-    $commitMsg = "Auto sync " + (Get-Date -Format "yyyy-MM-dd HH:mm")
+    $commitMsg = "Cập nhật lúc " + (Get-Date -Format "HH:mm dd/MM/yyyy")
 }
 
 git add .
-git commit -m "$commitMsg"
+git commit -m "$commitMsg" | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Commit thất bại." -ForegroundColor Red
+    Write-Host "❌ Đóng gói (Commit) thất bại." -ForegroundColor Red
     exit 1
 }
 
-# 8. Thực hiện Push
-Write-Host "🚀 Đang push code lên GitHub..." -ForegroundColor Cyan
-git push origin main
+# ==========================================================
+# 7. Push Code
+# ==========================================================
+Write-Host "`n🚀 Đang phóng code lên GitHub ($currentBranch)..." -ForegroundColor Cyan
+git push origin $currentBranch
+
 if ($LASTEXITCODE -ne 0) {
-    $answer = Read-Host "⚠️ Push thường thất bại. Bạn có muốn dùng Force-with-lease không? (y/n)"
+    Write-Host "`n⚠️ GitHub từ chối nhận code (Thường do xung đột lịch sử)." -ForegroundColor Yellow
+    $answer = Read-Host "👉 Bạn có muốn ép đẩy (Force-with-lease) không? (y/n)"
     if ($answer -eq "y") {
-        git push origin main --force-with-lease
+        Write-Host "🔥 Đang ép đẩy dữ liệu..." -ForegroundColor DarkGray
+        git push origin $currentBranch --force-with-lease
     } else {
-        Write-Host "⏹️ Huỷ bỏ thao tác Push." -ForegroundColor Red
+        Write-Host "⏹️ Huỷ thao tác Push. Bạn hãy kiểm tra lại git log." -ForegroundColor Red
         exit 1
     }
 }
 
-Write-Host "`n✅ Sync – Build – Push THÀNH CÔNG 🎉" -ForegroundColor Green
+# ==========================================================
+# 8. Hoàn tất
+# ==========================================================
+Write-Host "`n🎉 ĐỒNG BỘ THÀNH CÔNG!" -ForegroundColor Green
+Write-Host "👉 GitHub Actions đang tự động Build APK/AAB cho bạn rồi đó." -ForegroundColor Gray
+
+# Phát âm thanh ting ting
+Write-Host "`a" -NoNewline
