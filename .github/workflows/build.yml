@@ -1,4 +1,4 @@
-name: Build MAUI Android APK
+name: Build MAUI Android (APK + AAB)
 
 on:
   push:
@@ -10,91 +10,197 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # --------------------------------------------------
-    # 1. Checkout source code
-    # --------------------------------------------------
+    # ===============================
+    # Checkout
+    # ===============================
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # --------------------------------------------------
-    # 2. Auto bump Android versionCode
-    # --------------------------------------------------
+    # ===============================
+    # Cache NuGet (TỐC ĐỘ)
+    # ===============================
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          nuget-${{ runner.os }}-
+
+    # ===============================
+    # Cache MAUI workloads (TỐC ĐỘ)
+    # ===============================
+    - name: Cache MAUI workloads
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:\Users\runneradmin\.dotnet\workloads
+        key: maui-workload-${{ runner.os }}-${{ steps.sdk.outputs.sdk }}
+
+    # ===============================
+    # Cache Android SDK (TỐC ĐỘ)
+    # ===============================
+    - name: Cache Android SDK
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:\Users\runneradmin\AppData\Local\Android\sdk\platforms
+          C:\Users\runneradmin\AppData\Local\Android\sdk\build-tools
+        key: android-sdk-${{ runner.os }}-34
+
+    # ===============================
+    # Bump versionCode
+    # ===============================
     - name: Auto bump Android versionCode
       shell: pwsh
       run: |
         [xml]$xml = Get-Content *.csproj
         $pg = $xml.Project.PropertyGroup | Where-Object { $_.ApplicationVersion }
-        if (-not $pg) {
-          Write-Error "Không tìm thấy ApplicationVersion"
-          exit 1
-        }
-
-        $old = [int]$pg.ApplicationVersion
-        $new = $old + 1
-        $pg.ApplicationVersion = $new
+        $pg.ApplicationVersion = [int]$pg.ApplicationVersion + 1
         $xml.Save((Resolve-Path "*.csproj").Path)
 
-        Write-Host "✅ Android versionCode bumped: $old -> $new"
-
-    # --------------------------------------------------
-    # 3. Read .NET SDK version from global.json
-    # --------------------------------------------------
+    # ===============================
+    # Read SDK from global.json
+    # ===============================
     - name: Read .NET SDK version
+      id: sdk
       shell: pwsh
       run: |
         $json = Get-Content global.json | ConvertFrom-Json
-        $majorMinor = $json.sdk.version.Substring(0, $json.sdk.version.LastIndexOf("."))
-        echo "SDK_VERSION=$majorMinor.x" >> $env:GITHUB_ENV
+        $mm = $json.sdk.version.Substring(0, $json.sdk.version.LastIndexOf("."))
+        echo "sdk=$mm.x" >> $env:GITHUB_OUTPUT
 
-    # --------------------------------------------------
-    # 4. Setup .NET SDK
-    # --------------------------------------------------
+    # ===============================
+    # Setup .NET
+    # ===============================
     - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: ${{ env.SDK_VERSION }}
+        dotnet-version: ${{ steps.sdk.outputs.sdk }}
 
-    # --------------------------------------------------
-    # 5. Install MAUI workload
-    # --------------------------------------------------
+    # ===============================
+    # Install MAUI
+    # ===============================
     - name: Install MAUI workload
       run: dotnet workload install maui
 
-    # --------------------------------------------------
-    # 6. Detect Android TargetFramework
-    # --------------------------------------------------
+    # ===============================
+    # Detect Android TFM
+    # ===============================
     - name: Detect Android TargetFramework
       shell: pwsh
       run: |
-        $csproj = Get-ChildItem *.csproj | Select-Object -First 1
-        [xml]$xml = Get-Content $csproj.FullName
-
+        [xml]$xml = Get-Content *.csproj
         $tfs = @()
         foreach ($pg in $xml.Project.PropertyGroup) {
-          if ($pg.TargetFramework)  { $tfs += $pg.TargetFramework }
+          if ($pg.TargetFramework) { $tfs += $pg.TargetFramework }
           if ($pg.TargetFrameworks) { $tfs += ($pg.TargetFrameworks -split ';') }
         }
-
         $android = $tfs | Where-Object { $_ -match "android" } | Select-Object -First 1
         echo "TFM=$android" >> $env:GITHUB_ENV
 
-    # --------------------------------------------------
-    # 7. BUILD & PUBLISH APK  ✅✅✅ (ĐÂY LÀ NƠI RA FILE APK)
-    # --------------------------------------------------
-    - name: Publish APK
+    
+    # ===============================
+    # Detect keystore existence
+    # ===============================
+    - name: Detect keystore
+      id: keystore
+      shell: pwsh
+      run: |
+        if ("${{ secrets.ANDROID_KEYSTORE_BASE64 }}" -ne "") {
+          echo "HAS_KEYSTORE=true" >> $env:GITHUB_OUTPUT
+        } else {
+          echo "HAS_KEYSTORE=false" >> $env:GITHUB_OUTPUT
+        }
+
+    # ===============================
+    # Decode Keystore
+    # ===============================
+    - name: Decode keystore
+      if: steps.keystore.outputs.HAS_KEYSTORE == 'true'
+      shell: pwsh
+      run: |
+        $bytes = [System.Convert]::FromBase64String("${{ secrets.ANDROID_KEYSTORE_BASE64 }}")
+        [IO.File]::WriteAllBytes("android.keystore", $bytes)
+
+    - name: Publish APK + AAB (UNSIGNED)
+      if: steps.keystore.outputs.HAS_KEYSTORE == 'false'
       run: |
         dotnet publish `
           -c Release `
           -f $env:TFM `
           -p:AndroidPackageFormat=apk `
-          -p:PublishTrimmed=true `
-          -p:AndroidEnableResourceShrinking=false 
+          -p:PublishTrimmed=false `
+          -p:AndroidEnableResourceShrinking=false `
+          -p:AndroidLinkTool=None `
+          -p:AndroidLinkMode=None
 
-    # --------------------------------------------------
-    # 8. UPLOAD APK ĐỂ TẢI VỀ (Artifacts)
-    # --------------------------------------------------
-    - name: Upload APK
+        dotnet publish `
+          -c Release `
+          -f $env:TFM `
+          -p:AndroidPackageFormat=aab `
+          -p:PublishTrimmed=false `
+          -p:AndroidEnableResourceShrinking=false `
+          -p:AndroidLinkTool=None `
+          -p:AndroidLinkMode=None
+
+    # ===============================
+    # BUILD APK (FIX MAUI BUG)
+    # ===============================
+    - name: Publish APK + AAB (SIGNED)
+      if: steps.keystore.outputs.HAS_KEYSTORE == 'true'
+      run: |
+        dotnet publish `
+          -c Release `
+          -f $env:TFM `
+          -p:AndroidPackageFormat=apk `
+          -p:PublishTrimmed=false `
+          -p:AndroidEnableResourceShrinking=false `
+          -p:AndroidLinkTool=None `
+          -p:AndroidLinkMode=None `
+          -p:AndroidSigningKeyStore=android.keystore `
+          -p:AndroidSigningStorePass=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} `
+          -p:AndroidSigningKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} `
+          -p:AndroidSigningKeyPass=${{ secrets.ANDROID_KEY_PASSWORD }}
+
+        dotnet publish `
+          -c Release `
+          -f $env:TFM `
+          -p:AndroidPackageFormat=aab `
+          -p:PublishTrimmed=false `
+          -p:AndroidEnableResourceShrinking=false `
+          -p:AndroidLinkTool=None `
+          -p:AndroidLinkMode=None `
+          -p:AndroidSigningKeyStore=android.keystore `
+          -p:AndroidSigningStorePass=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} `
+          -p:AndroidSigningKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} `
+          -p:AndroidSigningKeyPass=${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    # ===============================
+    # Upload Artifact
+    # ===============================
+    - name: Upload APK + AAB
       uses: actions/upload-artifact@v4
       with:
-        name: android-apk
-        path: bin/Release/**/publish/*.apk
+        name: android-build
+        path: bin/Release/**/publish/*.(apk|aab)
+
+    - name: Set release label
+      shell: pwsh
+      run: |
+        if ("${{ steps.keystore.outputs.HAS_KEYSTORE }}" -eq "true") {
+          echo "REL_LABEL=signed" >> $env:GITHUB_ENV
+        } else {
+          echo "REL_LABEL=unsigned" >> $env:GITHUB_ENV
+        }
+
+    # ===============================
+    # GitHub Release
+    # ===============================
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ github.run_number }}-${{ env.REL_LABEL }}
+        name: Release v${{ github.run_number }} (${{ env.REL_LABEL }})
+        files: bin/Release/**/publish/*.*

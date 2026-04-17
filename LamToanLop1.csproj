@@ -2,58 +2,48 @@
 
 	<PropertyGroup>
 		<TargetFrameworks>net9.0-android</TargetFrameworks>
-		<TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net9.0-windows10.0.19041.0</TargetFrameworks>
+		<TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">
+			$(TargetFrameworks);net9.0-windows10.0.19041.0
+		</TargetFrameworks>
 
-		<LangVersion>latest</LangVersion>
-		<OutputType>Exe</OutputType>
-		<RootNamespace>LamToanLop1</RootNamespace>
 		<UseMaui>true</UseMaui>
 		<SingleProject>true</SingleProject>
+		<OutputType>Exe</OutputType>
+		
+		<RootNamespace>LamToanLop1</RootNamespace>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+
 		<ApplicationTitle>Bé làm toán lớp 1</ApplicationTitle>
 		<ApplicationId>com.vutrungson.lamtoanlop1</ApplicationId>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
+
 		<WindowsPackageType>None</WindowsPackageType>
-		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
-		<TargetAndroidVersion>34</TargetAndroidVersion>
-		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
-		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
-		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
-		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
-	<PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
-		<RuntimeIdentifier>android-arm64</RuntimeIdentifier>
-		<!-- Tự động sử dụng Android SDK từ thư mục mặc định nếu tồn tại -->
-		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' AND Exists('$(HOME)/android-sdk')">$(HOME)/android-sdk</AndroidSdkDirectory>
+	<propertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
+		<TargetAndroidVersion>34</TargetAndroidVersion>
+	</propertyGroup>
+
+	<PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
+		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
 		<DebugSymbols>true</DebugSymbols>
 		<DebugType>portable</DebugType>
 		<AndroidIncludeDebugSymbols>true</AndroidIncludeDebugSymbols>
-		<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
-		<AndroidLinkMode>None</AndroidLinkMode>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)'=='Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
-		<DebugSymbols>true</DebugSymbols>
-		<AndroidIncludeDebugSymbols>true</AndroidIncludeDebugSymbols>
-		<AndroidLinkMode>None</AndroidLinkMode>
+		<PublishTrimmed>false</PublishTrimmed>	
 		<RunAOTCompilation>false</RunAOTCompilation>
-		<AndroidUseLlvm>false</AndroidUseLlvm>
-		<PublishTrimmed>false</PublishTrimmed>
-		<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
-		<AndroidPackageFormat>apk</AndroidPackageFormat>
-		<AndroidKeyStore>true</AndroidKeyStore>
-		<AndroidSigningKeyStore>$(HOME)/.android/debug.keystore</AndroidSigningKeyStore>
-		<AndroidSigningKeyAlias>androiddebugkey</AndroidSigningKeyAlias>
-		<AndroidSigningKeyPass>android</AndroidSigningKeyPass>
-		<AndroidSigningStorePass>android</AndroidSigningStorePass>
-		<AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
+		<AndroidUseLlvm>false</AndroidUseLlvm>	
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -71,24 +61,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<MauiXaml Update="App.xaml">
-			<Generator>MSBuild:Compile</Generator>
-		</MauiXaml>
-		<MauiXaml Update="AppShell.xaml">
-			<Generator>MSBuild:Compile</Generator>
-		</MauiXaml>
-		<MauiXaml Update="MainPage.xaml">
-			<Generator>MSBuild:Compile</Generator>
-		</MauiXaml>
-		<MauiXaml Update="Pages\AnimalPage.xaml">
-			<Generator>MSBuild:Compile</Generator>
-		</MauiXaml>
-		<MauiXaml Update="Pages\GamePage.xaml">
-			<Generator>MSBuild:Compile</Generator>
-		</MauiXaml>
-		<MauiXaml Update="Pages\SplashPage.xaml">
-		  <Generator>MSBuild:Compile</Generator>
-		</MauiXaml>
+		<MauiXaml Update="App.xaml" Generator="MSBuild:Compile" />
+		<MauiXaml Update="AppShell.xaml" Generator="MSBuild:Compile" />
+		<MauiXaml Update="MainPage.xaml" Generator="MSBuild:Compile" />
+		<MauiXaml Update="Pages\AnimalPage.xaml" Generator="MSBuild:Compile" />
+		<MauiXaml Update="Pages\GamePage.xaml" Generator="MSBuild:Compile" />
+		<MauiXaml Update="Pages\SplashPage.xaml" Generator="MSBuild:Compile" />
 	</ItemGroup>
 
 	<!-- Nếu KHÔNG build Windows thì dùng block này -->
