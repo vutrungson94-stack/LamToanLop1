@@ -17,7 +17,7 @@ jobs:
       uses: actions/checkout@v4
 
     # ===============================
-    # Cache NuGet (TỐC ĐỘ)
+    # Cache NuGet
     # ===============================
     - name: Cache NuGet packages
       uses: actions/cache@v4
@@ -29,17 +29,17 @@ jobs:
           nuget-${{ runner.os }}-
 
     # ===============================
-    # Cache MAUI workloads (TỐC ĐỘ)
+    # Cache MAUI workload
     # ===============================
-    - name: Cache MAUI workloads
+    - name: Cache MAUI workload
       uses: actions/cache@v4
       with:
         path: |
           C:\Users\runneradmin\.dotnet\workloads
-        key: maui-workload-${{ runner.os }}-${{ steps.sdk.outputs.sdk }}
+        key: maui-${{ runner.os }}-${{ hashFiles('global.json') }}
 
     # ===============================
-    # Cache Android SDK (TỐC ĐỘ)
+    # Cache Android SDK (partial)
     # ===============================
     - name: Cache Android SDK
       uses: actions/cache@v4
@@ -50,7 +50,7 @@ jobs:
         key: android-sdk-${{ runner.os }}-34
 
     # ===============================
-    # Bump versionCode
+    # Auto bump versionCode
     # ===============================
     - name: Auto bump Android versionCode
       shell: pwsh
@@ -61,7 +61,7 @@ jobs:
         $xml.Save((Resolve-Path "*.csproj").Path)
 
     # ===============================
-    # Read SDK from global.json
+    # Read .NET SDK from global.json
     # ===============================
     - name: Read .NET SDK version
       id: sdk
@@ -100,9 +100,8 @@ jobs:
         $android = $tfs | Where-Object { $_ -match "android" } | Select-Object -First 1
         echo "TFM=$android" >> $env:GITHUB_ENV
 
-    
     # ===============================
-    # Detect keystore existence
+    # Detect keystore
     # ===============================
     - name: Detect keystore
       id: keystore
@@ -115,7 +114,7 @@ jobs:
         }
 
     # ===============================
-    # Decode Keystore
+    # Decode keystore (only if exists)
     # ===============================
     - name: Decode keystore
       if: steps.keystore.outputs.HAS_KEYSTORE == 'true'
@@ -124,7 +123,10 @@ jobs:
         $bytes = [System.Convert]::FromBase64String("${{ secrets.ANDROID_KEYSTORE_BASE64 }}")
         [IO.File]::WriteAllBytes("android.keystore", $bytes)
 
-    - name: Publish APK + AAB (UNSIGNED)
+    # ===============================
+    # APK UNSIGNED (always allowed)
+    # ===============================
+    - name: Publish APK (UNSIGNED)
       if: steps.keystore.outputs.HAS_KEYSTORE == 'false'
       run: |
         dotnet publish `
@@ -134,19 +136,20 @@ jobs:
           -p:PublishTrimmed=false `
           -p:AndroidEnableResourceShrinking=false `
           -p:AndroidLinkTool=None `
-          -p:AndroidLinkMode=None
-
-        dotnet publish `
-          -c Release `
-          -f $env:TFM `
-          -p:AndroidPackageFormat=aab `
-          -p:PublishTrimmed=false `
-          -p:AndroidEnableResourceShrinking=false `
-          -p:AndroidLinkTool=None `
-          -p:AndroidLinkMode=None
+          -p:AndroidLinkMode=None `
+          -p:AndroidLocales=vi;en
 
     # ===============================
-    # BUILD APK (FIX MAUI BUG)
+    # 🚫 BLOCK PLAY (AAB) IF UNSIGNED
+    # ===============================
+    - name: Guard Play upload (require signed keystore)
+      if: steps.keystore.outputs.HAS_KEYSTORE == 'false'
+      shell: pwsh
+      run: |
+        Write-Error "❌ AAB (Play Store) bị chặn vì chưa có keystore"
+
+    # ===============================
+    # APK + AAB SIGNED
     # ===============================
     - name: Publish APK + AAB (SIGNED)
       if: steps.keystore.outputs.HAS_KEYSTORE == 'true'
@@ -159,6 +162,7 @@ jobs:
           -p:AndroidEnableResourceShrinking=false `
           -p:AndroidLinkTool=None `
           -p:AndroidLinkMode=None `
+          -p:AndroidLocales=vi;en `
           -p:AndroidSigningKeyStore=android.keystore `
           -p:AndroidSigningStorePass=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} `
           -p:AndroidSigningKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} `
@@ -172,28 +176,20 @@ jobs:
           -p:AndroidEnableResourceShrinking=false `
           -p:AndroidLinkTool=None `
           -p:AndroidLinkMode=None `
+          -p:AndroidLocales=vi;en `
           -p:AndroidSigningKeyStore=android.keystore `
           -p:AndroidSigningStorePass=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} `
           -p:AndroidSigningKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} `
           -p:AndroidSigningKeyPass=${{ secrets.ANDROID_KEY_PASSWORD }}
 
     # ===============================
-    # Upload Artifact
+    # Upload artifacts
     # ===============================
-    - name: Upload APK + AAB
+    - name: Upload Android artifacts
       uses: actions/upload-artifact@v4
       with:
         name: android-build
         path: bin/Release/**/publish/*.(apk|aab)
-
-    - name: Set release label
-      shell: pwsh
-      run: |
-        if ("${{ steps.keystore.outputs.HAS_KEYSTORE }}" -eq "true") {
-          echo "REL_LABEL=signed" >> $env:GITHUB_ENV
-        } else {
-          echo "REL_LABEL=unsigned" >> $env:GITHUB_ENV
-        }
 
     # ===============================
     # GitHub Release
@@ -201,6 +197,6 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ github.run_number }}-${{ env.REL_LABEL }}
-        name: Release v${{ github.run_number }} (${{ env.REL_LABEL }})
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
         files: bin/Release/**/publish/*.*
