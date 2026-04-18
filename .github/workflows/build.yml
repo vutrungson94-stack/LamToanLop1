@@ -20,9 +20,6 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # ==========================================================
-  # NHÁNH CHỦ ĐẠO: ANDROID (Tạo Release trước)
-  # ==========================================================
   build-android:
     name: 📱 Build & Release Android
     runs-on: ubuntu-latest
@@ -35,15 +32,14 @@ jobs:
       shell: pwsh
       run: |
         $json = Get-Content global.json | ConvertFrom-Json
-        $json.sdk.rollForward = "patch"
+        $json.sdk.rollForward = "latestMinor"
         $json | ConvertTo-Json -Depth 10 | Set-Content global.json
         Write-Host "✅ Đã cấu hình global.json!" -ForegroundColor Cyan
 
-    - name: 🛠️  Setup .NET
+    - name: 🛠️ Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-        global-json-file: ${{ hashFiles('global.json') != '' && 'global.json' || '' }}
 
     - name: 🕒 Cache NuGet (Android)
       uses: actions/cache@v4
@@ -56,27 +52,33 @@ jobs:
       env:
         DOTNET_CLI_TELEMETRY_OPTOUT: true
         DOTNET_NOLOGO: true
-        
+
     - name: 📦 Build Android
       shell: pwsh
       run: |
+        # ✅ Lấy đúng file .csproj (không phải .slnx hay .sln)
         $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
+        Write-Host "✅ Project: $($csproj.FullName)"
+
         [xml]$xml = Get-Content $csproj.FullName
-        # SỬA LỖI: Match trực tiếp với 'android' vì không có matrix ở đây
-        $tfm = $xml.Project.PropertyGroup 
-          | Foreach-Object { $_.TargetFrameworks } 
-          | Where-Object { $_ -match 'android' } 
+        $tfm = $xml.Project.PropertyGroup `
+          | ForEach-Object { $_.TargetFrameworks } `
+          | Where-Object { $_ -match 'android' } `
           | Select-Object -First 1
-        
+
         if ([string]::IsNullOrWhiteSpace($tfm)) {
           Write-Error "❌ Không tìm thấy TargetFramework android trong .csproj"
           exit 1
-        }  
+        }
+
+        Write-Host "✅ TFM: $tfm"
 
         $format = "${{ github.event.inputs.package_format }}"
         if ([string]::IsNullOrWhiteSpace($format)) { $format = "apk" }
-        
-        dotnet publish -c Release -f $tfm -p:RunAOTCompilation=true -p:PublishTrimmed=true -p:AndroidPackageFormat=$format
+
+        # ✅ Truyền thẳng đường dẫn csproj vào để tránh lỗi MSB1011
+        dotnet publish $csproj.FullName -c Release -f $tfm `
+          -p:AndroidPackageFormat=$format
 
     - name: 📁 Organize Android Artifacts
       if: success()
@@ -85,9 +87,11 @@ jobs:
         $baseDir = "publish-output"
         $platformDir = "$baseDir/android"
         New-Item -ItemType Directory -Path "$platformDir/apk", "$platformDir/aab" -Force | Out-Null
-        Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -match 'apk|aab' -and $_.FullName -notlike "*$baseDir*" } | ForEach-Object {
-            if ($_.Extension -eq ".apk") { Move-Item $_.FullName "$platformDir/apk" -Force }
-            elseif ($_.Extension -eq ".aab") { Move-Item $_.FullName "$platformDir/aab" -Force }
+        Get-ChildItem -Path . -Recurse -File | Where-Object {
+          $_.Extension -match 'apk|aab' -and $_.FullName -notlike "*$baseDir*"
+        } | ForEach-Object {
+          if ($_.Extension -eq ".apk") { Move-Item $_.FullName "$platformDir/apk" -Force }
+          elseif ($_.Extension -eq ".aab") { Move-Item $_.FullName "$platformDir/aab" -Force }
         }
 
     - name: 📤 Upload Artifacts
@@ -105,9 +109,6 @@ jobs:
         files: publish-output/**
         generate_release_notes: true
 
-  # ==========================================================
-  # NHÁNH PHỤ: APPLE (Đính kèm thêm vào Release đã tạo)
-  # ==========================================================
   build-apple:
     name: 🍎 ${{ matrix.platform }}
     needs: build-android
@@ -124,14 +125,23 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-        global-json-file: ${{ hashFiles('global.json') != '' && 'global.json' || '' }}
 
     - name: ⚡ Install MAUI ${{ matrix.platform }}
-      run: dotnet workload install maui-${{ matrix.platform }} --no-history --nologo
-      
+      run: dotnet workload install maui-${{ matrix.platform }}
+      env:
+        DOTNET_CLI_TELEMETRY_OPTOUT: true
+        DOTNET_NOLOGO: true
+
     - name: 📦 Build Apple
-      run: dotnet publish -c Release -f net9.0-${{ matrix.platform }} -p:RunAOTCompilation=true -p:PublishTrimmed=true
-      
+      shell: pwsh
+      run: |
+        # ✅ Cũng lấy đúng csproj, tránh MSB1011
+        $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
+        Write-Host "✅ Project: $($csproj.FullName)"
+
+        # ✅ Đổi net9.0 → net10.0
+        dotnet publish $csproj.FullName -c Release -f net10.0-${{ matrix.platform }}
+
     - name: 📁 Organize Apple Artifacts
       if: success()
       shell: pwsh
@@ -139,13 +149,15 @@ jobs:
         $baseDir = "publish-output"
         $platformDir = "$baseDir/${{ matrix.platform }}"
         New-Item -ItemType Directory -Path "$platformDir/apple" -Force | Out-Null
-        Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -match 'pkg|dmg|app' -and $_.FullName -notlike "*$baseDir*" } | ForEach-Object {
-            Move-Item $_.FullName "$platformDir/apple" -Force
+        Get-ChildItem -Path . -Recurse -File | Where-Object {
+          $_.Extension -match 'pkg|dmg|app' -and $_.FullName -notlike "*$baseDir*"
+        } | ForEach-Object {
+          Move-Item $_.FullName "$platformDir/apple" -Force
         }
 
     - name: 🚀 Update Release with Apple Files
       if: success()
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ github.run_number }} # Dùng chung tag để đính kèm vào bản Android đã tạo
+        tag_name: build-${{ github.run_number }}
         files: publish-output/**
