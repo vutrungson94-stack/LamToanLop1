@@ -104,10 +104,10 @@ if ($env:CODESPACES -eq "true") {
 }
 elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
     # Đang chạy trên máy tính cá nhân -> Build kiểm tra
-    Write-Host "💻 Môi trường: Local. Đang build ngầm kiểm tra cú pháp ($androidFramework)..." -ForegroundColor Cyan
+    Write-Host "💻 Môi trường: Local. Đang build ngầm kiểm tra cú pháp ($buildTarget)..." -ForegroundColor Cyan
     
     # Chạy build nhẹ nhàng (Chỉ kiểm tra lỗi, không xuất file)
-    dotnet build $buildTarget -v q --nologo
+    dotnet build $projectFile.FullName -f $buildTarget -v q --nologo
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "`n❌ LỖI CODE: Quá trình Build thất bại!" -ForegroundColor Red

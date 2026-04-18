@@ -2216,9 +2216,9 @@ public partial class GamePage : ContentPage
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
                 if (token.IsCancellationRequested || !_isGameActive) return;
-                await CongratulationBorder.ScaleTo(1.0, 600, Easing.SpringOut);
+                await CongratulationBorder.ScaleToAsync(1.0, 600, Easing.SpringOut);
                 if (token.IsCancellationRequested || !_isGameActive) return;
-                await StarsLabel.RotateTo(360, 1000, Easing.CubicOut);
+                await StarsLabel.RotateToAsync(360, 1000, Easing.CubicOut);
             });
 
             if (token.IsCancellationRequested || !_isGameActive) return;
@@ -2230,7 +2230,7 @@ public partial class GamePage : ContentPage
 
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                await CongratulationBorder.ScaleTo(0, 200, Easing.CubicIn);
+                await CongratulationBorder.ScaleToAsync(0, 200, Easing.CubicIn);
             });
         }
         catch (TaskCanceledException)
