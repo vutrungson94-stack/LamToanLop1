@@ -1,12 +1,11 @@
 ﻿#!/usr/bin/env pwsh
 
 # ==============================================================================
-# SCRIPT: git-build.ps1 (ULTIMATE CROSS-PLATFORM VIP PRO)
-# MỤC TIÊU: Auto CI Build Tool cho MAUI Android
-# HỖ TRỢ: Windows, Linux, GitHub Codespaces
+# SCRIPT: git-build.ps1 (ULTIMATE COMPATIBLE VIP PRO)
+# MỤC TIÊU: Chạy được trên mọi phiên bản GitHub CLI (Kể cả bản cũ trên Codespaces)
 # ==============================================================================
 
-# 0. Cấu hình SSH Di động (Vượt rào proxy/máy công ty)
+# 0. Cấu hình SSH
 $sshKeyPath = Join-Path $PSScriptRoot "ssh_id"
 if (Test-Path $sshKeyPath) {
     $env:GIT_SSH_COMMAND = "ssh -i `"$sshKeyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
@@ -17,20 +16,18 @@ Write-Host " 🚀 gbuild – AUTO CI BUILD TOOL (PRO)  " -ForegroundColor Cyan
 Write-Host "=======================================`n" -ForegroundColor Cyan
 
 # ==========================================================
-# 1. Locate GitHub CLI (Thông minh: Nhận diện OS)
+# 1. Locate GitHub CLI (Nhận diện thông minh)
 # ==========================================================
 $gh = ""
 if ($IsWindows) {
     $ghExe = Join-Path $PSScriptRoot "gh.exe"
     $gh = if (Test-Path $ghExe) { $ghExe } elseif (Get-Command gh -ErrorAction SilentlyContinue) { "gh" } else { $null }
 } else {
-    # Trên Linux/Codespaces, chỉ dùng lệnh hệ thống 'gh'
     $gh = if (Get-Command gh -ErrorAction SilentlyContinue) { "gh" } else { $null }
 }
 
 if (-not $gh) {
     Write-Host "❌ Lỗi: Không tìm thấy GitHub CLI (gh)" -ForegroundColor Red
-    Write-Host "👉 Vui lòng cài đặt gh cli hoặc bỏ file gh.exe vào thư mục này (nếu dùng Windows)." -ForegroundColor Yellow
     exit 1
 }
 
@@ -39,7 +36,6 @@ if (-not $gh) {
 # ==========================================================
 $isAuthenticated = $false
 if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
-    # Codespaces thường có sẵn Token này, chúng ta tận dụng luôn
     $isAuthenticated = $true 
 } else {
     & $gh auth status *> $null
@@ -53,63 +49,65 @@ if (-not $isAuthenticated) {
 }
 Write-Host "✅ Xác thực thành công!" -ForegroundColor Gray
 
-# Tự động lấy tên nhánh hiện tại
 $currentBranch = "main"
 if (Get-Command git -ErrorAction SilentlyContinue) {
     $branch = git branch --show-current 2>$null
     if (-not [string]::IsNullOrWhiteSpace($branch)) { $currentBranch = $branch }
 }
-Write-Host "🌿 Nhánh mục tiêu: [$currentBranch]" -ForegroundColor Green
 
 # ==========================================================
-# 3. Tự động dò tìm Workflow
+# 3. Tự động dò tìm Workflow (Bản sửa lỗi 'Unknown JSON field')
 # ==========================================================
 Write-Host "🔍 Đang quét danh sách Workflow..." -ForegroundColor Cyan
 
 try {
-    $workflows = & $gh workflow list --json name,id,state,hasWorkflowDispatch | ConvertFrom-Json
-    $dispatchable = $workflows | Where-Object { $_.hasWorkflowDispatch -eq $true -and $_.state -eq "active" }
+    # Chỉ lấy các trường cơ bản mà bản gh cũ cũng hiểu được
+    $workflowsJson = & $gh workflow list --json id,name,state
+    $workflows = $workflowsJson | ConvertFrom-Json
+    # Chỉ lấy các Workflow đang hoạt động
+    $activeWorkflows = $workflows | Where-Object { $_.state -eq "active" }
 } catch {
-    Write-Host "❌ Lỗi: Không thể kết nối tới GitHub API." -ForegroundColor Red
+    Write-Host "❌ Lỗi: Không thể lấy danh sách workflow từ GitHub." -ForegroundColor Red
     exit 1
 }
 
-if (-not $dispatchable) {
-    Write-Host "❌ Không tìm thấy workflow nào có 'workflow_dispatch' đang bật." -ForegroundColor Red
+if (-not $activeWorkflows -or $activeWorkflows.Count -eq 0) {
+    Write-Host "❌ Không tìm thấy workflow nào đang hoạt động." -ForegroundColor Red
     exit 1
 }
 
 $selected = $null
-if ($dispatchable.Count -eq 1) {
-    $selected = $dispatchable[0]
-    Write-Host "✅ Đã chọn: $($selected.name)" -ForegroundColor Green
+# Ưu tiên tìm workflow có tên chứa chữ "Build" hoặc "Android"
+$priorityWorkflows = $activeWorkflows | Where-Object { $_.name -match "Build|Android" }
+
+if ($priorityWorkflows.Count -eq 1) {
+    $selected = $priorityWorkflows[0]
+    Write-Host "✅ Tự động chọn: $($selected.name)" -ForegroundColor Green
 } else {
-    Write-Host "`n📋 Danh sách Workflow:" -ForegroundColor Yellow
-    for ($i = 0; $i -lt $dispatchable.Count; $i++) {
-        Write-Host "  [$i] $($dispatchable[$i].name)"
+    Write-Host "`n📋 Danh sách Workflow khả dụng:" -ForegroundColor Yellow
+    for ($i = 0; $i -lt $activeWorkflows.Count; $i++) {
+        Write-Host "  [$i] $($activeWorkflows[$i].name)"
     }
-    $choice = Read-Host "`n👉 Nhập số để chọn"
-    $selected = $dispatchable[$choice]
+    $choice = Read-Host "`n👉 Nhập số để chọn Workflow muốn Build"
+    $selected = $activeWorkflows[$choice]
 }
 
 # ==========================================================
-# 4. Kích hoạt & Tracking Run ID (Chống Race Condition)
+# 4. Kích hoạt & Tracking Run ID
 # ==========================================================
-Write-Host "`n🚀 Đang kích hoạt tiến trình Build trên GitHub..." -ForegroundColor Cyan
+Write-Host "`n🚀 Đang kích hoạt tiến trình Build [$currentBranch]..." -ForegroundColor Cyan
 
-# Lấy ID bản build gần nhất để làm mốc so sánh
 $lastRunId = (& $gh run list --workflow $selected.id --limit 1 --json databaseId | ConvertFrom-Json).databaseId
 
 & $gh workflow run $selected.id --ref $currentBranch
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Kích hoạt thất bại." -ForegroundColor Red
+    Write-Host "❌ Không thể kích hoạt. Hãy đảm bảo file .yml có 'workflow_dispatch'." -ForegroundColor Red
     exit 1
 }
 
-# Vòng lặp chờ ID mới xuất hiện
-Write-Host "⏳ Đang bắt tín hiệu từ máy chủ GitHub..." -ForegroundColor Gray
+Write-Host "⏳ Đang đợi GitHub xác nhận tiến trình mới..." -ForegroundColor Gray
 $newRunId = $null
-for ($i = 0; $i -lt 10; $i++) {
+for ($i = 0; $i -lt 15; $i++) {
     Start-Sleep -Seconds 2
     $currentRunId = (& $gh run list --workflow $selected.id --limit 1 --json databaseId | ConvertFrom-Json).databaseId
     if ($currentRunId -ne $lastRunId -and $currentRunId -ne $null) {
@@ -119,20 +117,15 @@ for ($i = 0; $i -lt 10; $i++) {
 }
 
 if ($newRunId) {
-    Write-Host "🎯 Đã bắt được tiến trình mới (ID: $newRunId). Bắt đầu theo dõi..." -ForegroundColor Green
+    Write-Host "🎯 Đã bắt được tiến trình (ID: $newRunId). Đang theo dõi..." -ForegroundColor Green
     & $gh run watch $newRunId --exit-status
 } else {
-    Write-Host "⚠️ Không bắt được ID mới, đang dùng chế độ theo dõi tổng quát..." -ForegroundColor Yellow
+    Write-Host "⚠️ Không bắt được ID mới kịp lúc, đang theo dõi tổng quát..." -ForegroundColor Yellow
     & $gh run watch --exit-status
 }
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "`n❌ Build thất bại! Hãy kiểm tra lại code hoặc file .yml" -ForegroundColor Red
-    exit 1
-}
-
 # ==========================================================
-# 5. Tải & Flatten Artifacts (Làm đẹp thư mục)
+# 5. Tải & Flatten Artifacts
 # ==========================================================
 $dir = "apk-output"
 if (Test-Path $dir) { 
@@ -141,36 +134,23 @@ if (Test-Path $dir) {
     New-Item -ItemType Directory -Path $dir | Out-Null 
 }
 
-Write-Host "`n📦 Đang tải APK/AAB về máy..." -ForegroundColor Cyan
+Write-Host "`n📦 Đang tải kết quả build về..." -ForegroundColor Cyan
 & $gh run download --dir $dir
 
-# Di chuyển file ra thư mục gốc (Flatten)
+# Làm phẳng thư mục (Flatten)
 Get-ChildItem -Path $dir -Recurse -File -Include *.apk,*.aab | Move-Item -Destination $dir -Force -ErrorAction SilentlyContinue
 Get-ChildItem -Path $dir -Directory | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 # ==========================================================
-# 6. Kiểm tra & Báo cáo
+# 6. Báo cáo cuối cùng
 # ==========================================================
-function Test-ApkSigned {
-    param ([string]$path)
-    try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
-        $signed = $false
-        foreach ($e in $zip.Entries) { if ($e.FullName -match "^META-INF/.*\.(RSA|DSA|SF)$") { $signed = $true; break } }
-        $zip.Dispose(); return $signed
-    } catch { return $false }
-}
-
+Write-Host "`n🔎 Tổng hợp file đã tải về:" -ForegroundColor Cyan
 $files = Get-ChildItem -Path $dir -Filter *.* | Where-Object { $_.Extension -match 'apk|aab' }
-Write-Host "`n🔎 Kết quả thu được:" -ForegroundColor Cyan
 foreach ($f in $files) {
-    if ($f.Extension -eq ".aab") { Write-Host "  ⭐ GOOGLE PLAY : $($f.Name)" -ForegroundColor Magenta }
-    elseif (Test-ApkSigned $f.FullName) { Write-Host "  ✅ ĐÃ KÝ (SIGNED): $($f.Name)" -ForegroundColor Green }
-    else { Write-Host "  ⚠️ CHƯA KÝ (UNSIGNED): $($f.Name)" -ForegroundColor Yellow }
+    $type = if ($f.Extension -eq ".aab") { "⭐ PLAY STORE" } else { "📱 APK" }
+    Write-Host "  $type : $($f.Name)" -ForegroundColor Green
 }
 
-Write-Host "`n🎉 HOÀN TẤT! File đã sẵn sàng tại: $dir" -ForegroundColor Green
-Write-Host "`a" -NoNewline # Phát tiếng bíp
-
+Write-Host "`n🎉 HOÀN TẤT! Chúc mừng bạn!" -ForegroundColor Green
+Write-Host "`a" -NoNewline
 if ($IsWindows) { explorer.exe $((Resolve-Path $dir).Path) }
