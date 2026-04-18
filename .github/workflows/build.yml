@@ -17,6 +17,7 @@ on:
         options:
           - apk
           - aab
+
 jobs:
   build:
     runs-on: windows-latest
@@ -79,6 +80,11 @@ jobs:
 
         # Sử dụng giá trị từ input người dùng chọn
         $format = "${{ github.event.inputs.package_format }}"
+        if ([string]::IsNullOrWhiteSpace($format)) {
+            $format = "apk" # Mặc định nếu không có input
+        }
+            
+        Write-Host "📦 Định dạng mục tiêu: $format" -ForegroundColor Cyan
 
         $publishArgs = @(
             "publish",
