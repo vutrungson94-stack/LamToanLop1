@@ -39,7 +39,7 @@ jobs:
         $json | ConvertTo-Json -Depth 10 | Set-Content global.json
         Write-Host "✅ Đã cấu hình global.json!" -ForegroundColor Cyan
 
-    - name: 🛠️ Setup .NET
+    - name: 🛠️  Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '9.0.x'
@@ -52,9 +52,16 @@ jobs:
         key: nuget-android-${{ hashFiles('**/*.csproj') }}
 
     - name: ⚡ Install MAUI Android
+      shell: pwsh
       run: |
-        # Dùng sudo trên Linux để đảm bảo quyền ghi vào thư mục SDK
-        sudo dotnet workload install maui-android --no-history --nologo
+        # 1. Dọn dẹp tàn dư cũ để tránh xung đột
+        dotnet workload repair
+
+        # 2. Cấu hình để cài đặt vào thư mục User (tránh lỗi quyền System)
+        $env:DOTNET_CLI_HOME = "$HOME/.dotnet_custom"
+        
+        # 3. Cài đặt trực tiếp (Sử dụng --include-pre-release nếu bạn dùng .NET 9 đời đầu)
+        dotnet workload install maui-android --no-history --nologo
 
     - name: 📦 Build Android
       shell: pwsh
@@ -95,8 +102,6 @@ jobs:
         name: 📦 Full Build #${{ github.run_number }}
         files: publish-output/**
         generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==========================================================
   # NHÁNH PHỤ: APPLE (Đính kèm thêm vào Release đã tạo)
@@ -142,5 +147,3 @@ jobs:
       with:
         tag_name: build-${{ github.run_number }} # Dùng chung tag để đính kèm vào bản Android đã tạo
         files: publish-output/**
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
