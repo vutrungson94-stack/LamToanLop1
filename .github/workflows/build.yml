@@ -33,7 +33,7 @@ jobs:
         fetch-depth: 0 # Lấy toàn bộ lịch sử để hỗ trợ việc đánh số version nếu cần
 
     # [NÂNG CẤP]: Chỉ chạy nếu file global.json tồn tại để tránh lỗi với các project không dùng global.json
-    - name: 🎩 Control global.json
+    - name: Control global.json
       if: hashFiles('global.json') != '' # Chỉ chạy nếu có file global.json trong repo
       shell: pwsh
       run: |
