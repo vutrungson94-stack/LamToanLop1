@@ -56,8 +56,8 @@ public partial class MainPage : ContentPage
         // Hiệu ứng nút bấm
         if (sender is Button btn)
         {
-            await btn.ScaleTo(0.9, 100);
-            await btn.ScaleTo(1.0, 100);
+            await btn.ScaleToAsync(0.9, 100);
+            await btn.ScaleToAsync(1.0, 100);
         }
 
         MainMenuView.IsVisible = false;
@@ -68,8 +68,8 @@ public partial class MainPage : ContentPage
     {
         if (sender is Button btn)
         {
-            await btn.ScaleTo(0.9, 100);
-            await btn.ScaleTo(1.0, 100);
+            await btn.ScaleToAsync(0.9, 100);
+            await btn.ScaleToAsync(1.0, 100);
         }
 
         var services = this.Handler?.MauiContext?.Services;
@@ -93,14 +93,14 @@ public partial class MainPage : ContentPage
     // --- 2. CHỌN PHẠM VI (RANGE) ---
     private async void OnBasicModeClicked(object sender, EventArgs e)
     {
-        if (sender is Button btn) { await btn.ScaleTo(0.9, 100); await btn.ScaleTo(1.0, 100); }
+        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
         _selectedRange = 1; // Tương đương Semester 1 (Phạm vi 10)
         ShowLevelMenu("CƠ BẢN");
     }
 
     private async void OnAdvancedModeClicked(object sender, EventArgs e)
     {
-        if (sender is Button btn) { await btn.ScaleTo(0.9, 100); await btn.ScaleTo(1.0, 100); }
+        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
         _selectedRange = 2; // Logic cũ: 2 là phạm vi 100
         ShowLevelMenu("NÂNG CAO");
     }
@@ -116,21 +116,21 @@ public partial class MainPage : ContentPage
     private async void OnLevelEasyClicked(object sender, EventArgs e)
     {
         if (!CanNavigate()) return; // Chặn nếu bấm quá nhanh
-        if (sender is Button btn) { await btn.ScaleTo(0.9, 100); await btn.ScaleTo(1.0, 100); }
+        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
         await StartGame(1);
     }
 
     private async void OnLevelMediumClicked(object sender, EventArgs e)
     {
         if (!CanNavigate()) return;
-        if (sender is Button btn) { await btn.ScaleTo(0.9, 100); await btn.ScaleTo(1.0, 100); }
+        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
         await StartGame(2);
     }
 
     private async void OnLevelHardClicked(object sender, EventArgs e)
     {
         if (!CanNavigate()) return;
-        if (sender is Button btn) { await btn.ScaleTo(0.9, 100); await btn.ScaleTo(1.0, 100); }
+        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
         await StartGame(3);
     }
 

@@ -114,8 +114,8 @@ public partial class AnimalPage : ContentPage
 			{
 				AbortSpecificAnimations(btn);
 				// Hiệu ứng bấm nút
-				await btn.ScaleTo(0.9, 50);
-				await btn.ScaleTo(1.0, 50);
+				await btn.ScaleToAsync(0.9, 50);
+				await btn.ScaleToAsync(1.0, 50);
             }
 
             _tts.Stop();
@@ -137,8 +137,8 @@ public partial class AnimalPage : ContentPage
 			if (sender is Button btn)
 			{
 				AbortSpecificAnimations(btn);
-				await btn.ScaleTo(0.9, 50);
-				await btn.ScaleTo(1.0, 50);
+				await btn.ScaleToAsync(0.9, 50);
+				await btn.ScaleToAsync(1.0, 50);
 			}
 
 			if (_historyIndex > 0)
@@ -166,8 +166,8 @@ public partial class AnimalPage : ContentPage
             {
                 AbortSpecificAnimations(btn);
                 // Hiệu ứng nhún nhảy nút loa
-                await btn.ScaleTo(0.8, 100);
-                await btn.ScaleTo(1.0, 100);
+                await btn.ScaleToAsync(0.8, 100);
+                await btn.ScaleToAsync(1.0, 100);
             }
 
             _tts.Stop();
@@ -244,8 +244,8 @@ public partial class AnimalPage : ContentPage
 
 
 			await Task.WhenAll(
-				AnimalImage.FadeTo(1, 400),
-				AnimalImage.ScaleTo(1, 600, Easing.SpringOut)
+				AnimalImage.FadeToAsync(1, 400),
+				AnimalImage.ScaleToAsync(1, 600, Easing.SpringOut)
 			);
 
 			// Đợi TTS xong (nếu cần, thực ra không cần await cũng được để UI mượt hơn)
@@ -264,8 +264,8 @@ public partial class AnimalPage : ContentPage
 
 			AbortSpecificAnimations(AnimalImage);
 			// 1. Hiệu ứng nảy hình (Làm to lên rồi nhỏ lại để bé biết đã bấm trúng)
-			await AnimalImage.ScaleTo(1.2, 150, Easing.SpringOut);
-			await AnimalImage.ScaleTo(1.0, 150, Easing.SpringOut);
+			await AnimalImage.ScaleToAsync(1.2, 150, Easing.SpringOut);
+			await AnimalImage.ScaleToAsync(1.0, 150, Easing.SpringOut);
 
 			// 2. Lấy tên con vật hiện tại và đọc lại
 			if (_isPageActive && _historyIndex >= 0 && _historyIndex < _history.Count)

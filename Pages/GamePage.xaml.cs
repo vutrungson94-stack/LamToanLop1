@@ -322,16 +322,16 @@ public partial class GamePage : ContentPage
         try
         {
             if (!MainThread.IsMainThread)
-                await MainThread.InvokeOnMainThreadAsync(() => frame.ScaleTo(1.1, 500));
+                await MainThread.InvokeOnMainThreadAsync(() => frame.ScaleToAsync(1.1, 500));
             else
-                await frame.ScaleTo(1.1, 500);
+                await frame.ScaleToAsync(1.1, 500);
 
             if (_isGameActive)
             {
                 if (!MainThread.IsMainThread)
-                    await MainThread.InvokeOnMainThreadAsync(() => frame.ScaleTo(1.0, 500));
+                    await MainThread.InvokeOnMainThreadAsync(() => frame.ScaleToAsync(1.0, 500));
                 else
-                    await frame.ScaleTo(1.0, 500);
+                    await frame.ScaleToAsync(1.0, 500);
             }
         }
         catch (Exception ex)
@@ -726,11 +726,11 @@ public partial class GamePage : ContentPage
                                                         await MainThread.InvokeOnMainThreadAsync(async () =>
                                                         {
                                                             circle.Opacity = 0;
-                                                            await circle.FadeTo(1, 500, Easing.SinInOut);
+                                                            await circle.FadeToAsync(1, 500, Easing.SinInOut);
                                                             if (token.IsCancellationRequested) return;
-                                                            await circle.FadeTo(0.5, 500, Easing.SinInOut);
+                                                            await circle.FadeToAsync(0.5, 500, Easing.SinInOut);
                                                             if (token.IsCancellationRequested) return;
-                                                            await circle.FadeTo(1, 500, Easing.SinInOut);
+                                                            await circle.FadeToAsync(1, 500, Easing.SinInOut);
                                                         });
                                                     }
                                                     catch { }
@@ -902,12 +902,12 @@ public partial class GamePage : ContentPage
 
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                await flyContent.ScaleTo(1.3, 150, Easing.SinInOut);
+                await flyContent.ScaleToAsync(1.3, 150, Easing.SinInOut);
                 if (token.IsCancellationRequested) return;
                 // TranslateTo/ScaleTo chạy trên main thread; gọi qua MainThread để an toàn
-                await flyContent.TranslateTo(transX, transY, 400, Easing.SinInOut);
+                await flyContent.TranslateToAsync(transX, transY, 400, Easing.SinInOut);
                 if (token.IsCancellationRequested) return;
-                await flyContent.ScaleTo(0.1, 150, Easing.SinIn);
+                await flyContent.ScaleToAsync(0.1, 150, Easing.SinIn);
             });
         }
         catch (Exception ex)
@@ -1184,7 +1184,7 @@ public partial class GamePage : ContentPage
                             v.Scale = 0;
                             v.Opacity = 1;
                         }
-                        await Task.WhenAll(group.Select(v => v.ScaleTo(1.0, 280, Easing.SpringOut)));
+                        await Task.WhenAll(group.Select(v => v.ScaleToAsync(1.0, 280, Easing.SpringOut)));
                     });
                 } catch { }
                 try { await Task.Delay(80, token); } catch { }
@@ -1352,14 +1352,14 @@ public partial class GamePage : ContentPage
                             if (capturedItem.IsTarget)
                             {
                                 _isProcessing = true;
-                                await capturedImg.ScaleTo(1.2, 100);
-                                await capturedImg.ScaleTo(1.0, 100);
+                                await capturedImg.ScaleToAsync(1.2, 100);
+                                await capturedImg.ScaleToAsync(1.0, 100);
                                 await HandleWinCondition();
                             }
                             else
                             {
-                                await capturedImg.TranslateTo(10, 0, 50);
-                                await capturedImg.TranslateTo(-10, 0, 50);
+                                await capturedImg.TranslateToAsync(10, 0, 50);
+                                await capturedImg.TranslateToAsync(-10, 0, 50);
                                 capturedImg.TranslationX = 0;
                                 _ = _tts.SpeakWithMoodAsync("Chưa đúng rồi, bé nhìn kỹ lại nhé!", VoiceMood.Sad);
                             }
@@ -1379,7 +1379,7 @@ public partial class GamePage : ContentPage
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
                     foreach (var v in children) v.Scale = 0;
-                    var tasks = children.Select(v => v.ScaleTo(1.0, 350, Easing.SpringOut));
+                    var tasks = children.Select(v => v.ScaleToAsync(1.0, 350, Easing.SpringOut));
                     await Task.WhenAll(tasks);
                 });
             }
@@ -1468,8 +1468,8 @@ public partial class GamePage : ContentPage
                 {
                     //Stop animation cũ của nút
                     AbortSpecificAnimations(btn);
-                    await btn.ScaleTo(0.9, 100);
-                    await btn.ScaleTo(1, 100);
+                    await btn.ScaleToAsync(0.9, 100);
+                    await btn.ScaleToAsync(1, 100);
 
                     if (_vm.CheckAnswer(btn.Text))
                     {
@@ -1505,8 +1505,8 @@ public partial class GamePage : ContentPage
                         // --- TRƯỜNG HỢP SAI ---
 
                         // Hiệu ứng lắc qua lại
-                        await btn.TranslateTo(10, 0, 50);
-                        await btn.TranslateTo(-10, 0, 50);
+                        await btn.TranslateToAsync(10, 0, 50);
+                        await btn.TranslateToAsync(-10, 0, 50);
                         btn.TranslationX = 0;
 
                         StopAllAudio();
@@ -1590,8 +1590,8 @@ public partial class GamePage : ContentPage
             else
             {
                 // SAI -> Lắc -> Mở khóa
-                await card.TranslateTo(5, 0, 50);
-                await card.TranslateTo(-5, 0, 50);
+                await card.TranslateToAsync(5, 0, 50);
+                await card.TranslateToAsync(-5, 0, 50);
                 card.TranslationX = 0;
 
                 StopAllAudio();
@@ -1757,8 +1757,8 @@ public partial class GamePage : ContentPage
         {
             view.InputTransparent = true;
             AbortSpecificAnimations(view);
-            await view.TranslateTo(5, 0, 50);
-            await view.TranslateTo(-5, 0, 50);
+            await view.TranslateToAsync(5, 0, 50);
+            await view.TranslateToAsync(-5, 0, 50);
             view.TranslationX = 0;
             view.InputTransparent = false;
             return;
@@ -1776,8 +1776,8 @@ public partial class GamePage : ContentPage
         // Logic sau khi animation hoan tat
         _currentFoundCount++;
         CounterLabel.Text = $"{_currentFoundCount}/{_totalTargetCount}";
-        await CounterLabel.ScaleTo(1.5, 100);
-        await CounterLabel.ScaleTo(1.0, 100);
+        await CounterLabel.ScaleToAsync(1.5, 100);
+        await CounterLabel.ScaleToAsync(1.0, 100);
         if (_currentFoundCount >= _totalTargetCount)
         {
             _isProcessing = true;
@@ -1912,7 +1912,7 @@ public partial class GamePage : ContentPage
             SourceNumberContainer.Children.Add(border);
 
             border.Scale = 0;
-            _ = border.ScaleTo(1.0, 400, Easing.SpringOut);
+            _ = border.ScaleToAsync(1.0, 400, Easing.SpringOut);
 
             var capturedNum = num;
             var tap = new TapGestureRecognizer();
@@ -1951,7 +1951,7 @@ public partial class GamePage : ContentPage
             AbortSpecificAnimations(view);
 
             // Ẩn số đã chọn
-            await view.ScaleTo(0, 200);
+            await view.ScaleToAsync(0, 200);
             view.IsVisible = false;
 
             // Điền vào ô trống
@@ -2084,8 +2084,8 @@ public partial class GamePage : ContentPage
             if (sender is Button btn)
             {
                 AbortSpecificAnimations(btn);
-                await btn.ScaleTo(0.9, 100);
-                await btn.ScaleTo(1.0, 100);
+                await btn.ScaleToAsync(0.9, 100);
+                await btn.ScaleToAsync(1.0, 100);
             }
             StopAllAudio();
             await Navigation.PopAsync();
@@ -2107,8 +2107,8 @@ public partial class GamePage : ContentPage
             {
                 AbortSpecificAnimations(btn);
                 // Hiệu ứng nhún nhảy nút loa
-                await btn.ScaleTo(0.8, 100);
-                await btn.ScaleTo(1.0, 100);
+                await btn.ScaleToAsync(0.8, 100);
+                await btn.ScaleToAsync(1.0, 100);
             }
 
             StopAllAudio();
@@ -2138,8 +2138,8 @@ public partial class GamePage : ContentPage
             if (sender is Button btn)
             {
                 AbortSpecificAnimations(btn);
-                await btn.ScaleTo(0.9, 100);
-                await btn.ScaleTo(1.0, 100);
+                await btn.ScaleToAsync(0.9, 100);
+                await btn.ScaleToAsync(1.0, 100);
             }
             StopAllAudio();
             _ = _tts.SpeakWithMoodAsync("Không sao, mình làm câu khác nhé!", VoiceMood.Happy);
