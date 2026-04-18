@@ -18,7 +18,7 @@ on:
 
 jobs:
   build:
-    name: 🏗️ Build ${{ matrix.platform }}
+    name: 🏗️  Build ${{ matrix.platform }}
     runs-on: ${{ (matrix.platform == 'ios' || matrix.platform == 'maccatalyst') && 'macos-latest' || 'ubuntu-latest' }}
     timeout-minutes: 30 # Tự động ngắt nếu treo quá 30p để tiết kiệm tài nguyên
 
@@ -35,13 +35,13 @@ jobs:
     # ==========================================================
     # 1. Khởi tạo môi trường
     # ==========================================================
-    - name: 🕒 Checkout code
+    - name: 🕒  Checkout code
       uses: actions/checkout@v4
       with:
         fetch-depth: 0 # Lấy toàn bộ lịch sử để hỗ trợ việc đánh số version nếu cần
 
     # Chỉ chạy nếu file global.json tồn tại để tránh lỗi với các project không dùng global.json
-    - name: 🕒 Control global.json
+    - name: 🕒  Control global.json
       if: hashFiles('global.json') != '' # Chỉ chạy nếu có file global.json trong repo
       shell: pwsh
       run: |
@@ -56,7 +56,7 @@ jobs:
         $json | ConvertTo-Json -Depth 10 | Set-Content global.json
         Write-Host "✅ Đã cấu hình lại global.json cho môi trường CI/CD!" -ForegroundColor Cyan
 
-    - name: 🛠️ Setup .NET
+    - name: 🛠️  Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '9.0.x' # Yêu cầu ít nhất .NET 9.0, nhưng sẽ tự động dùng đúng bản patch nếu có global.json
