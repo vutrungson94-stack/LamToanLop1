@@ -386,7 +386,11 @@ public partial class GamePage : ContentPage
         {
             FarmBackground.Source = null;
         }
-        FarmBackground?.Source = null;
+        if (FarmBackground?.Source != null)
+        {
+            FarmBackground.Source = null;
+        }
+        
         if (MathBackground?.Source != null)
         {
             MathBackground.Source = null;
