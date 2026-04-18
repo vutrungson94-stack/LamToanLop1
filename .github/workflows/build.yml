@@ -121,23 +121,25 @@ jobs:
     - name: Organize Artifacts
       shell: pwsh
       run: |
-        # 1. Tạo thư mục chứa kết quả
         $destDir = "publish-output"
-        if (!(Test-Path $destDir)) {
-            New-Item -ItemType Directory -Path $destDir -Force
-        } 
-        # 2. CHỈ QUÉT trong thư mục bin để tìm sản phẩm, tránh quét toàn bộ repo
-        Write-Host "🔍 Đang gom file từ thư mục bin..." -ForegroundColor Cyan
-        $files = Get-ChildItem -Path "bin" -File | Where-Object { $_.Extension -match 'apk|aab' }
+        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        
+        Write-Host "🔍 Đang tìm APK/AAB trong dự án..." -ForegroundColor Cyan
+        
+        # Quét đệ quy toàn bộ thư mục hiện tại, tìm file apk/aab
+        $files = Get-ChildItem -Path . -Recurse -File -ErrorAction SilentlyContinue | Where-Object { 
+            ($_.Extension -match 'apk|aab') -and ($_.DirectoryName -notlike "*$destDir*") 
+        }
+        
         if ($files) {
             foreach ($file in $files) {
-                Write-Host "🚚 Copying: $($file.FullName)" -ForegroundColor Gray
+                Write-Host "🚚 Đang copy: $($file.Name)" -ForegroundColor Green
                 Copy-Item -Path $file.FullName -Destination $destDir -Force
             }
-            Write-Host "✅ Đã gom xong $($files.Count) file vào $destDir" -ForegroundColor Green
+            Write-Host "✅ Đã gom xong! Chuẩn bị đóng gói." -ForegroundColor Green
         } else {
-            Write-Host "⚠️ Không tìm thấy file APK/AAB nào trong thư mục bin!" -ForegroundColor Yellow
-            exit 1 # Thoát với lỗi để không tiếp tục upload nếu không có file nào
+            Write-Host "❌ LỖI: Không tìm thấy file APK/AAB nào! Quá trình Publish có thể đã thất bại ngầm." -ForegroundColor Red
+            exit 1
         }
 
     # ==========================================================
