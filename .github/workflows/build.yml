@@ -2,6 +2,7 @@ name: Build MAUI Android (VIP PRO)
 
 permissions:
   contents: write # Cho phép tạo release và upload artifact
+  actions: write # Cho phép workflow tự động tạo tag và release
 
 on:
   push:
