@@ -15,7 +15,9 @@ on:
         default: 'apk'
         type: choice
         options: [apk, aab]
-
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true" # Bắt buộc dùng Node 24 để tránh lỗi với các action cũ
+      
 jobs:
   build:
     name: 🏗️  Build ${{ matrix.platform }}
@@ -26,10 +28,6 @@ jobs:
       fail-fast: false # Tiếp tục chạy hết tất cả các job ngay cả khi có lỗi để thu thập đầy đủ thông tin
       matrix:
         platform: [android, ios, maccatalyst] # Mở rộng sau này nếu cần build thêm nền tảng khác như Windows, Tizen...
-
-    env:
-      FORCE_JAVACSRIPT_ACTION_TO_NODE24: true # Bắt buộc dùng Node 24 để tránh lỗi với các action cũ
-      DOTNET_CLI_TELEMETRY_OPTOUT: 1 # Tắt thu thập dữ liệu sử dụng .NET CLI
 
     steps:
     # ==========================================================
@@ -73,14 +71,13 @@ jobs:
         restore-keys: |
           nuget-${{ matrix.platform }}-
 
-    - name: ⚡ Install MAUI Workload (Conditional)
+    - name: ⚡ Install MAUI Workload (Smart Install)
       shell: pwsh
       run: |
         if ("${{ matrix.platform }}" -eq "android") {
             dotnet workload install maui-android --no-history --nologo
         } else {
-            # Trên macOS, chúng ta cài đầy đủ vì nó hỗ trợ cả iOS và MacCatalyst
-            dotnet workload install maui --no-history --nologo
+            dotnet workload install maui-ios maui-maccatalyst --no-history --nologo
         }
 
     # ==========================================================
