@@ -36,7 +36,7 @@ jobs:
         $json | ConvertTo-Json -Depth 10 | Set-Content global.json
         Write-Host "✅ Đã cấu hình global.json!" -ForegroundColor Cyan
 
-    - name: 🛠️ Setup .NET
+    - name: 🛠️  Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
@@ -138,6 +138,10 @@ jobs:
         # ✅ Cũng lấy đúng csproj, tránh MSB1011
         $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
         Write-Host "✅ Project: $($csproj.FullName)"
+
+        # ✅ Override TargetFrameworks chỉ build platform hiện tại, bỏ qua android
+        dotnet publish $csproj.FullName -c Release -f net10.0-${{ matrix.platform }} `
+          -p:TargetFrameworks=net10.0-${{ matrix.platform }}
 
         # ✅ Đổi net9.0 → net10.0
         dotnet publish $csproj.FullName -c Release -f net10.0-${{ matrix.platform }}
