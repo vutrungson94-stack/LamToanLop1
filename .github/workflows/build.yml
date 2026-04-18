@@ -64,7 +64,7 @@ jobs:
         [xml]$xml = Get-Content $csproj.FullName
         # SỬA LỖI: Match trực tiếp với 'android' vì không có matrix ở đây
         $tfm = $xml.Project.PropertyGroup 
-          | Foreach-Object { $_.TargetFramework } 
+          | Foreach-Object { $_.TargetFrameworks } 
           | Where-Object { $_ -match 'android' } 
           | Select-Object -First 1
         
