@@ -33,7 +33,7 @@ jobs:
         fetch-depth: 0 # Lấy toàn bộ lịch sử để hỗ trợ việc đánh số version nếu cần
 
     # [NÂNG CẤP]: Chỉ chạy nếu file global.json tồn tại để tránh lỗi với các project không dùng global.json
-    - name: 🎩 VIP PRO Override - Khống chế global.json trên mây
+    - name: 🎩 Control global.json
       if: hashFiles('global.json') != '' # Chỉ chạy nếu có file global.json trong repo
       shell: pwsh
       run: |
@@ -121,11 +121,24 @@ jobs:
     - name: Organize Artifacts
       shell: pwsh
       run: |
-        # Tạo thư mục phẳng để dễ quản lý, tránh cấu hình thư mục lồng nhau của .NET
-        New-Item -ItemType Directory -Path "publish-output" -Force
-        # Dò tìm file apk/aab bất kể nó nằm ở đâu trong thư mục bin/Release và copy ra thư mục publish-output
-        Get-ChildItem . -Recurse -Filter *.* | Where-Object { $_.Extension -match 'apk|aab' } | Copy-Item -Destination "publish-output" -Force
-        Write-Host "✅ Đã gom các file APK/AAB vào thư mục publish-output"
+        # 1. Tạo thư mục chứa kết quả
+        $destDir = "publish-output"
+        if (!(Test-Path $destDir)) {
+            New-Item -ItemType Directory -Path $destDir -Force
+        } 
+        # 2. CHỈ QUÉT trong thư mục bin để tìm sản phẩm, tránh quét toàn bộ repo
+        Write-Host "🔍 Đang gom file từ thư mục bin..." -ForegroundColor Cyan
+        $files = Get-ChildItem -Path "bin" -File | Where-Object { $_.Extension -match 'apk|aab' }
+        if ($files) {
+            foreach ($file in $files) {
+                Write-Host "🚚 Copying: $($file.FullName)" -ForegroundColor Gray
+                Copy-Item -Path $file.FullName -Destination $destDir -Force
+            }
+            Write-Host "✅ Đã gom xong $($files.Count) file vào $destDir" -ForegroundColor Green
+        } else {
+            Write-Host "⚠️ Không tìm thấy file APK/AAB nào trong thư mục bin!" -ForegroundColor Yellow
+            exit 1 # Thoát với lỗi để không tiếp tục upload nếu không có file nào
+        }
 
     # ==========================================================
     # 5. Lưu trữ và Phát hành
