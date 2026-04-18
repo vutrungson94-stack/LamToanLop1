@@ -52,7 +52,9 @@ jobs:
         key: nuget-android-${{ hashFiles('**/*.csproj') }}
 
     - name: ⚡ Install MAUI Android
-      run: dotnet workload install maui-android --no-history --nologo
+      run: |
+        # Dùng sudo trên Linux để đảm bảo quyền ghi vào thư mục SDK
+        sudo dotnet workload install maui-android --no-history --nologo
 
     - name: 📦 Build Android
       shell: pwsh
