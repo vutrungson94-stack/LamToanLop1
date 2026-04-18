@@ -1,6 +1,34 @@
 ##################################################
-# .NET / MAUI – BUILD OUTPUT (BẮT BUỘC IGNORE)
+# NUGET PACKAGES (BẮT BUỘC)
 ##################################################
+*.nuget.props
+*.nuget.targets
+packages/
+# Chặn cache của các công cụ phân tích code
+.librarymanager/
+# Chặn cấu hình môi trường máy ảo
+.devcontainer/
+
+##################################################
+# BẢO MẬT & KEYSTORE (QUAN TRỌNG)
+##################################################
+# Chặn file ký app cục bộ để tránh lộ mật khẩu
+*.keystore
+*.jks
+*.p12
+*.pfx
+
+# Chặn file cấu hình bí mật của .NET
+usersecretsid
+appsettings.Development.json
+
+##################################################
+# MAUI SPECIFIC FIXES
+##################################################
+# Chặn các file rác phát sinh khi build trên Mac/Windows
+[Dd]ebug/
+[Rr]elease/
+_ReSharper*/
 
 # .NET build output
 bin/
