@@ -68,6 +68,11 @@ jobs:
           | Where-Object { $_ -match 'android' } 
           | Select-Object -First 1
         
+        if ([string]::IsNullOrWhiteSpace($tfm)) {
+          Write-Error "❌ Không tìm thấy TargetFramework android trong .csproj"
+          exit 1
+        }  
+
         $format = "${{ github.event.inputs.package_format }}"
         if ([string]::IsNullOrWhiteSpace($format)) { $format = "apk" }
         
