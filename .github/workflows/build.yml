@@ -14,29 +14,34 @@ on:
         required: true
         default: 'apk'
         type: choice
-        options:
-          - apk
-          - aab
+        options: [apk, aab]
 
 jobs:
   build:
-    runs-on: windows-latest
+    name: 🏗️ Build ${{ matrix.platform }}
+    runs-on: ${{ (matrix.platform == 'ios' || matrix.platform == 'maccatalyst') && 'macos-latest' || 'ubuntu-latest' }}
     timeout-minutes: 30 # Tự động ngắt nếu treo quá 30p để tiết kiệm tài nguyên
+
+    strategy:
+      fail-fast: false # Tiếp tục chạy hết tất cả các job ngay cả khi có lỗi để thu thập đầy đủ thông tin
+      matrix:
+        platform: [android, ios, maccatalyst] # Mở rộng sau này nếu cần build thêm nền tảng khác như Windows, Tizen...
 
     env:
       FORCE_JAVACSRIPT_ACTION_TO_NODE24: "true" # Bắt buộc dùng Node 24 để tránh lỗi với các action cũ
-    
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1 # Tắt thu thập dữ liệu sử dụng .NET CLI
+
     steps:
     # ==========================================================
     # 1. Khởi tạo môi trường
     # ==========================================================
-    - name: Checkout code
+    - name: 🕒 Checkout code
       uses: actions/checkout@v4
       with:
         fetch-depth: 0 # Lấy toàn bộ lịch sử để hỗ trợ việc đánh số version nếu cần
 
-    # [NÂNG CẤP]: Chỉ chạy nếu file global.json tồn tại để tránh lỗi với các project không dùng global.json
-    - name: Control global.json
+    # Chỉ chạy nếu file global.json tồn tại để tránh lỗi với các project không dùng global.json
+    - name: 🕒 Control global.json
       if: hashFiles('global.json') != '' # Chỉ chạy nếu có file global.json trong repo
       shell: pwsh
       run: |
@@ -51,29 +56,31 @@ jobs:
         $json | ConvertTo-Json -Depth 10 | Set-Content global.json
         Write-Host "✅ Đã cấu hình lại global.json cho môi trường CI/CD!" -ForegroundColor Cyan
 
-    - name: Setup .NET
+    - name: 🛠️ Setup .NET
       uses: actions/setup-dotnet@v4
-      # Nếu không có global.json, nó sẽ dùng SDK mới nhất trên runner
       with:
+        dotnet-version: '9.0.x' # Yêu cầu ít nhất .NET 9.0, nhưng sẽ tự động dùng đúng bản patch nếu có global.json
         global-json-file: ${{ hashFiles('global.json') != '' && 'global.json' || '' }} # Tự động đọc đúng SDK version bạn đã sửa
-
-    - name: Install MAUI Workload
-      run: dotnet workload install maui
 
     # ==========================================================
     # 2. Caching (Giúp các lần build sau nhanh gấp 3 lần)
     # ==========================================================
-    - name: Cache NuGet Packages
+    - name:  🕒 Cache NuGet Packages
       uses: actions/cache@v4
       with:
-        path: ~/.nuget/packages
-        key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
-        restore-keys: nuget-${{ runner.os }}-
+        path: ${{ matrix.platform == 'android' && '~/.nuget/packages' || '~/.local/share/NuGet/packages' }}
+        key: nuget-${{ matrix.platform }}-${{ hashFiles('**/*.csproj', 'global.json') }}
+        restore-keys: |
+          nuget-${{ matrix.platform }}-
+
+    - name: ⚡ Install MAUI ${{ matrix.platform }}
+      run: |
+        dotnet workload install maui-${{ matrix.platform }} --no-history --nologo
 
     # ==========================================================
     # 3. Xử lý logic Build (Tự động nhận diện Keystore)
     # ==========================================================
-    - name: Build and Publish Android
+    - name: 📦 Build and Publish Android
       shell: pwsh
       env:
         KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -81,39 +88,30 @@ jobs:
         # Dò tìm csproj bất kỳ trong thư mục để lấy TFM Android (Hỗ trợ cả MAUI và .NET tiêu chuẩn)
         $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
         [xml]$xml = Get-Content $csproj.FullName
-        $tfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match 'android' } | Select-Object -First 1
-        
-        Write-Host "🚀 Đang build với TFM: $tfm" -ForegroundColor Cyan
-
-        # Sử dụng giá trị từ input người dùng chọn
-        $format = "${{ github.event.inputs.package_format }}"
-        if ([string]::IsNullOrWhiteSpace($format)) {
-            $format = "apk" # Mặc định nếu không có input
-        }
-            
+        $tfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match "${{ matrix.platform }}" } | Select-Object -First 1
+              
         Write-Host "📦 Định dạng mục tiêu: $format" -ForegroundColor Cyan
 
         $publishArgs = @(
-            "publish",
-            "-c", "Release",
-            "-f", $tfm,
-            "-p:AndroidPackageFormat=$format",
-            "-p:PublishTrimmed=false",
-            "-p:AndroidLinkMode=None"
+            "publish", "-c", "Release", "-f", $tfm,
+            "-p:RunAOTCompilation=true",
+            "-p:PublishTrimmed=true",
+            "-p:AndroidEnableProfileguidedOptimization=true"
         )
 
         # Kiểm tra nếu có Keystore thì thêm tham số ký (Signed)
-        if (-not [string]::IsNullOrWhiteSpace($env:KEYSTORE_BASE64)) {
-            Write-Host "🔐 Phát hiện Keystore! Đang tiến hành ký bản build..." -ForegroundColor Green
+        if ("${{ matrix.platform }}" -eq "android") {
+          $format = "${{ github.event.inputs.package_format }}"
+          if ([string]::IsNullOrEmpty($format)) { $format = "apk" }
+          $publishArgs += "-p:AndroidPackageFormat=$format"
+          
+          if (-not [string]::IsNullOrEmpty($env:KEYSTORE_BASE64))) {
             $bytes = [System.Convert]::FromBase64String($env:KEYSTORE_BASE64)
-            [IO.File]::WriteAllBytes("android.keystore", $bytes)
-            
+            [System.IO.File]::WriteAllBytes("android.keystore", $bytes)
             $publishArgs += "-p:AndroidSigningKeyStore=android.keystore"
             $publishArgs += "-p:AndroidSigningStorePass=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
             $publishArgs += "-p:AndroidSigningKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
             $publishArgs += "-p:AndroidSigningKeyPass=${{ secrets.ANDROID_KEY_PASSWORD }}"
-        } else {
-            Write-Host "⚠️ Không có Keystore! Build bản Unsigned (chỉ để test)." -ForegroundColor Yellow
         }
 
         dotnet @publishArgs
@@ -121,56 +119,32 @@ jobs:
     # ==========================================================
     # 4. Thu gom kết quả (Flattening)
     # ==========================================================
-    - name: Organize Artifacts
+    - name: 📁 Organize Artifacts
+      if: success()
       shell: pwsh
       run: |
         $baseDir = "publish-output"
-        $apkDir = "$baseDir/apk"
-        $aabDir = "$baseDir/aab"
-
-        # Tạo cấu trúc thư mục phân loại
-        New-Item -ItemType Directory -Path $apkDir -Force | Out-Null
-        New-Item -ItemType Directory -Path $aabDir -Force | Out-Null
-        
-        Write-Host "🔍 Đang lọc và phân loại file sản phẩm..." -ForegroundColor Cyan
-        
-        # Tìm tất cả file apk và aab, loại trừ các file đang nằm trong thư mục đích
-        $allFiles = Get-ChildItem -Path . -Recurse -File -ErrorAction SilentlyContinue | Where-Object { 
-            ($_.Extension -match 'apk|aab') -and ($_.DirectoryName -notlike "*$baseDir*") 
-        }
-        
-        if ($allFiles) {
-            foreach ($file in $allFiles) {
-                if ($file.Extension -eq ".apk") {Write-Host "📦 Đang đưa APK vào thư mục riêng: $($file.Name)" -ForegroundColor Green
-                    Move-Item -Path $file.FullName -Destination $apkDir -Force
-                } elseif ($file.Extension -eq ".aab") {Write-Host "📦 Đang đưa AAB vào thư mục riêng: $($file.Name)" -ForegroundColor Green
-                    Move-Item -Path $file.FullName -Destination $aabDir -Force
-                }
-            }
-            Write-Host "✅ Đã gom xong! Chuẩn bị đóng gói." -ForegroundColor Green
-        } else {
-            Write-Host "❌ LỖI: Không tìm thấy file APK/AAB nào! Quá trình Publish có thể đã thất bại ngầm." -ForegroundColor Red
-            exit 1
+        $platformDir = "$baseDir/${{ matrix.platform }}"
+        New-Item -ItemType Directory -Path "$platformDir/apk", "$platformDir/aab", "$platformDir/apple" -Force | Out-Null
+        Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -match 'apk|aab|pkg|dmg|app' -and $_.FullName -notlike "*$baseDir*" } | ForEach-Object {
+            if ($_.Extension -eq ".apk") { Move-Item $_.FullName "$platformDir/apk" -Force }
+            elseif ($_.Extension -eq ".aab") { Move-Item $_.FullName "$platformDir/aab" -Force }
+            else { Move-Item $_.FullName "$platformDir/apple" -Force }
         }
 
     # ==========================================================
     # 5. Lưu trữ và Phát hành
     # ==========================================================
-    - name: Upload Artifacts to GitHub
+    - name: 📤 Upload Artifacts to GitHub
       uses: actions/upload-artifact@v4
       with:
-        name: android-release-files
-        path: publish-output/*
+        name: ${{ matrix.platform }}-files
+        path: publish-output/
 
-    - name: Create GitHub Release
-      if: success() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
+    - name: 🚀 Create GitHub Release
+      if: success() && matrix.platform == 'android' # Chỉ tạo release cho Android để tránh spam nếu build nhiều nền tảng
       uses: softprops/action-gh-release@v1
       with:
         tag_name: build-${{ github.run_number }}
         name: 📦 Bản build tự động #${{ github.run_number }}
-        body: |
-          Dự án: ${{ github.repository }}
-          Commit: ${{ github.sha }}
-          Thời gian: ${{ github.event.head_commit.timestamp }}
-          Trạng thái: Build thành công ✅
         files: publish-output/**
