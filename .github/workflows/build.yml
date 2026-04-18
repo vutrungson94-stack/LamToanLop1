@@ -23,6 +23,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30 # Tự động ngắt nếu treo quá 30p để tiết kiệm tài nguyên
 
+    env:
+      FORCE_JAVACSRIPT_ACTION_TO_NODE24: "true" # Bắt buộc dùng Node 24 để tránh lỗi với các action cũ
+    
     steps:
     # ==========================================================
     # 1. Khởi tạo môi trường
@@ -121,20 +124,28 @@ jobs:
     - name: Organize Artifacts
       shell: pwsh
       run: |
-        $destDir = "publish-output"
-        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        $baseDir = "publish-output"
+        $apkDir = "$baseDir/apk"
+        $aabDir = "$baseDir/aab"
+
+        # Tạo cấu trúc thư mục phân loại
+        New-Item -ItemType Directory -Path $apkDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $aabDir -Force | Out-Null
         
-        Write-Host "🔍 Đang tìm APK/AAB trong dự án..." -ForegroundColor Cyan
+        Write-Host "🔍 Đang lọc và phân loại file sản phẩm..." -ForegroundColor Cyan
         
-        # Quét đệ quy toàn bộ thư mục hiện tại, tìm file apk/aab
-        $files = Get-ChildItem -Path . -Recurse -File -ErrorAction SilentlyContinue | Where-Object { 
-            ($_.Extension -match 'apk|aab') -and ($_.DirectoryName -notlike "*$destDir*") 
+        # Tìm tất cả file apk và aab, loại trừ các file đang nằm trong thư mục đích
+        $allFiles = Get-ChildItem -Path . -Recurse -File -ErrorAction SilentlyContinue | Where-Object { 
+            ($_.Extension -match 'apk|aab') -and ($_.DirectoryName -notlike "*$baseDir*") 
         }
         
-        if ($files) {
-            foreach ($file in $files) {
-                Write-Host "🚚 Đang copy: $($file.Name)" -ForegroundColor Green
-                Copy-Item -Path $file.FullName -Destination $destDir -Force
+        if ($allFiles) {
+            foreach ($file in $allFiles) {
+                if ($file.Extension -eq ".apk") {Write-Host "📦 Đang đưa APK vào thư mục riêng: $($file.Name)" -ForegroundColor Green
+                    Move-Item -Path $file.FullName -Destination $apkDir -Force
+                } elseif ($file.Extension -eq ".aab") {Write-Host "📦 Đang đưa AAB vào thư mục riêng: $($file.Name)" -ForegroundColor Green
+                    Move-Item -Path $file.FullName -Destination $aabDir -Force
+                }
             }
             Write-Host "✅ Đã gom xong! Chuẩn bị đóng gói." -ForegroundColor Green
         } else {
@@ -162,4 +173,4 @@ jobs:
           Commit: ${{ github.sha }}
           Thời gian: ${{ github.event.head_commit.timestamp }}
           Trạng thái: Build thành công ✅
-        files: publish-output/*
+        files: publish-output/**
