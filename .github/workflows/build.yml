@@ -32,7 +32,9 @@ jobs:
       with:
         fetch-depth: 0 # Lấy toàn bộ lịch sử để hỗ trợ việc đánh số version nếu cần
 
+    # [NÂNG CẤP]: Chỉ chạy nếu file global.json tồn tại để tránh lỗi với các project không dùng global.json
     - name: 🎩 VIP PRO Override - Khống chế global.json trên mây
+      if: hashFiles('global.json') != '' # Chỉ chạy nếu có file global.json trong repo
       shell: pwsh
       run: |
         # Đọc file global.json hiện tại
@@ -48,8 +50,9 @@ jobs:
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
+      # Nếu không có global.json, nó sẽ dùng SDK mới nhất trên runner
       with:
-        global-json-file: global.json # Tự động đọc đúng SDK version bạn đã sửa
+        global-json-file: ${{ hashFiles('global.json') != '' && 'global.json' || '' }} # Tự động đọc đúng SDK version bạn đã sửa
 
     - name: Install MAUI Workload
       run: dotnet workload install maui
@@ -72,8 +75,9 @@ jobs:
       env:
         KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       run: |
-        # Đọc TargetFramework đầu tiên từ file .csproj (ví dụ net9.0-android)
-        [xml]$xml = Get-Content (Get-ChildItem *.csproj).FullName
+        # Dò tìm csproj bất kỳ trong thư mục để lấy TFM Android (Hỗ trợ cả MAUI và .NET tiêu chuẩn)
+        $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
+        [xml]$xml = Get-Content $csproj.FullName
         $tfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match 'android' } | Select-Object -First 1
         
         Write-Host "🚀 Đang build với TFM: $tfm" -ForegroundColor Cyan
@@ -119,7 +123,8 @@ jobs:
       run: |
         # Tạo thư mục phẳng để dễ quản lý, tránh cấu hình thư mục lồng nhau của .NET
         New-Item -ItemType Directory -Path "publish-output" -Force
-        Get-ChildItem -Path bin/Release -Recurse | Where-Object { $_.Extension -match 'apk|aab' } | Copy-Item -Destination "publish-output"
+        # Dò tìm file apk/aab bất kể nó nằm ở đâu trong thư mục bin/Release và copy ra thư mục publish-output
+        Get-ChildItem . -Recurse -Filter *.* | Where-Object { $_.Extension -match 'apk|aab' } | Copy-Item -Destination "publish-output" -Force
         Write-Host "✅ Đã gom các file APK/AAB vào thư mục publish-output"
 
     # ==========================================================
@@ -130,7 +135,6 @@ jobs:
       with:
         name: android-release-files
         path: publish-output/*
-        retention-days: 7 # Lưu trong 7 ngày để tiết kiệm dung lượng repo
 
     - name: Create GitHub Release
       if: success() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
@@ -139,9 +143,8 @@ jobs:
         tag_name: build-${{ github.run_number }}
         name: 📦 Bản build tự động #${{ github.run_number }}
         body: |
-          Dự án: LamToanLop1
-          Thời gian build: ${{ github.event.head_commit.timestamp }}
+          Dự án: ${{ github.repository }}
+          Commit: ${{ github.sha }}
+          Thời gian: ${{ github.event.head_commit.timestamp }}
           Trạng thái: Build thành công ✅
         files: publish-output/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
