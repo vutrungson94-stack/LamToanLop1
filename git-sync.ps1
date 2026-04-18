@@ -76,15 +76,21 @@ if ($status -match "bin/|obj/") {
 # ==========================================================
 Write-Host "`n🔍 Đang kiểm tra môi trường Build..." -ForegroundColor Cyan
 
-# [PRO UPGRADE]: Dò Framework an toàn và chính xác hơn
-$projectFile = Get-ChildItem -Filter *.csproj | Select-Object -First 1
-$androidFramework = "net9.0-android" # Mặc định
+# [ULTIMATE UPGRADE]: Dò tìm thông minh cho mọi loại project .NET
+$projectFile = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
+$buildTarget = "" # Mặc định để trống nếu không phải MAUI
 
 if ($projectFile) {
     try {
         [xml]$xml = Get-Content $projectFile.FullName -ErrorAction SilentlyContinue
+        # Tìm Framework Android cho MAUI
         $foundTfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match 'android' } | Select-Object -First 1
-        if ($foundTfm) { $androidFramework = $foundTfm }
+        if ($foundTfm) { 
+            $buildTarget = $foundTfm 
+            Write-Host "📱 Phát hiện MAUI Target: $foundTfm" -ForegroundColor Gray
+        } else {
+            Write-Host "💻 Phát hiện Project .NET tiêu chuẩn." -ForegroundColor Gray
+        }
     } catch {}
 }
 
@@ -100,8 +106,8 @@ elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
     # Đang chạy trên máy tính cá nhân -> Build kiểm tra
     Write-Host "💻 Môi trường: Local. Đang build ngầm kiểm tra cú pháp ($androidFramework)..." -ForegroundColor Cyan
     
-    # [PRO UPGRADE]: Chạy build ẩn danh (quiet), chỉ văng lỗi khi thực sự hỏng
-    dotnet build -f $androidFramework -v q --nologo
+    # Chạy build nhẹ nhàng (Chỉ kiểm tra lỗi, không xuất file)
+    dotnet build $buildTarget -v q --nologo
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "`n❌ LỖI CODE: Quá trình Build thất bại!" -ForegroundColor Red
@@ -155,7 +161,5 @@ if ($LASTEXITCODE -ne 0) {
 # 8. Hoàn tất
 # ==========================================================
 Write-Host "`n🎉 ĐỒNG BỘ THÀNH CÔNG!" -ForegroundColor Green
-Write-Host "👉 GitHub Actions đang tự động Build APK/AAB cho bạn rồi đó." -ForegroundColor Gray
-
 # Phát âm thanh ting ting
 Write-Host "`a" -NoNewline

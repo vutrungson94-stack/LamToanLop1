@@ -11,6 +11,13 @@ if (Test-Path $sshKeyPath) {
     $env:GIT_SSH_COMMAND = "ssh -i `"$sshKeyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
 }
 
+# --- ĐOẠN NÂNG CẤP VIP PRO: CHỐNG LỖI 403 ---
+if ($env:GITHUB_TOKEN -or $env:GH_TOKEN) {
+    $env:GITHUB_TOKEN = $null
+    $env:GH_TOKEN = $null
+}
+# --------------------------------------------
+
 Write-Host "`n=======================================" -ForegroundColor Cyan
 Write-Host " 🚀 gbuild – AUTO CI BUILD TOOL (PRO)  " -ForegroundColor Cyan
 Write-Host "=======================================`n" -ForegroundColor Cyan
@@ -35,18 +42,14 @@ if (-not $gh) {
 # 2. Check Auth (Hỗ trợ Codespaces Token)
 # ==========================================================
 $isAuthenticated = $false
-if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
-    $isAuthenticated = $true 
-} else {
-    & $gh auth status *> $null
-    if ($LASTEXITCODE -eq 0) { $isAuthenticated = $true }
-}
+& $gh auth status *> $null
+if ($LASTEXITCODE -eq 0) { $isAuthenticated = $true }
 
 if (-not $isAuthenticated) {
     Write-Host "❌ Lỗi: Chưa đăng nhập GitHub CLI" -ForegroundColor Red
     Write-Host "👉 Hãy chạy lệnh: gh auth login --scopes workflow" -ForegroundColor Yellow
     exit 1
-}
+} 
 Write-Host "✅ Xác thực thành công!" -ForegroundColor Gray
 
 $currentBranch = "main"
@@ -97,9 +100,16 @@ if ($priorityWorkflows.Count -eq 1) {
 # ==========================================================
 Write-Host "`n🚀 Đang kích hoạt tiến trình Build [$currentBranch]..." -ForegroundColor Cyan
 
+# Lấy ID của lần chạy gần nhất để so sánh
 $lastRunId = (& $gh run list --workflow $selected.id --limit 1 --json databaseId | ConvertFrom-Json).databaseId
 
-& $gh workflow run $selected.id --ref $currentBranch
+# --- ĐOẠN NÂNG CẤP VIP PRO: TỰ ĐỘNG NHẬN DIỆN THAM SỐ ---
+& $gh workflow run $selected.id --ref $currentBranch -f package_format=apk
+if ($LASTEXITCODE -ne 0) {
+    & $gh workflow run $selected.id --ref $currentBranch
+}
+# -------------------------------------------------------
+
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Không thể kích hoạt. Hãy đảm bảo file .yml có 'workflow_dispatch'." -ForegroundColor Red
     exit 1
