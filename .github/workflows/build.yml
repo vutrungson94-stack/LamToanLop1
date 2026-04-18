@@ -8,7 +8,15 @@ on:
   push:
     branches: ["main"]
   workflow_dispatch: # Cho phép bấm nút Build thủ công từ GitHub hoặc qua script gbuild
-
+    inputs:
+      package_format:
+        description: 'Chọn định dạng xuất bản (apk hoặc aab)'
+        required: true
+        default: 'apk'
+        type: choice
+        options:
+          - apk
+          - aab
 jobs:
   build:
     runs-on: windows-latest
@@ -69,12 +77,14 @@ jobs:
         
         Write-Host "🚀 Đang build với TFM: $tfm" -ForegroundColor Cyan
 
-        # Thiết lập bộ tham số build chuẩn
+        # Sử dụng giá trị từ input người dùng chọn
+        $format = "${{ github.event.inputs.package_format }}"
+
         $publishArgs = @(
             "publish",
             "-c", "Release",
             "-f", $tfm,
-            "-p:AndroidPackageFormat=apk;aab",
+            "-p:AndroidPackageFormat=$format",
             "-p:PublishTrimmed=false",
             "-p:AndroidLinkMode=None"
         )
