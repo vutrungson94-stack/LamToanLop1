@@ -52,16 +52,7 @@ jobs:
         key: nuget-android-${{ hashFiles('**/*.csproj') }}
 
     - name: ⚡ Install MAUI Android
-      shell: pwsh
-      run: |
-        # 1. Dọn dẹp tàn dư cũ để tránh xung đột
-        dotnet workload repair
-
-        # 2. Cấu hình để cài đặt vào thư mục User (tránh lỗi quyền System)
-        $env:DOTNET_CLI_HOME = "$HOME/.dotnet_custom"
-        
-        # 3. Cài đặt trực tiếp (Sử dụng --include-pre-release nếu bạn dùng .NET 9 đời đầu)
-        dotnet workload install maui-android --no-history --nologo
+      run: dotnet workload install maui-android --no-history --nologo --source https://api.nuget.org/v3/index.json
 
     - name: 📦 Build Android
       shell: pwsh
@@ -69,7 +60,10 @@ jobs:
         $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
         [xml]$xml = Get-Content $csproj.FullName
         # SỬA LỖI: Match trực tiếp với 'android' vì không có matrix ở đây
-        $tfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match 'android' } | Select-Object -First 1
+        $tfm = $xml.Project.PropertyGroup 
+          | Foreach-Object { $_.TargetFramework } 
+          | Where-Object { $_ -match 'android' } 
+          | Select-Object -First 1
         
         $format = "${{ github.event.inputs.package_format }}"
         if ([string]::IsNullOrWhiteSpace($format)) { $format = "apk" }
@@ -128,7 +122,7 @@ jobs:
       run: dotnet workload install maui-${{ matrix.platform }} --no-history --nologo
       
     - name: 📦 Build Apple
-      run: dotnet publish -c Release -p:RunAOTCompilation=true -p:PublishTrimmed=true
+      run: dotnet publish -c Release -f net9.0-${{ matrix.platform }} -p:RunAOTCompilation=true -p:PublishTrimmed=true
       
     - name: 📁 Organize Apple Artifacts
       if: success()
