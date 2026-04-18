@@ -1,13 +1,13 @@
 name: Build MAUI Android (VIP PRO)
 
 permissions:
-  contents: write # Cho phép tạo release và upload artifact
-  actions: write # Cho phép workflow tự động tạo tag và release
+  contents: write
+  actions: write
 
 on:
   push:
     branches: ["main"]
-  workflow_dispatch: # Cho phép bấm nút Build thủ công từ GitHub hoặc qua script gbuild
+  workflow_dispatch:
     inputs:
       package_format:
         description: 'Chọn định dạng xuất bản (apk hoặc aab)'
@@ -15,139 +15,130 @@ on:
         default: 'apk'
         type: choice
         options: [apk, aab]
+
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true" # Bắt buộc dùng Node 24 để tránh lỗi với các action cũ
-      
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
-  build:
-    name: 🏗️  Build ${{ matrix.platform }}
-    runs-on: ${{ (matrix.platform == 'ios' || matrix.platform == 'maccatalyst') && 'macos-latest' || 'ubuntu-latest' }}
-    timeout-minutes: 30 # Tự động ngắt nếu treo quá 30p để tiết kiệm tài nguyên
-
-    strategy:
-      fail-fast: false # Tiếp tục chạy hết tất cả các job ngay cả khi có lỗi để thu thập đầy đủ thông tin
-      matrix:
-        platform: [android, ios, maccatalyst] # Mở rộng sau này nếu cần build thêm nền tảng khác như Windows, Tizen...
-
+  # ==========================================================
+  # NHÁNH CHỦ ĐẠO: ANDROID (Tạo Release trước)
+  # ==========================================================
+  build-android:
+    name: 📱 Build & Release Android
+    runs-on: ubuntu-latest
     steps:
-    # ==========================================================
-    # 1. Khởi tạo môi trường
-    # ==========================================================
-    - name: 🕒  Checkout code
+    - name: 🕒 Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 # Lấy toàn bộ lịch sử để hỗ trợ việc đánh số version nếu cần
 
-    # Chỉ chạy nếu file global.json tồn tại để tránh lỗi với các project không dùng global.json
-    - name: 🕒  Control global.json
-      if: hashFiles('global.json') != '' # Chỉ chạy nếu có file global.json trong repo
+    - name: 🔐 Control global.json
+      if: hashFiles('global.json') != ''
       shell: pwsh
       run: |
-        # Đọc file global.json hiện tại
         $json = Get-Content global.json | ConvertFrom-Json
-        
-        # Bắt máy chủ GitHub bỏ qua latestMajor, ép dùng đúng bản vá (patch) của .NET 9
         $json.sdk.rollForward = "patch"
-        $json.sdk.allowPrerelease = $false
-        
-        # Lưu đè lại file (chỉ có tác dụng trên máy chủ ảo lúc đang build)
         $json | ConvertTo-Json -Depth 10 | Set-Content global.json
-        Write-Host "✅ Đã cấu hình lại global.json cho môi trường CI/CD!" -ForegroundColor Cyan
+        Write-Host "✅ Đã cấu hình global.json!" -ForegroundColor Cyan
 
-    - name: 🛠️  Setup .NET
+    - name: 🛠️ Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x' # Yêu cầu ít nhất .NET 9.0, nhưng sẽ tự động dùng đúng bản patch nếu có global.json
-        global-json-file: ${{ hashFiles('global.json') != '' && 'global.json' || '' }} # Tự động đọc đúng SDK version bạn đã sửa
+        dotnet-version: '9.0.x'
+        global-json-file: ${{ hashFiles('global.json') != '' && 'global.json' || '' }}
 
-    # ==========================================================
-    # 2. Caching (Giúp các lần build sau nhanh gấp 3 lần)
-    # ==========================================================
-    - name:  🕒 Cache NuGet Packages
+    - name: 🕒 Cache NuGet (Android)
       uses: actions/cache@v4
       with:
-        path: ${{ matrix.platform == 'android' && '~/.nuget/packages' || '~/.local/share/NuGet/packages' }}
-        key: nuget-${{ matrix.platform }}-${{ hashFiles('**/*.csproj', 'global.json') }}
-        restore-keys: |
-          nuget-${{ matrix.platform }}-
+        path: ~/.nuget/packages
+        key: nuget-android-${{ hashFiles('**/*.csproj') }}
 
-    - name: ⚡ Install MAUI Workload (Smart Install)
+    - name: ⚡ Install MAUI Android
+      run: dotnet workload install maui-android --no-history --nologo
+
+    - name: 📦 Build Android
       shell: pwsh
       run: |
-        if ("${{ matrix.platform }}" -eq "android") {
-            dotnet workload install maui-android --no-history --nologo
-        } else {
-            dotnet workload install maui-ios maui-maccatalyst --no-history --nologo
-        }
-
-    # ==========================================================
-    # 3. Xử lý logic Build (Tự động nhận diện Keystore)
-    # ==========================================================
-    - name: 📦 Build and Publish Android
-      shell: pwsh
-      env:
-        KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      run: |
-        # Dò tìm csproj bất kỳ trong thư mục để lấy TFM Android (Hỗ trợ cả MAUI và .NET tiêu chuẩn)
         $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
         [xml]$xml = Get-Content $csproj.FullName
-        $tfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match "${{ matrix.platform }}" } | Select-Object -First 1
-              
-        Write-Host "📦 Định dạng mục tiêu: $format" -ForegroundColor Cyan
+        # SỬA LỖI: Match trực tiếp với 'android' vì không có matrix ở đây
+        $tfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match 'android' } | Select-Object -First 1
+        
+        $format = "${{ github.event.inputs.package_format }}"
+        if ([string]::IsNullOrWhiteSpace($format)) { $format = "apk" }
+        
+        dotnet publish -c Release -f $tfm -p:RunAOTCompilation=true -p:PublishTrimmed=true -p:AndroidPackageFormat=$format
 
-        $publishArgs = @(
-            "publish", "-c", "Release", "-f", $tfm,
-            "-p:RunAOTCompilation=true",
-            "-p:PublishTrimmed=true",
-            "-p:AndroidEnableProfileguidedOptimization=true"
-        )
-
-        # Kiểm tra nếu có Keystore thì thêm tham số ký (Signed)
-        if ("${{ matrix.platform }}" -eq "android") {
-          $format = "${{ github.event.inputs.package_format }}"
-          if ([string]::IsNullOrEmpty($format)) { $format = "apk" }
-          $publishArgs += "-p:AndroidPackageFormat=$format"
-          
-          if (-not [string]::IsNullOrEmpty($env:KEYSTORE_BASE64))) {
-            $bytes = [System.Convert]::FromBase64String($env:KEYSTORE_BASE64)
-            [System.IO.File]::WriteAllBytes("android.keystore", $bytes)
-            $publishArgs += "-p:AndroidSigningKeyStore=android.keystore"
-            $publishArgs += "-p:AndroidSigningStorePass=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-            $publishArgs += "-p:AndroidSigningKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
-            $publishArgs += "-p:AndroidSigningKeyPass=${{ secrets.ANDROID_KEY_PASSWORD }}"
+    - name: 📁 Organize Android Artifacts
+      if: success()
+      shell: pwsh
+      run: |
+        $baseDir = "publish-output"
+        $platformDir = "$baseDir/android"
+        New-Item -ItemType Directory -Path "$platformDir/apk", "$platformDir/aab" -Force | Out-Null
+        Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -match 'apk|aab' -and $_.FullName -notlike "*$baseDir*" } | ForEach-Object {
+            if ($_.Extension -eq ".apk") { Move-Item $_.FullName "$platformDir/apk" -Force }
+            elseif ($_.Extension -eq ".aab") { Move-Item $_.FullName "$platformDir/aab" -Force }
         }
 
-        dotnet @publishArgs
+    - name: 📤 Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-files
+        path: publish-output/
 
-    # ==========================================================
-    # 4. Thu gom kết quả (Flattening)
-    # ==========================================================
-    - name: 📁 Organize Artifacts
+    - name: 🚀 Create GitHub Release (Android First)
+      if: success()
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: build-${{ github.run_number }}
+        name: 📦 Full Build #${{ github.run_number }}
+        files: publish-output/**
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================================
+  # NHÁNH PHỤ: APPLE (Đính kèm thêm vào Release đã tạo)
+  # ==========================================================
+  build-apple:
+    name: 🍎 ${{ matrix.platform }}
+    needs: build-android
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ios, maccatalyst]
+    runs-on: macos-latest
+    steps:
+    - name: 🕒 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🛠️ Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        global-json-file: ${{ hashFiles('global.json') != '' && 'global.json' || '' }}
+
+    - name: ⚡ Install MAUI ${{ matrix.platform }}
+      run: dotnet workload install maui-${{ matrix.platform }} --no-history --nologo
+      
+    - name: 📦 Build Apple
+      run: dotnet publish -c Release -p:RunAOTCompilation=true -p:PublishTrimmed=true
+      
+    - name: 📁 Organize Apple Artifacts
       if: success()
       shell: pwsh
       run: |
         $baseDir = "publish-output"
         $platformDir = "$baseDir/${{ matrix.platform }}"
-        New-Item -ItemType Directory -Path "$platformDir/apk", "$platformDir/aab", "$platformDir/apple" -Force | Out-Null
-        Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -match 'apk|aab|pkg|dmg|app' -and $_.FullName -notlike "*$baseDir*" } | ForEach-Object {
-            if ($_.Extension -eq ".apk") { Move-Item $_.FullName "$platformDir/apk" -Force }
-            elseif ($_.Extension -eq ".aab") { Move-Item $_.FullName "$platformDir/aab" -Force }
-            else { Move-Item $_.FullName "$platformDir/apple" -Force }
+        New-Item -ItemType Directory -Path "$platformDir/apple" -Force | Out-Null
+        Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -match 'pkg|dmg|app' -and $_.FullName -notlike "*$baseDir*" } | ForEach-Object {
+            Move-Item $_.FullName "$platformDir/apple" -Force
         }
 
-    # ==========================================================
-    # 5. Lưu trữ và Phát hành
-    # ==========================================================
-    - name: 📤 Upload Artifacts to GitHub
-      uses: actions/upload-artifact@v4
+    - name: 🚀 Update Release with Apple Files
+      if: success()
+      uses: softprops/action-gh-release@v2
       with:
-        name: ${{ matrix.platform }}-files
-        path: publish-output/
-
-    - name: 🚀 Create GitHub Release
-      if: success() && matrix.platform == 'android' # Chỉ tạo release cho Android để tránh spam nếu build nhiều nền tảng
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: build-${{ github.run_number }}
-        name: 📦 Bản build tự động #${{ github.run_number }}
+        tag_name: build-${{ github.run_number }} # Dùng chung tag để đính kèm vào bản Android đã tạo
         files: publish-output/**
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
