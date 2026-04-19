@@ -64,8 +64,8 @@ if (-not $status) {
 Write-Host "`n📂 Các file đã sửa đổi:" -ForegroundColor Yellow
 $status | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
 
-# Chặn file rác
-if ($status -match "bin/|obj/") {
+# Chặn file rác (hỗ trợ cả đường dẫn Windows \ và Unix /)
+if ($status -match 'bin[/\\]|obj[/\\]') {
     Write-Host "`n❌ CẢNH BÁO: Phát hiện thư mục bin/ hoặc obj/ lọt vào Git!" -ForegroundColor Red
     Write-Host "👉 Hãy thêm 'bin/' và 'obj/' vào file .gitignore trước khi tiếp tục." -ForegroundColor Yellow
     exit 1
@@ -76,20 +76,58 @@ if ($status -match "bin/|obj/") {
 # ==========================================================
 Write-Host "`n🔍 Đang kiểm tra môi trường Build..." -ForegroundColor Cyan
 
-# [ULTIMATE UPGRADE]: Dò tìm thông minh cho mọi loại project .NET
-$projectFile = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
-$buildTarget = "" # Mặc định để trống nếu không phải MAUI
+function Get-CsprojTfms([string]$projPath) {
+    [xml]$x = Get-Content -LiteralPath $projPath
+    $list = [System.Collections.Generic.List[string]]::new()
+    foreach ($pg in $x.Project.PropertyGroup) {
+        if ($pg.TargetFrameworks) {
+            foreach ($p in ($pg.TargetFrameworks -split ';')) {
+                $t = $p.Trim()
+                if ($t) { [void]$list.Add($t) }
+            }
+        }
+        if ($pg.TargetFramework) { [void]$list.Add($pg.TargetFramework.Trim()) }
+    }
+    return ,@($list | Select-Object -Unique)
+}
 
+function Get-MauiAndroidCsproj {
+    $all = Get-ChildItem -Path . -Recurse -Filter *.csproj -File | Where-Object {
+        $_.FullName -notmatch '[\\/](obj|bin|packages|node_modules)[\\/]'
+    } | Sort-Object FullName
+    foreach ($c in $all) {
+        if ($c.Name -match '\.Tests\.') { continue }
+        $raw = Get-Content -LiteralPath $c.FullName -Raw -ErrorAction SilentlyContinue
+        if (-not $raw) { continue }
+        $tfms = Get-CsprojTfms $c.FullName
+        if (-not ($tfms | Where-Object { $_ -match 'android' })) { continue }
+        if ($raw -match '<UseMaui>\s*true\s*</UseMaui>' -or $raw -match 'net[0-9.]+-android') { return $c }
+    }
+    foreach ($c in $all) {
+        if ($c.Name -match '\.Tests\.') { continue }
+        $tfms = Get-CsprojTfms $c.FullName
+        if ($tfms | Where-Object { $_ -match 'android' }) { return $c }
+    }
+    return $null
+}
+
+$projectFile = Get-MauiAndroidCsproj
+if (-not $projectFile) {
+    $projectFile = Get-ChildItem -Path . -Recurse -Filter *.csproj -File |
+        Where-Object { $_.FullName -notmatch '[\\/](obj|bin)[\\/]' } |
+        Select-Object -First 1
+}
+
+$buildTarget = ""
 if ($projectFile) {
     try {
-        [xml]$xml = Get-Content $projectFile.FullName -ErrorAction SilentlyContinue
-        # Tìm Framework Android cho MAUI
-        $foundTfm = $xml.Project.PropertyGroup.TargetFrameworks -split ';' | Where-Object { $_ -match 'android' } | Select-Object -First 1
-        if ($foundTfm) { 
-            $buildTarget = $foundTfm 
-            Write-Host "📱 Phát hiện MAUI Target: $foundTfm" -ForegroundColor Gray
+        $tfms = Get-CsprojTfms $projectFile.FullName
+        $foundTfm = $tfms | Where-Object { $_ -match 'android' } | Select-Object -First 1
+        if ($foundTfm) {
+            $buildTarget = $foundTfm.Trim()
+            Write-Host "📱 Phát hiện MAUI / Android Target: $buildTarget" -ForegroundColor Gray
         } else {
-            Write-Host "💻 Phát hiện Project .NET tiêu chuẩn." -ForegroundColor Gray
+            Write-Host "💻 Project .NET (không dùng -f android)." -ForegroundColor Gray
         }
     } catch {}
 }
@@ -103,12 +141,16 @@ if ($env:CODESPACES -eq "true") {
     Write-Host "👉 Tự động bỏ qua Build Test. Việc Build sẽ giao cho GitHub Actions!" -ForegroundColor Green
 }
 elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
-    # Đang chạy trên máy tính cá nhân -> Build kiểm tra
-    Write-Host "💻 Môi trường: Local. Đang build ngầm kiểm tra cú pháp ($buildTarget)..." -ForegroundColor Cyan
-    
-    # Chạy build nhẹ nhàng (Chỉ kiểm tra lỗi, không xuất file)
-    dotnet build $projectFile.FullName -f $buildTarget -v q --nologo
-    
+    if (-not $projectFile) {
+        Write-Host "⚠️ Không tìm thấy .csproj – Bỏ qua build kiểm tra." -ForegroundColor DarkGray
+    } else {
+    Write-Host "💻 Môi trường: Local. Đang build kiểm tra cú pháp..." -ForegroundColor Cyan
+    if ([string]::IsNullOrWhiteSpace($buildTarget)) {
+        dotnet build $projectFile.FullName -v q --nologo
+    } else {
+        dotnet build $projectFile.FullName -f $buildTarget -v q --nologo
+    }
+
     if ($LASTEXITCODE -ne 0) {
         Write-Host "`n❌ LỖI CODE: Quá trình Build thất bại!" -ForegroundColor Red
         $answer = Read-Host "⚠️ Bạn có muốn BỎ QUA lỗi và cứ thế Push lên không? (y/n)"
@@ -118,6 +160,7 @@ elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
         }
     } else {
         Write-Host "✅ Code chuẩn Không có lỗi cú pháp!" -ForegroundColor Green
+    }
     }
 } else {
     Write-Host "⚠️ Không tìm thấy .NET SDK cục bộ – Bỏ qua bước Build test." -ForegroundColor DarkGray

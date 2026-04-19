@@ -20,8 +20,106 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  detect-maui:
+    name: 🔎 Detect MAUI project & TFMs
+    runs-on: ubuntu-latest
+    outputs:
+      csproj_path: ${{ steps.scan.outputs.csproj_path }}
+      android_tfm: ${{ steps.scan.outputs.android_tfm }}
+      apple_count: ${{ steps.scan.outputs.apple_count }}
+      apple_matrix_json: ${{ steps.scan.outputs.apple_matrix_json }}
+    steps:
+    - name: 🕒 Checkout code
+      uses: actions/checkout@v4
+
+    - name: Scan .csproj / TFMs
+      id: scan
+      shell: pwsh
+      run: |
+        function Get-CsprojTfms([string]$projPath) {
+          [xml]$x = Get-Content -LiteralPath $projPath
+          $list = [System.Collections.Generic.List[string]]::new()
+          foreach ($pg in $x.Project.PropertyGroup) {
+            if ($pg.TargetFrameworks) {
+              foreach ($p in ($pg.TargetFrameworks -split ';')) {
+                $t = $p.Trim()
+                if ($t) { [void]$list.Add($t) }
+              }
+            }
+            if ($pg.TargetFramework) {
+              [void]$list.Add($pg.TargetFramework.Trim())
+            }
+          }
+          return ,@($list | Select-Object -Unique)
+        }
+
+        $all = Get-ChildItem -Path . -Recurse -Filter *.csproj -File | Where-Object {
+          $_.FullName -notmatch '[\\/](obj|bin|packages|node_modules)[\\/]'
+        } | Sort-Object FullName
+
+        $main = $null
+        foreach ($c in $all) {
+          $raw = Get-Content -LiteralPath $c.FullName -Raw
+          if ($c.Name -match '\.Tests\.') { continue }
+          $tfms = Get-CsprojTfms $c.FullName
+          $hasAndroid = $tfms | Where-Object { $_ -match 'android' }
+          if (-not $hasAndroid) { continue }
+          $isMaui = $raw -match '<UseMaui>\s*true\s*</UseMaui>'
+          if ($isMaui -or $raw -match 'net[0-9.]+-android') {
+            $main = $c
+            break
+          }
+        }
+        if (-not $main) {
+          foreach ($c in $all) {
+            if ($c.Name -match '\.Tests\.') { continue }
+            $tfms = Get-CsprojTfms $c.FullName
+            if ($tfms | Where-Object { $_ -match 'android' }) {
+              $main = $c
+              break
+            }
+          }
+        }
+        if (-not $main) {
+          Write-Error "Không tìm thấy .csproj có TargetFramework android."
+          exit 1
+        }
+
+        $tfms = Get-CsprojTfms $main.FullName
+        $androidTfm = $tfms | Where-Object { $_ -match 'android' } | Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace($androidTfm)) {
+          Write-Error "Project $($main.Name) không có TFM android."
+          exit 1
+        }
+
+        $iosTfm = $tfms | Where-Object { $_ -match 'net[0-9.]+-ios' -and $_ -notmatch 'maccatalyst' } | Select-Object -First 1
+        $macTfm = $tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -First 1
+
+        $rows = [System.Collections.Generic.List[hashtable]]::new()
+        if ($iosTfm) { $rows.Add(@{ platform = 'ios'; tfm = $iosTfm }) }
+        if ($macTfm) { $rows.Add(@{ platform = 'maccatalyst'; tfm = $macTfm }) }
+
+        $repoRoot = (Get-Location).Path
+        $rel = [System.IO.Path]::GetRelativePath($repoRoot, $main.FullName) -replace '\\', '/'
+        Write-Host "✅ csproj: $rel"
+        Write-Host "✅ android TFM: $androidTfm"
+        if ($iosTfm) { Write-Host "✅ iOS TFM: $iosTfm" }
+        if ($macTfm) { Write-Host "✅ Mac Catalyst TFM: $macTfm" }
+
+        $count = $rows.Count
+        $matrixJson = if ($count -eq 0) { '[]' } else { (ConvertTo-Json -InputObject @($rows.ToArray()) -Compress -Depth 5) }
+
+        "csproj_path=$rel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "android_tfm=$androidTfm" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "apple_count=$count" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        $eof = 'APPLE_MATRIX_EOF'
+        "apple_matrix_json<<$eof" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        $matrixJson | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "$eof" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
   build-android:
     name: 📱 Build & Release Android
+    needs: detect-maui
     runs-on: ubuntu-latest
     steps:
     - name: 🕒 Checkout code
@@ -32,6 +130,7 @@ jobs:
       shell: pwsh
       run: |
         $json = Get-Content global.json | ConvertFrom-Json
+        if (-not $json.sdk) { $json | Add-Member -Name sdk -Value (@{}) -MemberType NoteProperty }
         $json.sdk.rollForward = "latestMinor"
         $json | ConvertTo-Json -Depth 10 | Set-Content global.json
         Write-Host "✅ Đã cấu hình global.json!" -ForegroundColor Cyan
@@ -45,7 +144,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.nuget/packages
-        key: nuget-android-${{ hashFiles('**/*.csproj') }}
+        key: nuget-android-${{ hashFiles('**/global.json', '**/*.csproj') }}
 
     - name: ⚡ Install MAUI Android
       run: dotnet workload install maui-android
@@ -55,29 +154,19 @@ jobs:
 
     - name: 📦 Build Android
       shell: pwsh
+      env:
+        CSPROJ: ${{ needs.detect-maui.outputs.csproj_path }}
+        ANDROID_TFM: ${{ needs.detect-maui.outputs.android_tfm }}
       run: |
-        # ✅ Lấy đúng file .csproj (không phải .slnx hay .sln)
-        $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
-        Write-Host "✅ Project: $($csproj.FullName)"
-
-        [xml]$xml = Get-Content $csproj.FullName
-        $tfm = $xml.Project.PropertyGroup `
-          | ForEach-Object { $_.TargetFrameworks } `
-          | Where-Object { $_ -match 'android' } `
-          | Select-Object -First 1
-
-        if ([string]::IsNullOrWhiteSpace($tfm)) {
-          Write-Error "❌ Không tìm thấy TargetFramework android trong .csproj"
-          exit 1
-        }
-
+        $csproj = Resolve-Path -LiteralPath $env:CSPROJ
+        Write-Host "✅ Project: $csproj"
+        $tfm = $env:ANDROID_TFM
         Write-Host "✅ TFM: $tfm"
 
         $format = "${{ github.event.inputs.package_format }}"
         if ([string]::IsNullOrWhiteSpace($format)) { $format = "apk" }
 
-        # ✅ Truyền thẳng đường dẫn csproj vào để tránh lỗi MSB1011
-        dotnet publish $csproj.FullName -c Release -f $tfm `
+        dotnet publish $csproj -c Release -f $tfm `
           -p:AndroidPackageFormat=$format
 
     - name: 📁 Organize Android Artifacts
@@ -110,16 +199,27 @@ jobs:
         generate_release_notes: true
 
   build-apple:
-    name: 🍎 ${{ matrix.platform }}
-    needs: build-android
+    name: 🍎 ${{ matrix.platform }} (${{ matrix.tfm }})
+    needs: [detect-maui, build-android]
+    if: needs.detect-maui.outputs.apple_count != '0'
     strategy:
       fail-fast: false
       matrix:
-        platform: [ios, maccatalyst]
+        include: ${{ fromJson(needs.detect-maui.outputs.apple_matrix_json) }}
     runs-on: macos-latest
     steps:
     - name: 🕒 Checkout code
       uses: actions/checkout@v4
+
+    - name: 🔐 Control global.json
+      if: hashFiles('global.json') != ''
+      shell: pwsh
+      run: |
+        $json = Get-Content global.json | ConvertFrom-Json
+        if (-not $json.sdk) { $json | Add-Member -Name sdk -Value (@{}) -MemberType NoteProperty }
+        $json.sdk.rollForward = "latestMinor"
+        $json | ConvertTo-Json -Depth 10 | Set-Content global.json
+        Write-Host "✅ Đã cấu hình global.json!" -ForegroundColor Cyan
 
     - name: 🛠️ Setup .NET
       uses: actions/setup-dotnet@v4
@@ -134,17 +234,17 @@ jobs:
 
     - name: 📦 Build Apple
       shell: pwsh
+      env:
+        CSPROJ: ${{ needs.detect-maui.outputs.csproj_path }}
+        TFM: ${{ matrix.tfm }}
       run: |
-        # ✅ Cũng lấy đúng csproj, tránh MSB1011
-        $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
-        Write-Host "✅ Project: $($csproj.FullName)"
+        $csproj = Resolve-Path -LiteralPath $env:CSPROJ
+        $tfm = $env:TFM
+        Write-Host "✅ Project: $csproj"
+        Write-Host "✅ TFM: $tfm"
 
-        # ✅ Override TargetFrameworks chỉ build platform hiện tại, bỏ qua android
-        dotnet publish $csproj.FullName -c Release -f net10.0-${{ matrix.platform }} `
-          -p:TargetFrameworks=net10.0-${{ matrix.platform }}
-
-        # ✅ Đổi net9.0 → net10.0
-        dotnet publish $csproj.FullName -c Release -f net10.0-${{ matrix.platform }}
+        dotnet publish $csproj -c Release -f $tfm `
+          -p:TargetFrameworks=$tfm
 
     - name: 📁 Organize Apple Artifacts
       if: success()

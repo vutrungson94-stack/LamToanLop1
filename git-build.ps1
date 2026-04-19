@@ -1,8 +1,15 @@
 ﻿#!/usr/bin/env pwsh
 
+[CmdletBinding()]
+param(
+    [ValidateSet('apk', 'aab')]
+    [string]$PackageFormat = 'apk'
+)
+
 # ==============================================================================
 # SCRIPT: git-build.ps1 (ULTIMATE COMPATIBLE VIP PRO)
 # MỤC TIÊU: Chạy được trên mọi phiên bản GitHub CLI (Kể cả bản cũ trên Codespaces)
+# Tham số: -PackageFormat apk | aab (khớp workflow_dispatch input package_format)
 # ==============================================================================
 
 # 0. Cấu hình SSH
@@ -11,7 +18,8 @@ if (Test-Path $sshKeyPath) {
     $env:GIT_SSH_COMMAND = "ssh -i `"$sshKeyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
 }
 
-# --- ĐOẠN NÂNG CẤP VIP PRO: CHỐNG LỖI 403 ---
+# --- CHỐNG LỖI 403 khi gh dùng token thay vì gh auth login (một số môi trường) ---
+# Nếu bạn cố ý dùng GH_TOKEN trong session, export lại sau khi chạy script.
 if ($env:GITHUB_TOKEN -or $env:GH_TOKEN) {
     $env:GITHUB_TOKEN = $null
     $env:GH_TOKEN = $null
@@ -74,6 +82,7 @@ try {
     exit 1
 }
 
+$activeWorkflows = @($activeWorkflows)
 if (-not $activeWorkflows -or $activeWorkflows.Count -eq 0) {
     Write-Host "❌ Không tìm thấy workflow nào đang hoạt động." -ForegroundColor Red
     exit 1
@@ -81,7 +90,7 @@ if (-not $activeWorkflows -or $activeWorkflows.Count -eq 0) {
 
 $selected = $null
 # Ưu tiên tìm workflow có tên chứa chữ "Build" hoặc "Android"
-$priorityWorkflows = $activeWorkflows | Where-Object { $_.name -match "Build|Android" }
+$priorityWorkflows = @($activeWorkflows | Where-Object { $_.name -match "Build|Android" })
 
 if ($priorityWorkflows.Count -eq 1) {
     $selected = $priorityWorkflows[0]
@@ -92,7 +101,11 @@ if ($priorityWorkflows.Count -eq 1) {
         Write-Host "  [$i] $($activeWorkflows[$i].name)"
     }
     $choice = Read-Host "`n👉 Nhập số để chọn Workflow muốn Build"
-    $selected = $activeWorkflows[$choice]
+    if ($choice -notmatch '^\d+$' -or [int]$choice -lt 0 -or [int]$choice -ge $activeWorkflows.Count) {
+        Write-Host "❌ Số không hợp lệ." -ForegroundColor Red
+        exit 1
+    }
+    $selected = $activeWorkflows[[int]$choice]
 }
 
 # ==========================================================
@@ -103,8 +116,8 @@ Write-Host "`n🚀 Đang kích hoạt tiến trình Build [$currentBranch]..." -
 # Lấy ID của lần chạy gần nhất để so sánh
 $lastRunId = (& $gh run list --workflow $selected.id --limit 1 --json databaseId | ConvertFrom-Json).databaseId
 
-# --- ĐOẠN NÂNG CẤP VIP PRO: TỰ ĐỘNG NHẬN DIỆN THAM SỐ ---
-& $gh workflow run $selected.id --ref $currentBranch -f package_format=apk
+# workflow_dispatch: input package_format (apk | aab) — fallback nếu workflow không có input
+& $gh workflow run $selected.id --ref $currentBranch -f "package_format=$PackageFormat"
 if ($LASTEXITCODE -ne 0) {
     & $gh workflow run $selected.id --ref $currentBranch
 }
@@ -145,7 +158,12 @@ if (Test-Path $dir) {
 }
 
 Write-Host "`n📦 Đang tải kết quả build về..." -ForegroundColor Cyan
-& $gh run download --dir $dir
+if ($newRunId) {
+    & $gh run download $newRunId --dir $dir
+} else {
+    Write-Host "⚠️ Không có run ID cụ thể — tải theo run gần nhất (có thể trùng với job khác)." -ForegroundColor Yellow
+    & $gh run download --dir $dir
+}
 
 # Làm phẳng thư mục (Flatten)
 Get-ChildItem -Path $dir -Recurse -File -Include *.apk,*.aab | Move-Item -Destination $dir -Force -ErrorAction SilentlyContinue
