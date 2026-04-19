@@ -1,76 +1,54 @@
 ##################################################
-# NUGET PACKAGES (BẮT BUỘC)
+# NUGET / CÔNG CỤ
 ##################################################
 *.nuget.props
 *.nuget.targets
 packages/
-# Chặn cache của các công cụ phân tích code
 .librarymanager/
-# Chặn cấu hình môi trường máy ảo
-.devcontainer/
+
+# Dev Container: nhiều team *commit* .devcontainer để đồng bộ môi trường.
+# Bỏ dòng dưới nếu bạn không bao giờ commit Dev Container.
+# .devcontainer/
 
 ##################################################
-# BẢO MẬT & KEYSTORE (QUAN TRỌNG)
+# BẢO MẬT & KÝ SỐ
 ##################################################
-# Chặn file ký app cục bộ để tránh lộ mật khẩu
 *.keystore
 *.jks
 *.p12
 *.pfx
 
-# Chặn file cấu hình bí mật của .NET
-usersecretsid
-appsettings.Development.json
+# Khóa SSH / công cụ gh đặt cạnh script (git-sync / git-build) — không đưa lên remote
+ssh_id
+ssh_id.pub
+gh.exe
+
+# Biến môi trường cục bộ (giữ template có thể commit)
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+
+# File cấu hình chỉ dùng trên máy dev (không ignore appsettings.Development.json mặc định)
+**/appsettings.*.local.json
 
 ##################################################
-# MAUI SPECIFIC FIXES
+# BUILD .NET / MAUI
 ##################################################
-# Chặn các file rác phát sinh khi build trên Mac/Windows
 [Dd]ebug/
 [Rr]elease/
 _ReSharper*/
-
-# .NET build output
 bin/
 obj/
-
-# Rider / VS build artifacts
 **/bin/
 **/obj/
 
-##################################################
-# MAUI ANDROID (CỰC QUAN TRỌNG – TRÁNH PATH QUÁ DÀI)
-##################################################
+# Rider / JetBrains
+.idea/
+*.DotSettings.user
 
-**/android/bin/
-**/android/obj/
-
-# Generated Java / class files
-**/*.class
-**/*.dex
-**/*.apk
-**/*.aab
-
-##################################################
-# MAUI iOS / MacCatalyst
-##################################################
-
-**/iOS/bin/
-**/iOS/obj/
-**/MacCatalyst/bin/
-**/MacCatalyst/obj/
-
-##################################################
-# MAUI Windows
-##################################################
-
-**/Windows/bin/
-**/Windows/obj/
-
-##################################################
-# Visual Studio / VS Code
-##################################################
-
+# Visual Studio
 .vs/
 .vscode/*
 !.vscode/settings.json
@@ -82,21 +60,48 @@ obj/
 *.sln.docstates
 
 ##################################################
-# OS / SYSTEM FILES
+# MAUI ANDROID (tránh path quá dài; SDK path cục bộ)
 ##################################################
+**/android/bin/
+**/android/obj/
+**/Platforms/Android/local.properties
+local.properties
 
-# Windows
+# Các file build Android trong thư mục build (không ignore *.apk/*.aab ở mọi nơi — có thể cần commit bản phát hành)
+**/[Bb]in/**/*.apk
+**/[Bb]in/**/*.aab
+**/[Oo]bj/**/*.apk
+**/[Oo]bj/**/*.aab
+**/*.class
+**/*.dex
+
+##################################################
+# MAUI iOS / MacCatalyst
+##################################################
+**/iOS/bin/
+**/iOS/obj/
+**/MacCatalyst/bin/
+**/MacCatalyst/obj/
+
+##################################################
+# MAUI WINDOWS
+##################################################
+**/Windows/bin/
+**/Windows/obj/
+**/[Bb]in/**/*.appx
+**/[Bb]in/**/*.msix
+
+##################################################
+# HỆ ĐIỀU HÀNH
+##################################################
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-
-# macOS
 .DS_Store
 
 ##################################################
-# LOGS / CACHE / TEMP
+# LOG / TEMP
 ##################################################
-
 *.log
 *.tmp
 *.temp
@@ -105,15 +110,14 @@ Desktop.ini
 ##################################################
 # TEST / COVERAGE
 ##################################################
-
 TestResults/
 coverage/
 *.coverage
 *.coveragexml
 
 ##################################################
-# OPTIONAL – PUBLISH / PACKAGE
+# PUBLISH / ARTIFACT
 ##################################################
-
 publish/
 artifacts/
+BenchmarkDotNet.Artifacts/
