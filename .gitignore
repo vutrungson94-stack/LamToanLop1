@@ -121,3 +121,7 @@ coverage/
 publish/
 artifacts/
 BenchmarkDotNet.Artifacts/
+
+# Xuất bản cục bộ (git-sync) — không đưa lên GitHub
+local-publish/
+apk-output/

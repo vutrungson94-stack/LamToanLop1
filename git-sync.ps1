@@ -16,6 +16,182 @@ Write-Host "`n=======================================" -ForegroundColor Cyan
 Write-Host " 🚀 GIT SYNC PRO – AUTO BUILD & PUSH " -ForegroundColor Cyan
 Write-Host "=======================================`n" -ForegroundColor Cyan
 
+function Get-XmlSdkText {
+    param($Node)
+    if ($null -eq $Node) { return '' }
+    if ($Node -is [string]) { return $Node.Trim() }
+    if ($Node -is [System.Xml.XmlElement]) { return $Node.InnerText.Trim() }
+    # Một thẻ trùng tên → PS trả về mảng; KHÔNG được [string]@(...) (gây "net10.0-android TargetFrameworks")
+    if ($Node -is [System.Array] -or ($Node -is [System.Collections.IEnumerable] -and $Node -isnot [string])) {
+        $first = @($Node) | Select-Object -First 1
+        if ($first -is [System.Xml.XmlElement]) { return $first.InnerText.Trim() }
+        return ([string]$first).Trim()
+    }
+    return ([string]$Node).Trim()
+}
+
+function Get-CsprojTfms([string]$projPath) {
+    [xml]$x = Get-Content -LiteralPath $projPath
+    $list = [System.Collections.Generic.List[string]]::new()
+    foreach ($pg in @($x.Project.PropertyGroup)) {
+        # Cùng một PropertyGroup có thể có NHIỀU <TargetFrameworks> — phải lặp từng XmlElement
+        if ($null -ne $pg.TargetFrameworks) {
+            foreach ($tfmNode in @($pg.TargetFrameworks)) {
+                $blob = if ($tfmNode -is [System.Xml.XmlElement]) { $tfmNode.InnerText.Trim() } else { ([string]$tfmNode).Trim() }
+                if (-not $blob) { continue }
+                foreach ($p in ($blob -split ';')) {
+                    $t = $p.Trim()
+                    if (-not $t) { continue }
+                    if ($t -match '^\$\(') { continue }
+                    # Một đoạn có thể vô tình ghép 2 TFM bằng khoảng trắng
+                    foreach ($piece in ($t -split '\s+', [System.StringSplitOptions]::RemoveEmptyEntries)) {
+                        if ($piece -match '^\$\(') { continue }
+                        [void]$list.Add($piece)
+                    }
+                }
+            }
+        }
+        if ($null -ne $pg.TargetFramework) {
+            foreach ($tfNode in @($pg.TargetFramework)) {
+                $one = if ($tfNode -is [System.Xml.XmlElement]) { $tfNode.InnerText.Trim() } else { ([string]$tfNode).Trim() }
+                if (-not $one -or $one -match '^\$\(') { continue }
+                foreach ($piece in ($one -split '\s+', [System.StringSplitOptions]::RemoveEmptyEntries)) {
+                    [void]$list.Add($piece)
+                }
+            }
+        }
+    }
+    return ,@($list | Select-Object -Unique)
+}
+
+function Get-AndroidTfmMoniker {
+    param([string[]]$Tfms)
+    foreach ($raw in @($Tfms)) {
+        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+        $m = [regex]::Match($raw, 'net[0-9]+\.[0-9]+-android[0-9.]*')
+        if ($m.Success) { return $m.Value }
+    }
+    return $null
+}
+
+function Get-MauiAndroidCsproj {
+    $all = Get-ChildItem -Path . -Recurse -Filter *.csproj -File | Where-Object {
+        $_.FullName -notmatch '[\\/](obj|bin|packages|node_modules)[\\/]'
+    } | Sort-Object FullName
+    foreach ($c in $all) {
+        if ($c.Name -match '\.Tests\.') { continue }
+        $raw = Get-Content -LiteralPath $c.FullName -Raw -ErrorAction SilentlyContinue
+        if (-not $raw) { continue }
+        $tfms = Get-CsprojTfms $c.FullName
+        if (-not ($tfms | Where-Object { $_ -match 'android' })) { continue }
+        if ($raw -match '<UseMaui>\s*true\s*</UseMaui>' -or $raw -match 'net[0-9.]+-android') { return $c }
+    }
+    foreach ($c in $all) {
+        if ($c.Name -match '\.Tests\.') { continue }
+        $tfms = Get-CsprojTfms $c.FullName
+        if ($tfms | Where-Object { $_ -match 'android' }) { return $c }
+    }
+    return $null
+}
+
+function Invoke-SyncLocalPublishMenu {
+    param(
+        [System.IO.FileInfo]$ProjectFile,
+        [string[]]$Tfms
+    )
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        Write-Host "⚠️ Không có dotnet SDK — bỏ qua xuất bản cục bộ." -ForegroundColor Yellow
+        return
+    }
+    if (-not $ProjectFile) {
+        Write-Host "⚠️ Không tìm thấy .csproj phù hợp — bỏ qua xuất bản cục bộ." -ForegroundColor Yellow
+        return
+    }
+
+    $androidTfm = Get-AndroidTfmMoniker $Tfms
+    $iosTfm = [string](Get-XmlSdkText ($Tfms | Where-Object { $_ -match 'net[0-9.]+-ios' -and $_ -notmatch 'maccatalyst' } | Select-Object -First 1))
+    $macTf = [string](Get-XmlSdkText ($Tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -First 1))
+    $isMac = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)
+
+    Write-Host "`n📦 Xuất bản cục bộ — CHỈ lưu trên máy (thư mục local-publish/, không đẩy GitHub):" -ForegroundColor Cyan
+    Write-Host "  [0] Không xuất"
+    Write-Host "  [1] Android — APK"
+    Write-Host "  [2] Android — AAB (Google Play)"
+    if ($iosTfm) {
+        if ($isMac) { Write-Host "  [3] iOS — $iosTfm" }
+        else { Write-Host "  [3] iOS — (chỉ trên macOS + Xcode)" -ForegroundColor DarkGray }
+    }
+    if ($macTf) {
+        if ($isMac) { Write-Host "  [4] Mac Catalyst — $macTf" }
+        else { Write-Host "  [4] Mac Catalyst — (chỉ trên macOS)" -ForegroundColor DarkGray }
+    }
+    $pick = Read-Host "👉 Chọn (Enter = 0)"
+    if ([string]::IsNullOrWhiteSpace($pick)) { $pick = "0" }
+
+    $root = Join-Path $PSScriptRoot "local-publish"
+    switch ($pick) {
+        "0" { return }
+        "1" {
+            if ([string]::IsNullOrWhiteSpace($androidTfm)) {
+                Write-Host "❌ Project không có TFM Android." -ForegroundColor Red
+                return
+            }
+            $out = Join-Path $root "android-apk"
+            New-Item -ItemType Directory -Path $out -Force | Out-Null
+            Write-Host "⏳ Đang xuất APK → $out ..." -ForegroundColor Gray
+            dotnet publish $ProjectFile.FullName -c Release -f $androidTfm -p:AndroidPackageFormat=apk -o $out --nologo
+            if ($LASTEXITCODE -eq 0) { Write-Host "✅ Hoàn tất APK." -ForegroundColor Green }
+        }
+        "2" {
+            if ([string]::IsNullOrWhiteSpace($androidTfm)) {
+                Write-Host "❌ Project không có TFM Android." -ForegroundColor Red
+                return
+            }
+            $out = Join-Path $root "android-aab"
+            New-Item -ItemType Directory -Path $out -Force | Out-Null
+            Write-Host "⏳ Đang xuất AAB → $out ..." -ForegroundColor Gray
+            dotnet publish $ProjectFile.FullName -c Release -f $androidTfm -p:AndroidPackageFormat=aab -o $out --nologo
+            if ($LASTEXITCODE -eq 0) { Write-Host "✅ Hoàn tất AAB." -ForegroundColor Green }
+        }
+        "3" {
+            if (-not $iosTfm) { Write-Host "❌ Không có TFM iOS trong project." -ForegroundColor Red; return }
+            if (-not $isMac) {
+                Write-Host "❌ Build iOS cần chạy script trên macOS." -ForegroundColor Red
+                return
+            }
+            $out = Join-Path $root "ios"
+            New-Item -ItemType Directory -Path $out -Force | Out-Null
+            Write-Host "⏳ Đang publish iOS → $out ..." -ForegroundColor Gray
+            dotnet publish $ProjectFile.FullName -c Release -f $iosTfm -p:TargetFrameworks=$iosTfm -o $out --nologo
+            if ($LASTEXITCODE -eq 0) { Write-Host "✅ Hoàn tất iOS." -ForegroundColor Green }
+        }
+        "4" {
+            if (-not $macTf) { Write-Host "❌ Không có TFM Mac Catalyst." -ForegroundColor Red; return }
+            if (-not $isMac) {
+                Write-Host "❌ Build Mac Catalyst cần chạy trên macOS." -ForegroundColor Red
+                return
+            }
+            $out = Join-Path $root "maccatalyst"
+            New-Item -ItemType Directory -Path $out -Force | Out-Null
+            Write-Host "⏳ Đang publish Mac Catalyst → $out ..." -ForegroundColor Gray
+            dotnet publish $ProjectFile.FullName -c Release -f $macTf -p:TargetFrameworks=$macTf -o $out --nologo
+            if ($LASTEXITCODE -eq 0) { Write-Host "✅ Hoàn tất Mac Catalyst." -ForegroundColor Green }
+        }
+        default { Write-Host "❌ Lựa chọn không hợp lệ." -ForegroundColor Red }
+    }
+}
+
+function Unstage-BuildArtifacts {
+    $staged = @(git diff --cached --name-only --diff-filter=ACM 2>$null)
+    foreach ($line in $staged) {
+        if (-not $line) { continue }
+        if ($line -match '\.(apk|aab|ipa)$|\.app[/\\]') {
+            git reset HEAD -- $line 2>$null
+            Write-Host "⚠️ Đã gỡ khỏi commit (chỉ lưu máy): $line" -ForegroundColor DarkYellow
+        }
+    }
+}
+
 # ==========================================================
 # 1. Kiểm tra môi trường Git & Nhận diện Nhánh
 # ==========================================================
@@ -52,12 +228,28 @@ if (-not $statusBefore) {
     Write-Host "✏️ Phát hiện thay đổi cục bộ – Tạm bỏ qua Pull để bảo vệ code của bạn." -ForegroundColor DarkGray
 }
 
+# Project / TFMs (build kiểm tra + menu xuất bản cục bộ)
+$projectFile = Get-MauiAndroidCsproj
+if (-not $projectFile) {
+    $projectFile = Get-ChildItem -Path . -Recurse -Filter *.csproj -File |
+        Where-Object { $_.FullName -notmatch '[\\/](obj|bin)[\\/]' } |
+        Select-Object -First 1
+}
+$tfmsAll = @()
+if ($projectFile) {
+    try { $tfmsAll = @(Get-CsprojTfms $projectFile.FullName) } catch {}
+}
+
 # ==========================================================
 # 3. Kiểm tra thay đổi & Chặn rác
 # ==========================================================
 $status = git status --porcelain
 if (-not $status) {
-    Write-Host "✅ Không có thay đổi nào mới để Push. Đi pha cafe thôi!" -ForegroundColor Green
+    Write-Host "✅ Không có thay đổi nào mới để commit / Push." -ForegroundColor Green
+    $onlyLocal = Read-Host "📦 Chỉ xuất bản cục bộ (APK / AAB / Apple) lưu trên máy? (y/N)"
+    if ($onlyLocal -match '^[yY]') {
+        Invoke-SyncLocalPublishMenu -ProjectFile $projectFile -Tfms $tfmsAll
+    }
     exit 0
 }
 
@@ -76,60 +268,14 @@ if ($status -match 'bin[/\\]|obj[/\\]') {
 # ==========================================================
 Write-Host "`n🔍 Đang kiểm tra môi trường Build..." -ForegroundColor Cyan
 
-function Get-CsprojTfms([string]$projPath) {
-    [xml]$x = Get-Content -LiteralPath $projPath
-    $list = [System.Collections.Generic.List[string]]::new()
-    foreach ($pg in $x.Project.PropertyGroup) {
-        if ($pg.TargetFrameworks) {
-            foreach ($p in ($pg.TargetFrameworks -split ';')) {
-                $t = $p.Trim()
-                if ($t) { [void]$list.Add($t) }
-            }
-        }
-        if ($pg.TargetFramework) { [void]$list.Add($pg.TargetFramework.Trim()) }
-    }
-    return ,@($list | Select-Object -Unique)
-}
-
-function Get-MauiAndroidCsproj {
-    $all = Get-ChildItem -Path . -Recurse -Filter *.csproj -File | Where-Object {
-        $_.FullName -notmatch '[\\/](obj|bin|packages|node_modules)[\\/]'
-    } | Sort-Object FullName
-    foreach ($c in $all) {
-        if ($c.Name -match '\.Tests\.') { continue }
-        $raw = Get-Content -LiteralPath $c.FullName -Raw -ErrorAction SilentlyContinue
-        if (-not $raw) { continue }
-        $tfms = Get-CsprojTfms $c.FullName
-        if (-not ($tfms | Where-Object { $_ -match 'android' })) { continue }
-        if ($raw -match '<UseMaui>\s*true\s*</UseMaui>' -or $raw -match 'net[0-9.]+-android') { return $c }
-    }
-    foreach ($c in $all) {
-        if ($c.Name -match '\.Tests\.') { continue }
-        $tfms = Get-CsprojTfms $c.FullName
-        if ($tfms | Where-Object { $_ -match 'android' }) { return $c }
-    }
-    return $null
-}
-
-$projectFile = Get-MauiAndroidCsproj
-if (-not $projectFile) {
-    $projectFile = Get-ChildItem -Path . -Recurse -Filter *.csproj -File |
-        Where-Object { $_.FullName -notmatch '[\\/](obj|bin)[\\/]' } |
-        Select-Object -First 1
-}
-
 $buildTarget = ""
 if ($projectFile) {
-    try {
-        $tfms = Get-CsprojTfms $projectFile.FullName
-        $foundTfm = $tfms | Where-Object { $_ -match 'android' } | Select-Object -First 1
-        if ($foundTfm) {
-            $buildTarget = $foundTfm.Trim()
-            Write-Host "📱 Phát hiện MAUI / Android Target: $buildTarget" -ForegroundColor Gray
-        } else {
-            Write-Host "💻 Project .NET (không dùng -f android)." -ForegroundColor Gray
-        }
-    } catch {}
+    $buildTarget = Get-AndroidTfmMoniker $tfmsAll
+    if ($buildTarget) {
+        Write-Host "📱 Phát hiện MAUI / Android Target: $buildTarget" -ForegroundColor Gray
+    } else {
+        Write-Host "💻 Project .NET (không dùng -f android)." -ForegroundColor Gray
+    }
 }
 
 # ==========================================================
@@ -148,7 +294,7 @@ elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
     if ([string]::IsNullOrWhiteSpace($buildTarget)) {
         dotnet build $projectFile.FullName -v q --nologo
     } else {
-        dotnet build $projectFile.FullName -f $buildTarget -v q --nologo
+        dotnet build $projectFile.FullName -f ([string]$buildTarget) -v q --nologo
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -167,6 +313,16 @@ elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
 }
 
 # ==========================================================
+# 5b. Xuất bản cục bộ (tuỳ chọn) — chỉ thư mục local-publish/, không đẩy GitHub
+# ==========================================================
+if ($env:CODESPACES -ne "true") {
+    $doLocal = Read-Host "`n📦 Xuất bản cục bộ (APK/AAB/Apple) chỉ lưu máy trước khi commit? (y/N)"
+    if ($doLocal -match '^[yY]') {
+        Invoke-SyncLocalPublishMenu -ProjectFile $projectFile -Tfms $tfmsAll
+    }
+}
+
+# ==========================================================
 # 6. Commit an toàn
 # ==========================================================
 Write-Host "`n✍️  Đóng gói Commit..." -ForegroundColor Cyan
@@ -176,6 +332,7 @@ if ([string]::IsNullOrWhiteSpace($commitMsg)) {
 }
 
 git add .
+Unstage-BuildArtifacts
 git commit -m "$commitMsg" | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Đóng gói (Commit) thất bại." -ForegroundColor Red

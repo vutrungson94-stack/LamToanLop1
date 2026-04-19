@@ -36,21 +36,55 @@ jobs:
       id: scan
       shell: pwsh
       run: |
+        function Get-XmlSdkText($Node) {
+          if ($null -eq $Node) { return '' }
+          if ($Node -is [string]) { return $Node.Trim() }
+          if ($Node -is [System.Xml.XmlElement]) { return $Node.InnerText.Trim() }
+          if ($Node -is [System.Array] -or ($Node -is [System.Collections.IEnumerable] -and $Node -isnot [string])) {
+            $first = @($Node) | Select-Object -First 1
+            if ($first -is [System.Xml.XmlElement]) { return $first.InnerText.Trim() }
+            return ([string]$first).Trim()
+          }
+          return ([string]$Node).Trim()
+        }
         function Get-CsprojTfms([string]$projPath) {
           [xml]$x = Get-Content -LiteralPath $projPath
           $list = [System.Collections.Generic.List[string]]::new()
-          foreach ($pg in $x.Project.PropertyGroup) {
-            if ($pg.TargetFrameworks) {
-              foreach ($p in ($pg.TargetFrameworks -split ';')) {
-                $t = $p.Trim()
-                if ($t) { [void]$list.Add($t) }
+          foreach ($pg in @($x.Project.PropertyGroup)) {
+            if ($null -ne $pg.TargetFrameworks) {
+              foreach ($tfmNode in @($pg.TargetFrameworks)) {
+                $blob = if ($tfmNode -is [System.Xml.XmlElement]) { $tfmNode.InnerText.Trim() } else { ([string]$tfmNode).Trim() }
+                if (-not $blob) { continue }
+                foreach ($p in ($blob -split ';')) {
+                  $t = $p.Trim()
+                  if (-not $t) { continue }
+                  if ($t -match '^\$\(') { continue }
+                  foreach ($piece in ($t -split '\s+', [System.StringSplitOptions]::RemoveEmptyEntries)) {
+                    if ($piece -match '^\$\(') { continue }
+                    [void]$list.Add($piece)
+                  }
+                }
               }
             }
-            if ($pg.TargetFramework) {
-              [void]$list.Add($pg.TargetFramework.Trim())
+            if ($null -ne $pg.TargetFramework) {
+              foreach ($tfNode in @($pg.TargetFramework)) {
+                $one = if ($tfNode -is [System.Xml.XmlElement]) { $tfNode.InnerText.Trim() } else { ([string]$tfNode).Trim() }
+                if (-not $one -or $one -match '^\$\(') { continue }
+                foreach ($piece in ($one -split '\s+', [System.StringSplitOptions]::RemoveEmptyEntries)) {
+                  [void]$list.Add($piece)
+                }
+              }
             }
           }
           return ,@($list | Select-Object -Unique)
+        }
+        function Get-AndroidTfmMoniker([string[]]$Tfms) {
+          foreach ($raw in @($Tfms)) {
+            if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+            $m = [regex]::Match($raw, 'net[0-9]+\.[0-9]+-android[0-9.]*')
+            if ($m.Success) { return $m.Value }
+          }
+          return $null
         }
 
         $all = Get-ChildItem -Path . -Recurse -Filter *.csproj -File | Where-Object {
@@ -86,7 +120,7 @@ jobs:
         }
 
         $tfms = Get-CsprojTfms $main.FullName
-        $androidTfm = $tfms | Where-Object { $_ -match 'android' } | Select-Object -First 1
+        $androidTfm = Get-AndroidTfmMoniker $tfms
         if ([string]::IsNullOrWhiteSpace($androidTfm)) {
           Write-Error "Project $($main.Name) không có TFM android."
           exit 1

@@ -3,14 +3,28 @@
 [CmdletBinding()]
 param(
     [ValidateSet('apk', 'aab')]
-    [string]$PackageFormat = 'apk'
+    [string]$PackageFormat,
+    [switch]$NonInteractive
 )
 
 # ==============================================================================
 # SCRIPT: git-build.ps1 (ULTIMATE COMPATIBLE VIP PRO)
 # MỤC TIÊU: Chạy được trên mọi phiên bản GitHub CLI (Kể cả bản cũ trên Codespaces)
-# Tham số: -PackageFormat apk | aab (khớp workflow_dispatch input package_format)
+# Tham số: -PackageFormat apk | aab | -NonInteractive (bỏ menu)
 # ==============================================================================
+
+if (-not $NonInteractive) {
+    if (-not $PSBoundParameters.ContainsKey('PackageFormat')) {
+        Write-Host "`n📦 Định dạng gói gửi lên GitHub Actions:" -ForegroundColor Cyan
+        Write-Host "  [1] APK (cài trực tiếp)"
+        Write-Host "  [2] AAB (Google Play)"
+        $pick = Read-Host "👉 Chọn (Enter = 1)"
+        if ([string]::IsNullOrWhiteSpace($pick)) { $pick = "1" }
+        $PackageFormat = if ($pick -eq "2") { "aab" } else { "apk" }
+    }
+} elseif (-not $PSBoundParameters.ContainsKey('PackageFormat')) {
+    $PackageFormat = "apk"
+}
 
 # 0. Cấu hình SSH
 $sshKeyPath = Join-Path $PSScriptRoot "ssh_id"
