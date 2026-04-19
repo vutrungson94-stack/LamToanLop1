@@ -334,7 +334,13 @@ switch ($pick) {
 }
 
 if ($IsWindows) {
-    $open = Join-Path $root (switch ($pick) { "1" { "android-apk" } "2" { "android-aab" } "3" { "ios" } "4" { "maccatalyst" } })
+    $folder = switch ($pick) {
+        "1" { "android-apk" }
+        "2" { "android-aab" }
+        "3" { "ios" }
+        "4" { "maccatalyst" }
+    }
+    $open = Join-Path $root $folder
     if (Test-Path $open) { explorer.exe $((Resolve-Path $open).Path) }
 }
 
