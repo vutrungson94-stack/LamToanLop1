@@ -18,7 +18,7 @@ packages/
 *.p12
 *.pfx
 
-# Khóa SSH / công cụ gh đặt cạnh script (git-sync / git-build) — không đưa lên remote
+# Khóa SSH / gh.exe đặt cạnh script (git-sync / build) — không đưa lên remote
 ssh_id
 ssh_id.pub
 gh.exe
