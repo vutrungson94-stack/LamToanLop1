@@ -17,38 +17,137 @@ param(
     [Parameter(ParameterSetName = 'CI')] [switch]$NonInteractive
 )
 
-SeSet-StrictMode -Version Latest
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# ===============================
+# TÌM PROJECT
+# ===============================
+
+$csproj =
+Get-ChildItem $PSScriptRoot -Filter *.csproj -Recurse |
+Select-Object -First 1
+
+if (-not $csproj) {
+
+    Write-Host "❌ Không tìm thấy .csproj" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "📄 Project: $($csproj.Name)"
+
+# ===============================
+# ĐỌC TARGET FRAMEWORK
+# ===============================
+
+[xml]$projXml =
+Get-Content $csproj.FullName
+
+$tfm =
+$projXml.Project.PropertyGroup.TargetFramework
+
+if (-not $tfm) {
+
+    $tfm =
+    $projXml.Project.PropertyGroup.TargetFrameworks
+}
+
+Write-Host "🎯 TargetFramework: $tfm"
+
+# ===============================
+# XÁC ĐỊNH SDK MAJOR
+# ===============================
+
+if ($tfm -match "net10") {
+
+    $requiredMajor = "10."
+
+}
+elseif ($tfm -match "net9") {
+
+    $requiredMajor = "9."
+
+}
+elseif ($tfm -match "net8") {
+
+    $requiredMajor = "8."
+
+}
+else {
+
+    Write-Host "❌ Không xác định được SDK từ $tfm"
+    exit 1
+}
+
+Write-Host "🔎 Cần SDK major: $requiredMajor"
+
+# ===============================
+# TÌM SDK LOCAL
+# ===============================
+
+$sdkRoot =
+Join-Path $PSScriptRoot ".sdk"
+
+if (-not (Test-Path $sdkRoot)) {
+
+    Write-Host "❌ Không có thư mục .sdk"
+    exit 1
+}
+
+$sdkFolders =
+Get-ChildItem $sdkRoot -Directory |
+Where-Object {
+    $_.Name.StartsWith($requiredMajor)
+} |
+Sort-Object Name -Descending
+
+if (-not $sdkFolders) {
+
+    Write-Host "❌ Không có SDK phù hợp: $requiredMajor"
+    exit 1
+}
+
+$selectedSdk =
+$sdkFolders[0]
+
+Write-Host "✅ Dùng SDK: $($selectedSdk.Name)"
+
+# ===============================
+# SET DOTNET PATH
+# ===============================
+
+$dotnetRoot =
+$selectedSdk.FullName
+
+$dotnetExe =
+Join-Path $dotnetRoot "dotnet.exe"
+
+if (-not (Test-Path $dotnetExe)) {
+
+    Write-Host "❌ Không tìm thấy dotnet.exe"
+    exit 1
+}
+
+$env:DOTNET_ROOT =
+$dotnetRoot
+
+$env:PATH =
+"$dotnetRoot;" +
+"$dotnetRoot\tools;" +
+$env:PATH
 
 # --- ĐỘNG HÓA SDK (Tái sinh global.json) ---
 $gJson = Join-Path $PSScriptRoot "global.json"
 
-# Bước 1: Nếu đã có global.json → xóa
+#Nếu đã có global.json → xóa
 if (Test-Path $gJson) {
-    Write-Host "⚠️ Tìm thấy global.json cũ → Đang xóa..." -ForegroundColor Yellow
-    Remove-Item $gJson -Force -ErrorAction SilentlyContinue
+    Remove-Item $gJson -Force 
 }
 
-# Bước 2: Ép dotnet dùng SDK mới nhất
-$env:DOTNET_ROLL_FORWARD = "LatestMajor"
-
-# Bước 3: Lấy danh sách SDK hiện có
-$sdks = dotnet --list-sdks 2>$null
-
-if (-not $sdks) {
-    Write-Host "❌ Không tìm thấy .NET SDK nào trên máy!" -ForegroundColor Red
-    exit 1
-}
-
-# Bước 4: Lấy version SDK mới nhất
-$latest = ($sdks[-1] -split ' ')[0]
-
-Write-Host "🔍 SDK mới nhất phát hiện: $latest" -ForegroundColor Cyan
-
-# Bước 5: Tạo global.json mới
+#Tạo global.json mới
 $config = @{
     sdk = @{
-        version = $latest
+        version = $selectedSdk.Name
         rollForward = "latestMajor"
         allowPrerelease = $true
     }
@@ -56,9 +155,9 @@ $config = @{
 
 $config |
     ConvertTo-Json -Depth 3 |
-    Out-File $gJson -Encoding utf8 -Force
+    Out-File $gJson -Encoding utf8
 
-Write-Host "✅ Đã tạo global.json mới tại: $gJson" -ForegroundColor Green
+Write-Host "✅ Đã tạo global.json với SDK $($selectedSdk.Name)" -ForegroundColor Green
 # --------------------------------------------
 
 # ── SSH key tuỳ chọn ────────────────────────────────────────────────────────
