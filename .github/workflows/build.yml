@@ -182,11 +182,9 @@ jobs:
         if: hashFiles('global.json') != ''
         shell: pwsh
         run: |
-          $j = Get-Content global.json | ConvertFrom-Json
-          if (-not $j.sdk) { $j | Add-Member sdk @{} NoteProperty }
-          $j.sdk.rollForward = 'latestMinor'
-          $j | ConvertTo-Json -Depth 10 | Set-Content global.json
-          Write-Host "✅ global.json patched"
+          $latest = (dotnet --list-sdks)[-1].Split(' ')[0]
+          "{ 'sdk': { 'version': '$latest', 'rollForward': 'latestMajor' } }" -replace "'", '"' | Out-File global.json -Force
+          Write-Host "✅ GitHub Runner using SDK: $latest"
 
       - name: 🛠️ Setup .NET ${{ env.DOTNET_VERSION }}
         uses: actions/setup-dotnet@v4

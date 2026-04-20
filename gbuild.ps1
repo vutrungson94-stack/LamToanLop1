@@ -20,6 +20,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# --- ĐỘNG HÓA SDK (Tự thích nghi mọi máy) ---
+$sdks = dotnet --list-sdks
+if ($sdks) {
+    # Lấy phiên bản SDK cao nhất đang cài trên máy này
+    $latest = ($sdks[-1] -split ' ')[0]
+    $json = "{`n  `"sdk`": {`n    `"version`": `"$latest`",`n    `"rollForward`": `"latestMajor`"`n  }`n}"
+    $json | Out-File "global.json" -Encoding utf8 -Force
+    Write-Host "🔄 Đã cập nhật global.json theo máy: $latest" -ForegroundColor Cyan
+}
+$env:DOTNET_ROLL_FORWARD = "LatestMajor"
+# --------------------------------------------
+
 # ── SSH key tuỳ chọn ────────────────────────────────────────────────────────
 $sshKeyPath = Join-Path $PSScriptRoot 'ssh_id'
 if (Test-Path $sshKeyPath) {
@@ -154,6 +166,7 @@ function Invoke-LocalBuild {
         '-c', 'Release',
         '-f', $Tfm,
         '-o', $OutputDir,
+        '--roll-forward', 'LatestMajor',
         '--nologo') + $ExtraArgs
 
     & dotnet @allArgs
