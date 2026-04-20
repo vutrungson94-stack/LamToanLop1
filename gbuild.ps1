@@ -1,52 +1,48 @@
 #!/usr/bin/env pwsh
-
 # ==============================================================================
-# build.ps1 — Build cục bộ (local-publish/) + GitHub Actions (gh, apk-output/)
-# Đồng bộ Git: git-sync.ps1
-# Dòng lệnh: .\build.ps1 -GitHub [-PackageFormat apk|aab] [-NonInteractive]
+#  gbuild.ps1  — Build MAUI cục bộ + kích hoạt GitHub Actions
+#  Drop vào bất kỳ project MAUI nào, chạy được ngay.
+#
+#  Dùng lệnh:
+#    .\gbuild.ps1                          # menu tương tác
+#    .\gbuild.ps1 -GitHub                  # kích hoạt GH Actions + download
+#    .\gbuild.ps1 -GitHub -Format aab      # GH Actions, chọn AAB
+#    .\gbuild.ps1 -GitHub -NonInteractive  # dùng trong pipe/CI
 # ==============================================================================
 
 [CmdletBinding(DefaultParameterSetName = 'Menu')]
 param(
-    [Parameter(ParameterSetName = 'Ci')]
-    [switch]$GitHub,
-    [Parameter(ParameterSetName = 'Ci')]
-    [ValidateSet('apk', 'aab')]
-    [string]$PackageFormat,
-    [Parameter(ParameterSetName = 'Ci')]
-    [switch]$NonInteractive
+    [Parameter(ParameterSetName = 'CI')] [switch]$GitHub,
+    [Parameter(ParameterSetName = 'CI')] [ValidateSet('apk','aab')] [string]$Format,
+    [Parameter(ParameterSetName = 'CI')] [switch]$NonInteractive
 )
 
-$sshKeyPath = Join-Path $PSScriptRoot "ssh_id"
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── SSH key tuỳ chọn ────────────────────────────────────────────────────────
+$sshKeyPath = Join-Path $PSScriptRoot 'ssh_id'
 if (Test-Path $sshKeyPath) {
     $env:GIT_SSH_COMMAND = "ssh -i `"$sshKeyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
 }
 
+# ════════════════════════════════════════════════════════════════════════════
+# HELPERS — TFM
+# ════════════════════════════════════════════════════════════════════════════
 function Get-CsprojTfms([string]$projPath) {
     [xml]$x = Get-Content -LiteralPath $projPath
     $list = [System.Collections.Generic.List[string]]::new()
     foreach ($pg in @($x.Project.PropertyGroup)) {
-        if ($null -ne $pg.TargetFrameworks) {
-            foreach ($tfmNode in @($pg.TargetFrameworks)) {
-                $blob = if ($tfmNode -is [System.Xml.XmlElement]) { $tfmNode.InnerText.Trim() } else { ([string]$tfmNode).Trim() }
-                if (-not $blob) { continue }
+        foreach ($prop in @('TargetFrameworks','TargetFramework')) {
+            if ($null -eq $pg.$prop) { continue }
+            foreach ($node in @($pg.$prop)) {
+                $blob = if ($node -is [System.Xml.XmlElement]) { $node.InnerText.Trim() } else { ([string]$node).Trim() }
                 foreach ($p in ($blob -split ';')) {
                     $t = $p.Trim()
-                    if (-not $t) { continue }
-                    if ($t -match '^\$\(') { continue }
-                    foreach ($piece in ($t -split '\s+', [System.StringSplitOptions]::RemoveEmptyEntries)) {
-                        if ($piece -match '^\$\(') { continue }
-                        [void]$list.Add($piece)
+                    if (-not $t -or $t -match '^\$\(') { continue }
+                    foreach ($piece in ($t -split '\s+')) {
+                        if ($piece -and $piece -notmatch '^\$\(') { [void]$list.Add($piece) }
                     }
-                }
-            }
-        }
-        if ($null -ne $pg.TargetFramework) {
-            foreach ($tfNode in @($pg.TargetFramework)) {
-                $one = if ($tfNode -is [System.Xml.XmlElement]) { $tfNode.InnerText.Trim() } else { ([string]$tfNode).Trim() }
-                if (-not $one -or $one -match '^\$\(') { continue }
-                foreach ($piece in ($one -split '\s+', [System.StringSplitOptions]::RemoveEmptyEntries)) {
-                    [void]$list.Add($piece)
                 }
             }
         }
@@ -54,294 +50,374 @@ function Get-CsprojTfms([string]$projPath) {
     return ,@($list | Select-Object -Unique)
 }
 
-function Get-AndroidTfmMoniker {
-    param([string[]]$Tfms)
-    foreach ($raw in @($Tfms)) {
-        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
-        $m = [regex]::Match($raw, 'net[0-9]+\.[0-9]+-android[0-9.]*')
+function Pick-Tfm([string[]]$tfms, [string]$pattern) {
+    foreach ($t in $tfms) {
+        $m = [regex]::Match($t, $pattern)
         if ($m.Success) { return $m.Value }
     }
     return $null
 }
 
-function Get-IosTfmMoniker {
-    param([string[]]$Tfms)
-    foreach ($raw in @($Tfms)) {
-        if ([string]::IsNullOrWhiteSpace($raw) -or $raw -match 'maccatalyst') { continue }
-        $m = [regex]::Match($raw, 'net[0-9]+\.[0-9]+-ios[0-9.]*')
-        if ($m.Success) { return $m.Value }
-    }
-    return $null
-}
-
-function Get-MacCatalystTfmMoniker {
-    param([string[]]$Tfms)
-    foreach ($raw in @($Tfms)) {
-        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
-        $m = [regex]::Match($raw, 'net[0-9]+\.[0-9]+-maccatalyst[0-9.]*')
-        if ($m.Success) { return $m.Value }
-    }
-    return $null
-}
-
-function Get-MauiAppCsproj {
-    $all = Get-ChildItem -Path . -Recurse -Filter *.csproj -File | Where-Object {
-        $_.FullName -notmatch '[\\/](obj|bin|packages|node_modules)[\\/]'
-    } | Sort-Object FullName
+function Get-MauiCsproj {
+    $all = Get-ChildItem . -Recurse -Filter *.csproj -File |
+        Where-Object { $_.FullName -notmatch '[\\/](obj|bin|packages|node_modules)[\\/]' -and $_.Name -notmatch '\.Tests\.' } |
+        Sort-Object FullName
     foreach ($c in $all) {
-        if ($c.Name -match '\.Tests\.') { continue }
-        $raw = Get-Content -LiteralPath $c.FullName -Raw -ErrorAction SilentlyContinue
-        if (-not $raw) { continue }
+        $raw = Get-Content $c.FullName -Raw -EA SilentlyContinue
         if ($raw -match '<UseMaui>\s*true\s*</UseMaui>') { return $c }
     }
     foreach ($c in $all) {
-        if ($c.Name -match '\.Tests\.') { continue }
         $tfms = Get-CsprojTfms $c.FullName
         if ($tfms | Where-Object { $_ -match 'android|ios|maccatalyst|windows' }) { return $c }
     }
-    return (Get-ChildItem -Path . -Recurse -Filter *.csproj -File | Where-Object {
-        $_.FullName -notmatch '[\\/](obj|bin)[\\/]'
-    } | Select-Object -First 1)
+    return ($all | Select-Object -First 1)
 }
 
-function Invoke-GitHubActionsBuild {
+# ════════════════════════════════════════════════════════════════════════════
+# HELPER — Phát hiện keystore Android cục bộ
+# ════════════════════════════════════════════════════════════════════════════
+function Find-AndroidKeystore([string]$searchRoot) {
+    # Ưu tiên signing.properties cạnh .csproj
+    $propsFile = Join-Path $searchRoot 'signing.properties'
+    if (Test-Path $propsFile) {
+        $props = @{}
+        Get-Content $propsFile | ForEach-Object {
+            if ($_ -match '^\s*([^#=]+?)\s*=\s*(.+)$') { $props[$matches[1].Trim()] = $matches[2].Trim() }
+        }
+        $ksPath = $props['storeFile']
+        if ($ksPath -and -not [IO.Path]::IsPathRooted($ksPath)) {
+            $ksPath = Join-Path $searchRoot $ksPath
+        }
+        if ($ksPath -and (Test-Path $ksPath)) {
+            return @{
+                KeystorePath = $ksPath
+                StorePass    = $props['storePassword']
+                KeyAlias     = $props['keyAlias']
+                KeyPass      = $props['keyPassword']
+                Source       = 'signing.properties'
+            }
+        }
+    }
+
+    # Tìm .keystore / .jks trong project (ngoài bin/obj)
+    $ksFile = Get-ChildItem $searchRoot -Recurse -File |
+        Where-Object { $_.Extension -in '.keystore','.jks' -and $_.FullName -notmatch '[\\/](obj|bin)[\\/]' } |
+        Select-Object -First 1
+    if ($ksFile) {
+        return @{
+            KeystorePath = $ksFile.FullName
+            StorePass    = $null
+            KeyAlias     = $null
+            KeyPass      = $null
+            Source       = $ksFile.Name
+        }
+    }
+    return $null
+}
+
+function Prompt-SigningInfo([hashtable]$ks) {
+    Write-Host "`n🔑 Keystore: $($ks.KeystorePath)" -ForegroundColor Cyan
+    Write-Host "   Nguồn   : $($ks.Source)" -ForegroundColor DarkGray
+
+    if (-not $ks.StorePass) {
+        $sp = Read-Host "🔑 Store password (Enter để bỏ qua ký)"
+        if ([string]::IsNullOrWhiteSpace($sp)) { return $null }
+        $ks.StorePass = $sp
+    }
+    if (-not $ks.KeyAlias) {
+        $ka = Read-Host "🔑 Key alias"
+        $ks.KeyAlias = if ([string]::IsNullOrWhiteSpace($ka)) { 'key0' } else { $ka }
+    }
+    if (-not $ks.KeyPass) {
+        $kp = Read-Host "🔑 Key password (Enter = giống store password)"
+        $ks.KeyPass = if ([string]::IsNullOrWhiteSpace($kp)) { $ks.StorePass } else { $kp }
+    }
+    return $ks
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# HELPER — Build cục bộ
+# ════════════════════════════════════════════════════════════════════════════
+function Invoke-LocalBuild {
     param(
-        [string]$PackageFormat
+        [string]   $CsprojPath,
+        [string]   $Tfm,
+        [string]   $OutputDir,
+        [string[]] $ExtraArgs = @()
     )
 
-    if ($env:GITHUB_TOKEN -or $env:GH_TOKEN) {
-        $env:GITHUB_TOKEN = $null
-        $env:GH_TOKEN = $null
-    }
+    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+    Write-Host "`n⏳ dotnet publish → $OutputDir" -ForegroundColor Gray
 
-    $gh = ""
+    $allArgs = @('publish', $CsprojPath,
+        '-c', 'Release',
+        '-f', $Tfm,
+        '-o', $OutputDir,
+        '--nologo') + $ExtraArgs
+
+    & dotnet @allArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Build thất bại (exit $LASTEXITCODE)" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
+
+function Show-OutputFiles([string]$dir, [string[]]$extensions) {
+    $files = Get-ChildItem $dir -File | Where-Object { $_.Extension -in $extensions }
+    if (-not $files) {
+        Write-Warning "⚠️ Không tìm thấy file output trong $dir"
+        return
+    }
+    Write-Host "`n📂 Output ($dir):" -ForegroundColor Cyan
+    foreach ($f in $files) {
+        $label = if ($f.Name -match '-Signed|release') { '🔏 SIGNED' } else { '📦 unsigned' }
+        Write-Host "  $label  $($f.Name)  [$([math]::Round($f.Length/1MB,2)) MB]" -ForegroundColor Green
+    }
+    if ($IsWindows) { explorer.exe ((Resolve-Path $dir).Path) }
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# GITHUB ACTIONS — kích hoạt workflow + theo dõi + download
+# ════════════════════════════════════════════════════════════════════════════
+function Invoke-GitHubBuild([string]$PackageFormat) {
+    # Vô hiệu token môi trường để dùng gh auth
+    $env:GITHUB_TOKEN = $null; $env:GH_TOKEN = $null
+
+    # Tìm gh CLI
+    $gh = $null
     if ($IsWindows) {
-        $ghExe = Join-Path $PSScriptRoot "gh.exe"
-        $gh = if (Test-Path $ghExe) { $ghExe } elseif (Get-Command gh -ErrorAction SilentlyContinue) { "gh" } else { $null }
+        $ghExe = Join-Path $PSScriptRoot 'gh.exe'
+        $gh    = if (Test-Path $ghExe) { $ghExe } elseif (Get-Command gh -EA SilentlyContinue) { 'gh' } else { $null }
     } else {
-        $gh = if (Get-Command gh -ErrorAction SilentlyContinue) { "gh" } else { $null }
+        $gh = if (Get-Command gh -EA SilentlyContinue) { 'gh' } else { $null }
     }
     if (-not $gh) {
-        Write-Host "❌ Cần GitHub CLI (gh). Cài: https://cli.github.com/" -ForegroundColor Red
-        exit 1
+        Write-Host "❌ GitHub CLI (gh) chưa cài. Tải: https://cli.github.com/" -ForegroundColor Red; exit 1
     }
 
     & $gh auth status *> $null
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Chưa đăng nhập gh. Chạy: gh auth login --scopes workflow" -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "✅ gh đã xác thực." -ForegroundColor Gray
-
-    $currentBranch = "main"
-    if (Get-Command git -ErrorAction SilentlyContinue) {
-        $branch = git branch --show-current 2>$null
-        if (-not [string]::IsNullOrWhiteSpace($branch)) { $currentBranch = $branch }
+        Write-Host "❌ Chưa đăng nhập gh. Chạy: gh auth login --scopes workflow" -ForegroundColor Red; exit 1
     }
 
-    Write-Host "🔍 Đang quét workflow..." -ForegroundColor Cyan
-    try {
-        $workflowsJson = & $gh workflow list --json id,name,state
-        $workflows = $workflowsJson | ConvertFrom-Json
-        $activeWorkflows = @($workflows | Where-Object { $_.state -eq "active" })
-    } catch {
-        Write-Host "❌ Không lấy được danh sách workflow." -ForegroundColor Red
-        exit 1
-    }
-    if ($activeWorkflows.Count -eq 0) {
-        Write-Host "❌ Không có workflow active." -ForegroundColor Red
-        exit 1
-    }
+    $currentBranch = if (Get-Command git -EA SilentlyContinue) { git branch --show-current 2>$null } else { $null }
+    if (-not $currentBranch) { $currentBranch = 'main' }
 
-    $priorityWorkflows = @($activeWorkflows | Where-Object { $_.name -match "Build|Android" })
-    if ($priorityWorkflows.Count -eq 1) {
-        $selected = $priorityWorkflows[0]
+    # Chọn workflow
+    $allWf = @(& $gh workflow list --json id,name,state | ConvertFrom-Json | Where-Object state -eq 'active')
+    if ($allWf.Count -eq 0) { Write-Host "❌ Không có workflow active." -ForegroundColor Red; exit 1 }
+
+    $priority = @($allWf | Where-Object { $_.name -match 'Build|MAUI|Android' })
+    if ($priority.Count -eq 1) {
+        $selected = $priority[0]
         Write-Host "✅ Workflow: $($selected.name)" -ForegroundColor Green
     } else {
-        Write-Host "`n📋 Workflow:" -ForegroundColor Yellow
-        for ($i = 0; $i -lt $activeWorkflows.Count; $i++) {
-            Write-Host "  [$i] $($activeWorkflows[$i].name)"
+        Write-Host "`n📋 Danh sách workflow:" -ForegroundColor Yellow
+        for ($i = 0; $i -lt $allWf.Count; $i++) {
+            Write-Host "  [$i] $($allWf[$i].name)"
         }
-        $choice = Read-Host "`n👉 Số workflow"
-        if ($choice -notmatch '^\d+$' -or [int]$choice -lt 0 -or [int]$choice -ge $activeWorkflows.Count) {
-            Write-Host "❌ Số không hợp lệ." -ForegroundColor Red
-            exit 1
+        $c = Read-Host "`n👉 Số thứ tự"
+        if ($c -notmatch '^\d+$' -or [int]$c -lt 0 -or [int]$c -ge $allWf.Count) {
+            Write-Host "❌ Lựa chọn không hợp lệ." -ForegroundColor Red; exit 1
         }
-        $selected = $activeWorkflows[[int]$choice]
+        $selected = $allWf[[int]$c]
     }
 
-    Write-Host "`n🚀 Kích hoạt build [$currentBranch] (package_format=$PackageFormat)..." -ForegroundColor Cyan
-    $lastRunId = (& $gh run list --workflow $selected.id --limit 1 --json databaseId | ConvertFrom-Json).databaseId
-    & $gh workflow run $selected.id --ref $currentBranch -f "package_format=$PackageFormat"
+    # Ghi nhớ run cũ rồi trigger
+    $lastId = (& $gh run list --workflow $selected.id --limit 1 --json databaseId | ConvertFrom-Json).databaseId
+    & $gh workflow run $selected.id --ref $currentBranch -f "package_format=$PackageFormat" 2>$null
     if ($LASTEXITCODE -ne 0) { & $gh workflow run $selected.id --ref $currentBranch }
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Không kích hoạt được workflow (cần workflow_dispatch?)." -ForegroundColor Red
-        exit 1
+        Write-Host "❌ Không kích hoạt được workflow." -ForegroundColor Red; exit 1
+    }
+    Write-Host "`n🚀 Đã kích hoạt | branch=$currentBranch format=$PackageFormat" -ForegroundColor Cyan
+
+    # Đợi run mới xuất hiện
+    $newId = $null
+    for ($i = 0; $i -lt 20; $i++) {
+        Start-Sleep 2
+        $cur = (& $gh run list --workflow $selected.id --limit 1 --json databaseId | ConvertFrom-Json).databaseId
+        if ($cur -ne $lastId -and $null -ne $cur) { $newId = $cur; break }
     }
 
-    $newRunId = $null
-    for ($i = 0; $i -lt 15; $i++) {
-        Start-Sleep -Seconds 2
-        $currentRunId = (& $gh run list --workflow $selected.id --limit 1 --json databaseId | ConvertFrom-Json).databaseId
-        if ($currentRunId -ne $lastRunId -and $null -ne $currentRunId) {
-            $newRunId = $currentRunId
-            break
-        }
-    }
-    if ($newRunId) {
-        Write-Host "🎯 Run ID: $newRunId — đang theo dõi..." -ForegroundColor Green
-        & $gh run watch $newRunId --exit-status
+    if ($newId) {
+        Write-Host "🎯 Run ID: $newId — đang theo dõi…" -ForegroundColor Green
+        & $gh run watch $newId --exit-status
     } else {
-        Write-Host "⚠️ Theo dõi run gần nhất..." -ForegroundColor Yellow
+        Write-Host "⚠️ Theo dõi run gần nhất…" -ForegroundColor Yellow
         & $gh run watch --exit-status
     }
 
-    $dir = "apk-output"
-    if (Test-Path $dir) { Remove-Item -Path "$dir\*" -Recurse -Force -ErrorAction SilentlyContinue }
-    else { New-Item -ItemType Directory -Path $dir | Out-Null }
+    # Download artifact
+    $outDir = 'apk-output'
+    if (Test-Path $outDir) { Remove-Item "$outDir\*" -Recurse -Force -EA SilentlyContinue }
+    else { New-Item -ItemType Directory $outDir | Out-Null }
 
-    Write-Host "`n📦 Tải artifact..." -ForegroundColor Cyan
-    if ($newRunId) { & $gh run download $newRunId --dir $dir }
-    else { & $gh run download --dir $dir }
+    Write-Host "`n📦 Tải artifact…" -ForegroundColor Cyan
+    if ($newId) { & $gh run download $newId --dir $outDir }
+    else { & $gh run download --dir $outDir }
 
-    Get-ChildItem -Path $dir -Recurse -File -Include *.apk, *.aab | Move-Item -Destination $dir -Force -ErrorAction SilentlyContinue
-    Get-ChildItem -Path $dir -Directory | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    # Flatten — đưa tất cả apk/aab lên root của $outDir
+    Get-ChildItem $outDir -Recurse -File -Include *.apk,*.aab |
+        Move-Item -Destination $outDir -Force -EA SilentlyContinue
+    Get-ChildItem $outDir -Directory | Remove-Item -Recurse -Force -EA SilentlyContinue
 
-    Write-Host "`n🔎 File trong $dir :" -ForegroundColor Cyan
-    Get-ChildItem -Path $dir -File | Where-Object { $_.Extension -match 'apk|aab' } | ForEach-Object {
-        $t = if ($_.Extension -eq ".aab") { "AAB" } else { "APK" }
-        Write-Host "  $t : $($_.Name)" -ForegroundColor Green
+    Write-Host "`n📂 Kết quả ($outDir):" -ForegroundColor Cyan
+    Get-ChildItem $outDir -File | Where-Object { $_.Extension -in '.apk','.aab' } | ForEach-Object {
+        $label = if ($_.Name -match '-Signed|release') { '🔏 SIGNED' } else { '📦 unsigned' }
+        Write-Host "  $label  $($_.Name)  [$([math]::Round($_.Length/1MB,2)) MB]" -ForegroundColor Green
     }
-    Write-Host "`n🎉 GitHub Actions xong." -ForegroundColor Green
-    if ($IsWindows) { explorer.exe $((Resolve-Path $dir).Path) }
+    Write-Host "`n🎉 GitHub Actions hoàn tất." -ForegroundColor Green
+    if ($IsWindows) { explorer.exe ((Resolve-Path $outDir).Path) }
 }
 
-# --- Chế độ dòng lệnh: chỉ CI ---
+# ════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT — Mode CI (flag -GitHub)
+# ════════════════════════════════════════════════════════════════════════════
 if ($GitHub) {
-    Write-Host "`n=======================================" -ForegroundColor Cyan
-    Write-Host " ☁️  GITHUB ACTIONS (gh)                " -ForegroundColor Cyan
-    Write-Host "=======================================`n" -ForegroundColor Cyan
+    Write-Host "`n╔═══════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host " ☁  GITHUB ACTIONS BUILD                 " -ForegroundColor Cyan
+    Write-Host "╚═══════════════════════════════════════╝`n" -ForegroundColor Cyan
 
-    $fmt = $PackageFormat
-    if (-not $NonInteractive) {
-        if (-not $PSBoundParameters.ContainsKey('PackageFormat')) {
-            Write-Host "  [1] APK  [2] AAB" -ForegroundColor Cyan
-            $p = Read-Host "👉 Chọn (Enter = 1)"
-            if ([string]::IsNullOrWhiteSpace($p)) { $p = "1" }
-            $fmt = if ($p -eq "2") { "aab" } else { "apk" }
-        }
-    } elseif (-not $PSBoundParameters.ContainsKey('PackageFormat')) {
-        $fmt = "apk"
+    $fmt = $Format
+    if (-not $NonInteractive -and -not $PSBoundParameters.ContainsKey('Format')) {
+        Write-Host "  [1] APK  [2] AAB" -ForegroundColor Cyan
+        $p = Read-Host "👉 Chọn định dạng (Enter = APK)"
+        $fmt = if ($p -eq '2') { 'aab' } else { 'apk' }
+    } elseif (-not $PSBoundParameters.ContainsKey('Format')) {
+        $fmt = 'apk'
     }
-    Invoke-GitHubActionsBuild -PackageFormat $fmt
+
+    Invoke-GitHubBuild -PackageFormat $fmt
     Write-Host "`a" -NoNewline
     exit 0
 }
 
-# --- Menu: build cục bộ hoặc CI ---
-Write-Host "`n=======================================" -ForegroundColor Cyan
-Write-Host " 🔨 BUILD — Local + GitHub Actions      " -ForegroundColor Cyan
-Write-Host "=======================================`n" -ForegroundColor Cyan
+# ════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT — Menu tương tác
+# ════════════════════════════════════════════════════════════════════════════
+Write-Host "`n╔═══════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host " 🔨  MAUI BUILD TOOL — VIP PRO           " -ForegroundColor Cyan
+Write-Host "╚═══════════════════════════════════════╝`n" -ForegroundColor Cyan
 
-Write-Host "📦 Chọn:" -ForegroundColor Cyan
+$isMac = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+    [System.Runtime.InteropServices.OSPlatform]::OSX)
+$isWin = $IsWindows
+
 Write-Host "  [0] Thoát"
-Write-Host "  [1] Android — APK (máy này → local-publish/)"
-Write-Host "  [2] Android — AAB (máy này → local-publish/)"
-Write-Host "  [3] iOS (macOS + Xcode)"
-Write-Host "  [4] Mac Catalyst (macOS)"
-Write-Host "  [5] GitHub Actions — chạy workflow & tải về apk-output/"
+Write-Host "  [1] Android — APK  (local)"
+Write-Host "  [2] Android — AAB  (local)"
+if ($isMac) {
+    Write-Host "  [3] iOS            (macOS + Xcode)"
+    Write-Host "  [4] Mac Catalyst   (macOS)"
+}
+if ($isWin) {
+    Write-Host "  [5] Windows MSIX   (local)"
+}
+Write-Host "  [6] ☁  GitHub Actions — build + download"
 
 $pick = Read-Host "`n👉 Chọn (Enter = 0)"
-if ([string]::IsNullOrWhiteSpace($pick)) { $pick = "0" }
+if ([string]::IsNullOrWhiteSpace($pick)) { $pick = '0' }
 
-if ($pick -eq "0") {
-    Write-Host "Đã thoát." -ForegroundColor Gray
-    exit 0
+if ($pick -eq '0') { Write-Host 'Đã thoát.' -ForegroundColor Gray; exit 0 }
+
+if ($pick -eq '6') {
+    Write-Host "`n  [1] APK  [2] AAB" -ForegroundColor Cyan
+    $p = Read-Host "👉 Định dạng (Enter = APK)"
+    Invoke-GitHubBuild -PackageFormat (if ($p -eq '2') { 'aab' } else { 'apk' })
+    Write-Host "`a" -NoNewline; exit 0
 }
 
-if ($pick -eq "5") {
-    Write-Host "`n  [1] APK  [2] AAB (input workflow)" -ForegroundColor Cyan
-    $p = Read-Host "👉 Định dạng gửi Actions (Enter = 1)"
-    if ([string]::IsNullOrWhiteSpace($p)) { $p = "1" }
-    $fmt = if ($p -eq "2") { "aab" } else { "apk" }
-    Invoke-GitHubActionsBuild -PackageFormat $fmt
-    Write-Host "`a" -NoNewline
-    exit 0
+# ── Cần dotnet SDK cho build cục bộ ─────────────────────────────────────────
+if (-not (Get-Command dotnet -EA SilentlyContinue)) {
+    Write-Host "❌ dotnet SDK chưa cài." -ForegroundColor Red; exit 1
 }
 
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-    Write-Host "❌ Cần dotnet SDK (mục 1–4)." -ForegroundColor Red
-    exit 1
+$csprojFile = Get-MauiCsproj
+if (-not $csprojFile) {
+    Write-Host "❌ Không tìm thấy .csproj MAUI." -ForegroundColor Red; exit 1
 }
 
-$projectFile = Get-MauiAppCsproj
-if (-not $projectFile) {
-    Write-Host "❌ Không tìm thấy .csproj." -ForegroundColor Red
-    exit 1
-}
+$tfms       = @(Get-CsprojTfms $csprojFile.FullName)
+$androidTfm = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-android[0-9.]*'
+$iosTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-ios[0-9.]*'
+$macTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-maccatalyst[0-9.]*'
+$winTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-windows[0-9.]*'
+$root       = Join-Path $PSScriptRoot 'local-publish'
 
-$tfms = @(Get-CsprojTfms $projectFile.FullName)
-$androidTfm = Get-AndroidTfmMoniker $tfms
-$iosTfm = Get-IosTfmMoniker $tfms
-$macTf = Get-MacCatalystTfmMoniker $tfms
-$isMac = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)
-
-Write-Host "`n📄 $($projectFile.Name) | TFM: $($tfms -join ', ')" -ForegroundColor Gray
-
-$root = Join-Path $PSScriptRoot "local-publish"
+Write-Host "`n📄 $($csprojFile.Name)  [TFMs: $($tfms -join ', ')]" -ForegroundColor DarkGray
 
 switch ($pick) {
-    "1" {
+    { $_ -in '1','2' } {
         if (-not $androidTfm) { Write-Host "❌ Không có TFM Android." -ForegroundColor Red; exit 1 }
-        $out = Join-Path $root "android-apk"
-        New-Item -ItemType Directory -Path $out -Force | Out-Null
-        Write-Host "⏳ APK → $out ..." -ForegroundColor Gray
-        dotnet publish $projectFile.FullName -c Release -f $androidTfm -p:AndroidPackageFormat=apk -o $out --nologo
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        Write-Host "✅ Xong APK." -ForegroundColor Green
+        $fmt    = if ($pick -eq '2') { 'aab' } else { 'apk' }
+        $outDir = Join-Path $root "android-$fmt"
+
+        # Phát hiện keystore cục bộ
+        $ksInfo = Find-AndroidKeystore (Split-Path $csprojFile.FullName)
+        $signingArgs = @("-p:AndroidPackageFormat=$fmt")
+
+        if ($ksInfo) {
+            $ksInfo = Prompt-SigningInfo $ksInfo
+        }
+        if ($ksInfo -and $ksInfo.StorePass) {
+            Write-Host "🔏 Build với keystore ký → chỉ xuất file đã ký" -ForegroundColor Green
+            $signingArgs += @(
+                "-p:AndroidSigningKeyStore=$($ksInfo.KeystorePath)",
+                "-p:AndroidSigningStorePass=$($ksInfo.StorePass)",
+                "-p:AndroidSigningKeyAlias=$($ksInfo.KeyAlias)",
+                "-p:AndroidSigningKeyPass=$($ksInfo.KeyPass)"
+            )
+        } else {
+            Write-Host "⚠️  Không có keystore → build unsigned" -ForegroundColor Yellow
+        }
+
+        Invoke-LocalBuild $csprojFile.FullName $androidTfm $outDir $signingArgs
+        Write-Host "✅ Xong $($fmt.ToUpper())" -ForegroundColor Green
+        Show-OutputFiles $outDir @('.apk','.aab')
     }
-    "2" {
-        if (-not $androidTfm) { Write-Host "❌ Không có TFM Android." -ForegroundColor Red; exit 1 }
-        $out = Join-Path $root "android-aab"
-        New-Item -ItemType Directory -Path $out -Force | Out-Null
-        Write-Host "⏳ AAB → $out ..." -ForegroundColor Gray
-        dotnet publish $projectFile.FullName -c Release -f $androidTfm -p:AndroidPackageFormat=aab -o $out --nologo
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        Write-Host "✅ Xong AAB." -ForegroundColor Green
-    }
-    "3" {
-        if (-not $iosTfm) { Write-Host "❌ Không có TFM iOS trong .csproj." -ForegroundColor Red; exit 1 }
-        if (-not $isMac) { Write-Host "❌ Cần macOS + Xcode." -ForegroundColor Red; exit 1 }
-        $out = Join-Path $root "ios"
-        New-Item -ItemType Directory -Path $out -Force | Out-Null
-        dotnet publish $projectFile.FullName -c Release -f $iosTfm -p:TargetFrameworks=$iosTfm -o $out --nologo
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    '3' {
+        if (-not $iosTfm)  { Write-Host "❌ Không có TFM iOS." -ForegroundColor Red; exit 1 }
+        if (-not $isMac)   { Write-Host "❌ Cần macOS + Xcode." -ForegroundColor Red; exit 1 }
+        $outDir = Join-Path $root 'ios'
+        Invoke-LocalBuild $csprojFile.FullName $iosTfm $outDir
         Write-Host "✅ Xong iOS." -ForegroundColor Green
+        Show-OutputFiles $outDir @('.ipa','.app')
     }
-    "4" {
-        if (-not $macTf) { Write-Host "❌ Không có Mac Catalyst." -ForegroundColor Red; exit 1 }
-        if (-not $isMac) { Write-Host "❌ Cần macOS." -ForegroundColor Red; exit 1 }
-        $out = Join-Path $root "maccatalyst"
-        New-Item -ItemType Directory -Path $out -Force | Out-Null
-        dotnet publish $projectFile.FullName -c Release -f $macTf -p:TargetFrameworks=$macTf -o $out --nologo
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    '4' {
+        if (-not $macTfm)  { Write-Host "❌ Không có TFM Mac Catalyst." -ForegroundColor Red; exit 1 }
+        if (-not $isMac)   { Write-Host "❌ Cần macOS." -ForegroundColor Red; exit 1 }
+        $outDir = Join-Path $root 'maccatalyst'
+        Invoke-LocalBuild $csprojFile.FullName $macTfm $outDir
         Write-Host "✅ Xong Mac Catalyst." -ForegroundColor Green
+        Show-OutputFiles $outDir @('.pkg','.dmg','.app')
+    }
+    '5' {
+        if (-not $winTfm)  { Write-Host "❌ Không có TFM Windows." -ForegroundColor Red; exit 1 }
+        if (-not $isWin)   { Write-Host "❌ Cần Windows." -ForegroundColor Red; exit 1 }
+        $outDir = Join-Path $root 'windows'
+        $winArgs = @('-p:WindowsPackageType=MSIX', '-p:GenerateAppxPackageOnBuild=true')
+
+        # Phát hiện PFX cert Windows
+        $pfxFile = Get-ChildItem (Split-Path $csprojFile.FullName) -Recurse -Filter *.pfx -File |
+            Where-Object { $_.FullName -notmatch '[\\/](obj|bin)[\\/]' } | Select-Object -First 1
+        if ($pfxFile) {
+            $pfxPass = Read-Host "🔑 PFX password ($($pfxFile.Name), Enter để bỏ qua)"
+            if (-not [string]::IsNullOrWhiteSpace($pfxPass)) {
+                Write-Host "🔏 Build với PFX cert → SIGNED MSIX" -ForegroundColor Green
+                $winArgs += @("-p:PackageCertificateKeyFile=$($pfxFile.FullName)", "-p:PackageCertificatePassword=$pfxPass")
+            } else {
+                Write-Host "⚠️  Bỏ qua ký → UNSIGNED MSIX" -ForegroundColor Yellow
+            }
+        }
+
+        Invoke-LocalBuild $csprojFile.FullName $winTfm $outDir $winArgs
+        Write-Host "✅ Xong Windows MSIX." -ForegroundColor Green
+        Show-OutputFiles $outDir @('.msix','.msixbundle','.appx')
     }
     default {
-        Write-Host "❌ Lựa chọn không hợp lệ." -ForegroundColor Red
-        exit 1
+        Write-Host "❌ Lựa chọn không hợp lệ." -ForegroundColor Red; exit 1
     }
-}
-
-if ($IsWindows) {
-    $folder = switch ($pick) {
-        "1" { "android-apk" }
-        "2" { "android-aab" }
-        "3" { "ios" }
-        "4" { "maccatalyst" }
-    }
-    $open = Join-Path $root $folder
-    if (Test-Path $open) { explorer.exe $((Resolve-Path $open).Path) }
 }
 
 Write-Host "`a" -NoNewline

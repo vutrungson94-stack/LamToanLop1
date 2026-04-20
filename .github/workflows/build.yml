@@ -1,8 +1,16 @@
-name: Build MAUI Android (VIP PRO)
+name: 🚀 Build MAUI — VIP PRO
+
+# ─────────────────────────────────────────────────────────────
+#  Secrets tuỳ chọn (không cần thì bỏ qua, build vẫn chạy):
+#
+#  Android  : KEYSTORE_BASE64  KEYSTORE_PASSWORD  KEY_ALIAS  KEY_PASSWORD
+#  Apple    : APPLE_CERT_P12   APPLE_CERT_PASS    APPLE_PROV_PROFILE
+#  Windows  : WIN_CERT_PFX     WIN_CERT_PASS
+# ─────────────────────────────────────────────────────────────
 
 permissions:
   contents: write
-  actions: write
+  actions:  write
 
 on:
   push:
@@ -10,292 +18,522 @@ on:
   workflow_dispatch:
     inputs:
       package_format:
-        description: 'Chọn định dạng xuất bản (apk hoặc aab)'
+        description: "Android — APK hay AAB?"
         required: true
-        default: 'apk'
+        default: apk
         type: choice
         options: [apk, aab]
+      platforms:
+        description: "Build nền tảng nào?"
+        required: true
+        default: android
+        type: choice
+        options:
+          - android
+          - android+apple
+          - android+windows
+          - all
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_NOLOGO: "true"
+  DOTNET_VERSION: "10.0.x"
 
+# ══════════════════════════════════════════════════════════════
+# JOB 1 — Quét .csproj, phát hiện TFM tất cả nền tảng
+# ══════════════════════════════════════════════════════════════
 jobs:
-  detect-maui:
-    name: 🔎 Detect MAUI project & TFMs
+  detect:
+    name: 🔎 Detect project & TFMs
     runs-on: ubuntu-latest
     outputs:
-      csproj_path: ${{ steps.scan.outputs.csproj_path }}
-      android_tfm: ${{ steps.scan.outputs.android_tfm }}
-      apple_count: ${{ steps.scan.outputs.apple_count }}
+      csproj_path:       ${{ steps.scan.outputs.csproj_path }}
+      android_tfm:       ${{ steps.scan.outputs.android_tfm }}
+      windows_tfm:       ${{ steps.scan.outputs.windows_tfm }}
+      apple_count:       ${{ steps.scan.outputs.apple_count }}
       apple_matrix_json: ${{ steps.scan.outputs.apple_matrix_json }}
-    steps:
-    - name: 🕒 Checkout code
-      uses: actions/checkout@v4
 
-    - name: Scan .csproj / TFMs
-      id: scan
-      shell: pwsh
-      run: |
-        function Get-XmlSdkText($Node) {
-          if ($null -eq $Node) { return '' }
-          if ($Node -is [string]) { return $Node.Trim() }
-          if ($Node -is [System.Xml.XmlElement]) { return $Node.InnerText.Trim() }
-          if ($Node -is [System.Array] -or ($Node -is [System.Collections.IEnumerable] -and $Node -isnot [string])) {
-            $first = @($Node) | Select-Object -First 1
-            if ($first -is [System.Xml.XmlElement]) { return $first.InnerText.Trim() }
-            return ([string]$first).Trim()
-          }
-          return ([string]$Node).Trim()
-        }
-        function Get-CsprojTfms([string]$projPath) {
-          [xml]$x = Get-Content -LiteralPath $projPath
-          $list = [System.Collections.Generic.List[string]]::new()
-          foreach ($pg in @($x.Project.PropertyGroup)) {
-            if ($null -ne $pg.TargetFrameworks) {
-              foreach ($tfmNode in @($pg.TargetFrameworks)) {
-                $blob = if ($tfmNode -is [System.Xml.XmlElement]) { $tfmNode.InnerText.Trim() } else { ([string]$tfmNode).Trim() }
-                if (-not $blob) { continue }
-                foreach ($p in ($blob -split ';')) {
-                  $t = $p.Trim()
-                  if (-not $t) { continue }
-                  if ($t -match '^\$\(') { continue }
-                  foreach ($piece in ($t -split '\s+', [System.StringSplitOptions]::RemoveEmptyEntries)) {
-                    if ($piece -match '^\$\(') { continue }
-                    [void]$list.Add($piece)
+    steps:
+      - name: 🕒 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔍 Scan .csproj & TFMs
+        id: scan
+        shell: pwsh
+        run: |
+          # ── helpers ──────────────────────────────────────────
+          function Get-CsprojTfms([string]$p) {
+            [xml]$x = Get-Content -LiteralPath $p
+            $list   = [System.Collections.Generic.List[string]]::new()
+            foreach ($pg in @($x.Project.PropertyGroup)) {
+              foreach ($prop in @('TargetFrameworks','TargetFramework')) {
+                if ($null -eq $pg.$prop) { continue }
+                foreach ($node in @($pg.$prop)) {
+                  $blob = if ($node -is [System.Xml.XmlElement]) { $node.InnerText.Trim() } else { ([string]$node).Trim() }
+                  foreach ($p2 in ($blob -split ';')) {
+                    $t = $p2.Trim()
+                    if (-not $t -or $t -match '^\$\(') { continue }
+                    foreach ($piece in ($t -split '\s+')) {
+                      if ($piece -and $piece -notmatch '^\$\(') { [void]$list.Add($piece) }
+                    }
                   }
                 }
               }
             }
-            if ($null -ne $pg.TargetFramework) {
-              foreach ($tfNode in @($pg.TargetFramework)) {
-                $one = if ($tfNode -is [System.Xml.XmlElement]) { $tfNode.InnerText.Trim() } else { ([string]$tfNode).Trim() }
-                if (-not $one -or $one -match '^\$\(') { continue }
-                foreach ($piece in ($one -split '\s+', [System.StringSplitOptions]::RemoveEmptyEntries)) {
-                  [void]$list.Add($piece)
-                }
+            return ,@($list | Select-Object -Unique)
+          }
+          function Pick-Tfm([string[]]$tfms, [string]$pattern) {
+            foreach ($t in $tfms) {
+              $m = [regex]::Match($t, $pattern)
+              if ($m.Success) { return $m.Value }
+            }
+            return $null
+          }
+
+          # ── tìm .csproj chính ────────────────────────────────
+          $all = Get-ChildItem . -Recurse -Filter *.csproj -File |
+            Where-Object { $_.FullName -notmatch '[\\/](obj|bin|packages|node_modules)[\\/]' -and $_.Name -notmatch '\.Tests\.' } |
+            Sort-Object FullName
+
+          $main = $null
+          foreach ($c in $all) {
+            $raw  = Get-Content $c.FullName -Raw -EA SilentlyContinue
+            $tfms = Get-CsprojTfms $c.FullName
+            if ($tfms | Where-Object { $_ -match 'android' }) {
+              if ($raw -match '<UseMaui>\s*true\s*</UseMaui>' -or $raw -match 'net[0-9.]+-android') {
+                $main = $c; break
               }
             }
           }
-          return ,@($list | Select-Object -Unique)
-        }
-        function Get-AndroidTfmMoniker([string[]]$Tfms) {
-          foreach ($raw in @($Tfms)) {
-            if ([string]::IsNullOrWhiteSpace($raw)) { continue }
-            $m = [regex]::Match($raw, 'net[0-9]+\.[0-9]+-android[0-9.]*')
-            if ($m.Success) { return $m.Value }
-          }
-          return $null
-        }
-
-        $all = Get-ChildItem -Path . -Recurse -Filter *.csproj -File | Where-Object {
-          $_.FullName -notmatch '[\\/](obj|bin|packages|node_modules)[\\/]'
-        } | Sort-Object FullName
-
-        $main = $null
-        foreach ($c in $all) {
-          $raw = Get-Content -LiteralPath $c.FullName -Raw
-          if ($c.Name -match '\.Tests\.') { continue }
-          $tfms = Get-CsprojTfms $c.FullName
-          $hasAndroid = $tfms | Where-Object { $_ -match 'android' }
-          if (-not $hasAndroid) { continue }
-          $isMaui = $raw -match '<UseMaui>\s*true\s*</UseMaui>'
-          if ($isMaui -or $raw -match 'net[0-9.]+-android') {
-            $main = $c
-            break
-          }
-        }
-        if (-not $main) {
-          foreach ($c in $all) {
-            if ($c.Name -match '\.Tests\.') { continue }
-            $tfms = Get-CsprojTfms $c.FullName
-            if ($tfms | Where-Object { $_ -match 'android' }) {
-              $main = $c
-              break
+          if (-not $main) {
+            foreach ($c in $all) {
+              $tfms = Get-CsprojTfms $c.FullName
+              if ($tfms | Where-Object { $_ -match 'android|ios|maccatalyst|windows' }) { $main = $c; break }
             }
           }
-        }
-        if (-not $main) {
-          Write-Error "Không tìm thấy .csproj có TargetFramework android."
-          exit 1
-        }
+          if (-not $main) { Write-Error "❌ Không tìm thấy .csproj MAUI!"; exit 1 }
 
-        $tfms = Get-CsprojTfms $main.FullName
-        $androidTfm = Get-AndroidTfmMoniker $tfms
-        if ([string]::IsNullOrWhiteSpace($androidTfm)) {
-          Write-Error "Project $($main.Name) không có TFM android."
-          exit 1
-        }
+          $tfms      = Get-CsprojTfms $main.FullName
+          $androidTfm = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-android[0-9.]*'
+          $winTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-windows[0-9.]*'
+          $iosTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-ios[0-9.]*'
+          $macTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-maccatalyst[0-9.]*'
 
-        $iosTfm = $tfms | Where-Object { $_ -match 'net[0-9.]+-ios' -and $_ -notmatch 'maccatalyst' } | Select-Object -First 1
-        $macTfm = $tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -First 1
+          if (-not $androidTfm) { Write-Error "❌ Không có TFM android trong $($main.Name)!"; exit 1 }
 
-        $rows = [System.Collections.Generic.List[hashtable]]::new()
-        if ($iosTfm) { $rows.Add(@{ platform = 'ios'; tfm = $iosTfm }) }
-        if ($macTfm) { $rows.Add(@{ platform = 'maccatalyst'; tfm = $macTfm }) }
+          $appleRows = [System.Collections.Generic.List[hashtable]]::new()
+          if ($iosTfm) { $appleRows.Add(@{ platform = 'ios';          tfm = $iosTfm }) }
+          if ($macTfm) { $appleRows.Add(@{ platform = 'maccatalyst';  tfm = $macTfm }) }
 
-        $repoRoot = (Get-Location).Path
-        $rel = [System.IO.Path]::GetRelativePath($repoRoot, $main.FullName) -replace '\\', '/'
-        Write-Host "✅ csproj: $rel"
-        Write-Host "✅ android TFM: $androidTfm"
-        if ($iosTfm) { Write-Host "✅ iOS TFM: $iosTfm" }
-        if ($macTfm) { Write-Host "✅ Mac Catalyst TFM: $macTfm" }
+          $rel        = [System.IO.Path]::GetRelativePath((Get-Location).Path, $main.FullName) -replace '\\','/'
+          $appleCount = $appleRows.Count
+          $appleJson  = if ($appleCount -eq 0) { '[]' } else { ConvertTo-Json @($appleRows.ToArray()) -Compress -Depth 5 }
 
-        $count = $rows.Count
-        $matrixJson = if ($count -eq 0) { '[]' } else { (ConvertTo-Json -InputObject @($rows.ToArray()) -Compress -Depth 5) }
+          Write-Host "csproj    : $rel"
+          Write-Host "android   : $androidTfm"
+          Write-Host "windows   : $(if ($winTfm) { $winTfm } else { '—' })"
+          Write-Host "iOS       : $(if ($iosTfm)  { $iosTfm }  else { '—' })"
+          Write-Host "catalyst  : $(if ($macTfm)  { $macTfm }  else { '—' })"
 
-        "csproj_path=$rel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-        "android_tfm=$androidTfm" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-        "apple_count=$count" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-        $eof = 'APPLE_MATRIX_EOF'
-        "apple_matrix_json<<$eof" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-        $matrixJson | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-        "$eof" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "csproj_path=$rel"              | Out-File $env:GITHUB_OUTPUT -Append
+          "android_tfm=$androidTfm"       | Out-File $env:GITHUB_OUTPUT -Append
+          "windows_tfm=$winTfm"           | Out-File $env:GITHUB_OUTPUT -Append
+          "apple_count=$appleCount"       | Out-File $env:GITHUB_OUTPUT -Append
+          $eof = 'APPLE_EOF'
+          "apple_matrix_json<<$eof"       | Out-File $env:GITHUB_OUTPUT -Append
+          $appleJson                      | Out-File $env:GITHUB_OUTPUT -Append
+          $eof                            | Out-File $env:GITHUB_OUTPUT -Append
 
+# ══════════════════════════════════════════════════════════════
+# JOB 2 — Build Android (APK / AAB, ký hoặc không ký)
+# ══════════════════════════════════════════════════════════════
   build-android:
-    name: 📱 Build & Release Android
-    needs: detect-maui
+    name: 📱 Android (${{ github.event.inputs.package_format || 'apk' }})
+    needs: detect
     runs-on: ubuntu-latest
+
     steps:
-    - name: 🕒 Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: 🔐 Control global.json
-      if: hashFiles('global.json') != ''
-      shell: pwsh
-      run: |
-        $json = Get-Content global.json | ConvertFrom-Json
-        if (-not $json.sdk) { $json | Add-Member -Name sdk -Value (@{}) -MemberType NoteProperty }
-        $json.sdk.rollForward = "latestMinor"
-        $json | ConvertTo-Json -Depth 10 | Set-Content global.json
-        Write-Host "✅ Đã cấu hình global.json!" -ForegroundColor Cyan
+      - name: 🔐 Patch global.json (rollForward)
+        if: hashFiles('global.json') != ''
+        shell: pwsh
+        run: |
+          $j = Get-Content global.json | ConvertFrom-Json
+          if (-not $j.sdk) { $j | Add-Member sdk @{} NoteProperty }
+          $j.sdk.rollForward = 'latestMinor'
+          $j | ConvertTo-Json -Depth 10 | Set-Content global.json
+          Write-Host "✅ global.json patched"
 
-    - name: 🛠️  Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '10.0.x'
+      - name: 🛠️ Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: 🕒 Cache NuGet (Android)
-      uses: actions/cache@v4
-      with:
-        path: ~/.nuget/packages
-        key: nuget-android-${{ hashFiles('**/global.json', '**/*.csproj') }}
+      - name: 🕒 Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-android-${{ hashFiles('**/*.csproj','**/global.json') }}
+          restore-keys: nuget-android-
 
-    - name: ⚡ Install MAUI Android
-      run: dotnet workload install maui-android
-      env:
-        DOTNET_CLI_TELEMETRY_OPTOUT: true
-        DOTNET_NOLOGO: true
+      - name: ⚡ Install MAUI Android workload
+        run: dotnet workload install maui-android
 
-    - name: 📦 Build Android
-      shell: pwsh
-      env:
-        CSPROJ: ${{ needs.detect-maui.outputs.csproj_path }}
-        ANDROID_TFM: ${{ needs.detect-maui.outputs.android_tfm }}
-      run: |
-        $csproj = Resolve-Path -LiteralPath $env:CSPROJ
-        Write-Host "✅ Project: $csproj"
-        $tfm = $env:ANDROID_TFM
-        Write-Host "✅ TFM: $tfm"
+      # ── Phát hiện ký số Android ─────────────────────────────
+      - name: 🔑 Detect Android signing
+        id: signing
+        env:
+          _KS: ${{ secrets.KEYSTORE_BASE64 }}
+        shell: pwsh
+        run: |
+          $has = -not [string]::IsNullOrWhiteSpace($env:_KS)
+          "enabled=$($has.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
+          if ($has) {
+            Write-Host "✅ Keystore secret found → build SIGNED release" -ForegroundColor Green
+          } else {
+            Write-Host "⚠️  No keystore secret   → build UNSIGNED (debug-signed)" -ForegroundColor Yellow
+            Write-Host "   (Thêm secret KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD để ký release)" -ForegroundColor DarkGray
+          }
 
-        $format = "${{ github.event.inputs.package_format }}"
-        if ([string]::IsNullOrWhiteSpace($format)) { $format = "apk" }
+      # ── Build ───────────────────────────────────────────────
+      - name: 📦 Build Android
+        id: build
+        shell: pwsh
+        env:
+          CSPROJ:       ${{ needs.detect.outputs.csproj_path }}
+          ANDROID_TFM:  ${{ needs.detect.outputs.android_tfm }}
+          SIGNING_ON:   ${{ steps.signing.outputs.enabled }}
+          _KS_B64:      ${{ secrets.KEYSTORE_BASE64 }}
+          _KS_PASS:     ${{ secrets.KEYSTORE_PASSWORD }}
+          _KEY_ALIAS:   ${{ secrets.KEY_ALIAS }}
+          _KEY_PASS:    ${{ secrets.KEY_PASSWORD }}
+        run: |
+          $csproj = Resolve-Path $env:CSPROJ
+          $tfm    = $env:ANDROID_TFM
+          $fmt    = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+                      "${{ github.event.inputs.package_format }}"
+                    } else { 'apk' }
+          if (-not $fmt) { $fmt = 'apk' }
 
-        dotnet publish $csproj -c Release -f $tfm `
-          -p:AndroidPackageFormat=$format
+          $args = @('publish', $csproj,
+            '-c', 'Release', '-f', $tfm,
+            "-p:AndroidPackageFormat=$fmt",
+            '--nologo')
 
-    - name: 📁 Organize Android Artifacts
-      if: success()
-      shell: pwsh
-      run: |
-        $baseDir = "publish-output"
-        $platformDir = "$baseDir/android"
-        New-Item -ItemType Directory -Path "$platformDir/apk", "$platformDir/aab" -Force | Out-Null
-        Get-ChildItem -Path . -Recurse -File | Where-Object {
-          $_.Extension -match 'apk|aab' -and $_.FullName -notlike "*$baseDir*"
-        } | ForEach-Object {
-          if ($_.Extension -eq ".apk") { Move-Item $_.FullName "$platformDir/apk" -Force }
-          elseif ($_.Extension -eq ".aab") { Move-Item $_.FullName "$platformDir/aab" -Force }
-        }
+          if ($env:SIGNING_ON -eq 'true') {
+            $ksPath = Join-Path $env:RUNNER_TEMP 'release.keystore'
+            [IO.File]::WriteAllBytes($ksPath, [Convert]::FromBase64String($env:_KS_B64))
+            $args += @(
+              "-p:AndroidSigningKeyStore=$ksPath",
+              "-p:AndroidSigningStorePass=$($env:_KS_PASS)",
+              "-p:AndroidSigningKeyAlias=$($env:_KEY_ALIAS)",
+              "-p:AndroidSigningKeyPass=$($env:_KEY_PASS)"
+            )
+            Write-Host "🔏 Signing with release keystore…" -ForegroundColor Cyan
+          } else {
+            Write-Host "📦 Building unsigned…" -ForegroundColor Yellow
+          }
 
-    - name: 📤 Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: android-files
-        path: publish-output/
+          & dotnet @args
+          if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
 
-    - name: 🚀 Create GitHub Release (Android First)
-      if: success()
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: build-${{ github.run_number }}
-        name: 📦 Full Build #${{ github.run_number }}
-        files: publish-output/**
-        generate_release_notes: true
+      # ── Thu thập artifact ────────────────────────────────────
+      - name: 📁 Collect Android artifacts
+        shell: pwsh
+        env:
+          SIGNING_ON: ${{ steps.signing.outputs.enabled }}
+        run: |
+          $outDir = 'publish-output/android'
+          New-Item -ItemType Directory -Force $outDir | Out-Null
 
+          $candidates = Get-ChildItem . -Recurse -File |
+            Where-Object {
+              $_.Extension -in '.apk','.aab' -and
+              $_.FullName  -notmatch '[\\/](publish-output|packages|node_modules)[\\/]'
+            }
+
+          if ($env:SIGNING_ON -eq 'true') {
+            # Chỉ lấy file ĐÃ KÝ bằng release keystore
+            # dotnet MAUI đặt tên: *-Signed.apk hoặc *-release.apk
+            # Loại bỏ file unsigned/debug từ intermediate
+            $files = $candidates | Where-Object {
+              $_.Name -notmatch '-unsigned' -and
+              $_.FullName -notmatch '[\\/](obj)[\\/]'
+            }
+            Write-Host "🔏 Collecting SIGNED artifacts only:" -ForegroundColor Green
+          } else {
+            # Chỉ lấy file CHƯA KÝ — loại bỏ file có -Signed (nếu có)
+            $files = $candidates | Where-Object {
+              $_.FullName -notmatch '[\\/](obj)[\\/]'
+            }
+            Write-Host "📦 Collecting UNSIGNED artifacts only:" -ForegroundColor Yellow
+          }
+
+          $count = 0
+          foreach ($f in $files) {
+            $dest = Join-Path $outDir $f.Name
+            # Tránh ghi đè nhầm nếu trùng tên
+            if (Test-Path $dest) { $dest = Join-Path $outDir "$($f.BaseName)-$([IO.Path]::GetRandomFileName().Split('.')[0])$($f.Extension)" }
+            Copy-Item $f.FullName $dest -Force
+            Write-Host "  ✅ $($f.Name)  [$([math]::Round($f.Length/1MB,2)) MB]" -ForegroundColor Green
+            $count++
+          }
+
+          if ($count -eq 0) {
+            Write-Warning "⚠️  No Android artifacts found — check build logs!"
+          } else {
+            Write-Host "`n📊 Total: $count file(s)" -ForegroundColor Cyan
+          }
+
+      - name: 📤 Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ github.run_number }}
+          path: publish-output/android/
+          if-no-files-found: warn
+
+      - name: 🚀 Create GitHub Release (Android)
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "📦 Build #${{ github.run_number }}"
+          body: |
+            ## 📱 Android
+            | | |
+            |---|---|
+            | **Ký số** | ${{ steps.signing.outputs.enabled == 'true' && '🔏 Signed (release keystore)' || '⚠️ Unsigned / debug-signed' }} |
+            | **Định dạng** | `${{ github.event.inputs.package_format || 'apk' }}` |
+            | **Trigger** | `${{ github.event_name }}` by **${{ github.actor }}** |
+            | **Commit** | `${{ github.sha }}` |
+          files: publish-output/android/*
+          generate_release_notes: true
+
+# ══════════════════════════════════════════════════════════════
+# JOB 3 — Build Apple (iOS / Mac Catalyst)
+# ══════════════════════════════════════════════════════════════
   build-apple:
-    name: 🍎 ${{ matrix.platform }} (${{ matrix.tfm }})
-    needs: [detect-maui, build-android]
-    if: needs.detect-maui.outputs.apple_count != '0'
+    name: 🍎 ${{ matrix.platform }}
+    needs: [detect, build-android]
+    if: |
+      needs.detect.outputs.apple_count != '0' &&
+      (
+        github.event.inputs.platforms == '' ||
+        contains(github.event.inputs.platforms, 'apple') ||
+        github.event.inputs.platforms == 'all'
+      )
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.detect-maui.outputs.apple_matrix_json) }}
+        include: ${{ fromJson(needs.detect.outputs.apple_matrix_json) }}
     runs-on: macos-latest
+
     steps:
-    - name: 🕒 Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: 🔐 Control global.json
-      if: hashFiles('global.json') != ''
-      shell: pwsh
-      run: |
-        $json = Get-Content global.json | ConvertFrom-Json
-        if (-not $json.sdk) { $json | Add-Member -Name sdk -Value (@{}) -MemberType NoteProperty }
-        $json.sdk.rollForward = "latestMinor"
-        $json | ConvertTo-Json -Depth 10 | Set-Content global.json
-        Write-Host "✅ Đã cấu hình global.json!" -ForegroundColor Cyan
+      - name: 🔐 Patch global.json
+        if: hashFiles('global.json') != ''
+        shell: pwsh
+        run: |
+          $j = Get-Content global.json | ConvertFrom-Json
+          if (-not $j.sdk) { $j | Add-Member sdk @{} NoteProperty }
+          $j.sdk.rollForward = 'latestMinor'
+          $j | ConvertTo-Json -Depth 10 | Set-Content global.json
 
-    - name: 🛠️ Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '10.0.x'
+      - name: 🛠️ Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: ⚡ Install MAUI ${{ matrix.platform }}
-      run: dotnet workload install maui-${{ matrix.platform }}
-      env:
-        DOTNET_CLI_TELEMETRY_OPTOUT: true
-        DOTNET_NOLOGO: true
+      - name: ⚡ Install MAUI ${{ matrix.platform }}
+        run: dotnet workload install maui-${{ matrix.platform }}
 
-    - name: 📦 Build Apple
-      shell: pwsh
-      env:
-        CSPROJ: ${{ needs.detect-maui.outputs.csproj_path }}
-        TFM: ${{ matrix.tfm }}
-      run: |
-        $csproj = Resolve-Path -LiteralPath $env:CSPROJ
-        $tfm = $env:TFM
-        Write-Host "✅ Project: $csproj"
-        Write-Host "✅ TFM: $tfm"
+      # ── Phát hiện ký số Apple ────────────────────────────────
+      - name: 🔑 Detect Apple signing
+        id: signing
+        env:
+          _CERT:    ${{ secrets.APPLE_CERT_P12 }}
+          _PROFILE: ${{ secrets.APPLE_PROV_PROFILE }}
+        shell: pwsh
+        run: |
+          $has = (-not [string]::IsNullOrWhiteSpace($env:_CERT)) -and
+                 (-not [string]::IsNullOrWhiteSpace($env:_PROFILE))
+          "enabled=$($has.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host $(if ($has) { "✅ Apple certs found → SIGNED build" } else { "⚠️  No Apple certs → UNSIGNED/simulator build" })
 
-        dotnet publish $csproj -c Release -f $tfm `
-          -p:TargetFrameworks=$tfm
+      # ── Cài cert + provisioning profile ────────────────────
+      - name: 🔑 Install Apple signing assets
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          CERT_P12:  ${{ secrets.APPLE_CERT_P12 }}
+          CERT_PASS: ${{ secrets.APPLE_CERT_PASS }}
+          PROV_PROF: ${{ secrets.APPLE_PROV_PROFILE }}
+        run: |
+          echo "$CERT_P12" | base64 --decode > /tmp/cert.p12
+          KEYCHAIN=/tmp/build.keychain
+          security create-keychain -p ""        "$KEYCHAIN"
+          security default-keychain -s          "$KEYCHAIN"
+          security unlock-keychain  -p ""       "$KEYCHAIN"
+          security import /tmp/cert.p12 -k      "$KEYCHAIN" -P "$CERT_PASS" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN"
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROV_PROF" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/build.mobileprovision
 
-    - name: 📁 Organize Apple Artifacts
-      if: success()
-      shell: pwsh
-      run: |
-        $baseDir = "publish-output"
-        $platformDir = "$baseDir/${{ matrix.platform }}"
-        New-Item -ItemType Directory -Path "$platformDir/apple" -Force | Out-Null
-        Get-ChildItem -Path . -Recurse -File | Where-Object {
-          $_.Extension -match 'pkg|dmg|app' -and $_.FullName -notlike "*$baseDir*"
-        } | ForEach-Object {
-          Move-Item $_.FullName "$platformDir/apple" -Force
-        }
+      - name: 📦 Build Apple
+        shell: pwsh
+        env:
+          CSPROJ:     ${{ needs.detect.outputs.csproj_path }}
+          TFM:        ${{ matrix.tfm }}
+          SIGNING_ON: ${{ steps.signing.outputs.enabled }}
+        run: |
+          $csproj = Resolve-Path $env:CSPROJ
+          $tfm    = $env:TFM
+          Write-Host "✅ $csproj  ($tfm)"
 
-    - name: 🚀 Update Release with Apple Files
-      if: success()
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: build-${{ github.run_number }}
-        files: publish-output/**
+          $args = @('publish', $csproj, '-c', 'Release', '-f', $tfm, '--nologo')
+          if ($env:SIGNING_ON -ne 'true') {
+            # Unsigned / simulator
+            $args += '-p:CodesignRequireProvisioningProfile=false'
+          }
+          & dotnet @args
+          if ($LASTEXITCODE -ne 0) { throw "Apple build failed" }
+
+      - name: 📁 Collect Apple artifacts
+        shell: pwsh
+        env:
+          PLATFORM:   ${{ matrix.platform }}
+          SIGNING_ON: ${{ steps.signing.outputs.enabled }}
+        run: |
+          $outDir = "publish-output/$env:PLATFORM"
+          New-Item -ItemType Directory -Force $outDir | Out-Null
+
+          $exts = @('.ipa', '.app', '.pkg', '.dmg')
+          $candidates = Get-ChildItem . -Recurse -File |
+            Where-Object { $_.Extension -in $exts -and $_.FullName -notmatch '[\\/](publish-output|packages)[\\/]' }
+
+          if ($env:SIGNING_ON -eq 'true') {
+            $files = $candidates | Where-Object { $_.Extension -ne '.app' }   # .app = simulator only
+            Write-Host "🔏 Collecting SIGNED Apple artifacts" -ForegroundColor Green
+          } else {
+            $files = $candidates
+            Write-Host "📦 Collecting UNSIGNED Apple artifacts" -ForegroundColor Yellow
+          }
+
+          foreach ($f in $files) {
+            Copy-Item $f.FullName (Join-Path $outDir $f.Name) -Force
+            Write-Host "  ✅ $($f.Name)" -ForegroundColor Green
+          }
+
+      - name: 🚀 Update Release with Apple files
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          files: publish-output/${{ matrix.platform }}/*
+
+# ══════════════════════════════════════════════════════════════
+# JOB 4 — Build Windows (MSIX)
+# ══════════════════════════════════════════════════════════════
+  build-windows:
+    name: 🪟 Windows MSIX
+    needs: [detect, build-android]
+    if: |
+      needs.detect.outputs.windows_tfm != '' &&
+      (
+        contains(github.event.inputs.platforms, 'windows') ||
+        github.event.inputs.platforms == 'all'
+      )
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🔐 Patch global.json
+        if: hashFiles('global.json') != ''
+        shell: pwsh
+        run: |
+          $j = Get-Content global.json | ConvertFrom-Json
+          if (-not $j.sdk) { $j | Add-Member sdk @{} NoteProperty }
+          $j.sdk.rollForward = 'latestMinor'
+          $j | ConvertTo-Json -Depth 10 | Set-Content global.json
+
+      - name: 🛠️ Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: ⚡ Install MAUI Windows workload
+        run: dotnet workload install maui-windows
+
+      - name: 🔑 Detect Windows signing
+        id: signing
+        env:
+          _PFX: ${{ secrets.WIN_CERT_PFX }}
+        shell: pwsh
+        run: |
+          $has = -not [string]::IsNullOrWhiteSpace($env:_PFX)
+          "enabled=$($has.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host $(if ($has) { "✅ PFX cert found → SIGNED MSIX" } else { "⚠️  No PFX → UNSIGNED MSIX" })
+
+      - name: 📦 Build Windows
+        shell: pwsh
+        env:
+          CSPROJ:      ${{ needs.detect.outputs.csproj_path }}
+          WIN_TFM:     ${{ needs.detect.outputs.windows_tfm }}
+          SIGNING_ON:  ${{ steps.signing.outputs.enabled }}
+          _PFX_B64:    ${{ secrets.WIN_CERT_PFX }}
+          _PFX_PASS:   ${{ secrets.WIN_CERT_PASS }}
+        run: |
+          $csproj = Resolve-Path $env:CSPROJ
+          $tfm    = $env:WIN_TFM
+
+          $args = @('publish', $csproj, '-c', 'Release', '-f', $tfm, '--nologo',
+                    '-p:WindowsPackageType=MSIX', '-p:GenerateAppxPackageOnBuild=true')
+
+          if ($env:SIGNING_ON -eq 'true') {
+            $pfxPath = Join-Path $env:RUNNER_TEMP 'win_cert.pfx'
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:_PFX_B64))
+            $args += @(
+              "-p:PackageCertificateKeyFile=$pfxPath",
+              "-p:PackageCertificatePassword=$($env:_PFX_PASS)"
+            )
+            Write-Host "🔏 Signing Windows MSIX…" -ForegroundColor Cyan
+          }
+
+          & dotnet @args
+          if ($LASTEXITCODE -ne 0) { throw "Windows build failed" }
+
+      - name: 📁 Collect Windows artifacts
+        shell: pwsh
+        env:
+          SIGNING_ON: ${{ steps.signing.outputs.enabled }}
+        run: |
+          $outDir = 'publish-output/windows'
+          New-Item -ItemType Directory -Force $outDir | Out-Null
+
+          $candidates = Get-ChildItem . -Recurse -File |
+            Where-Object { $_.Extension -in '.msix','.msixbundle','.appx','.appxbundle' -and
+                           $_.FullName -notmatch '[\\/](publish-output|packages|obj)[\\/]' }
+
+          if ($env:SIGNING_ON -eq 'true') {
+            # Chỉ lấy file đã ký: loại bỏ *_Test* hoặc file chưa ký
+            $files = $candidates | Where-Object { $_.Name -notmatch '_Test|Dependencies' }
+            Write-Host "🔏 Collecting SIGNED MSIX only" -ForegroundColor Green
+          } else {
+            $files = $candidates
+            Write-Host "📦 Collecting UNSIGNED MSIX" -ForegroundColor Yellow
+          }
+
+          foreach ($f in $files) {
+            Copy-Item $f.FullName (Join-Path $outDir $f.Name) -Force
+            Write-Host "  ✅ $($f.Name)" -ForegroundColor Green
+          }
+
+      - name: 🚀 Update Release with Windows files
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          files: publish-output/windows/*

@@ -1,82 +1,70 @@
 ##################################################
-# NUGET / CÔNG CỤ
+# .gitignore — MAUI VIP PRO (Android / iOS / Mac / Windows)
+# Drop vào bất kỳ project MAUI nào.
 ##################################################
-*.nuget.props
-*.nuget.targets
-packages/
-.librarymanager/
-
-# Dev Container: nhiều team *commit* .devcontainer để đồng bộ môi trường.
-# Bỏ dòng dưới nếu bạn không bao giờ commit Dev Container.
-# .devcontainer/
 
 ##################################################
-# BẢO MẬT & KÝ SỐ
+# BẢO MẬT & KÝ SỐ — KHÔNG BAO GIỜ COMMIT
 ##################################################
+# Android
 *.keystore
 *.jks
-*.p12
-*.pfx
+signing.properties        
+keystore.properties       
 
-# Khóa SSH / gh.exe đặt cạnh script (git-sync / build) — không đưa lên remote
+# Apple
+*.p12
+*.mobileprovision         
+*.provisionprofile        
+ExportOptions.plist       
+
+# Windows
+*.pfx
+*.cer                     
+
+# SSH / CLI tools đặt cạnh script
 ssh_id
 ssh_id.pub
 gh.exe
 
-# Biến môi trường cục bộ (giữ template có thể commit)
+# Biến môi trường cục bộ
 .env
 .env.*
 !.env.example
 !.env.template
 !.env.sample
 
-# File cấu hình chỉ dùng trên máy dev (không ignore appsettings.Development.json mặc định)
+# Config chỉ dùng trên máy dev
 **/appsettings.*.local.json
+local.properties
+**/Platforms/Android/local.properties
 
 ##################################################
 # BUILD .NET / MAUI
 ##################################################
 [Dd]ebug/
 [Rr]elease/
-_ReSharper*/
 bin/
 obj/
 **/bin/
 **/obj/
-
-# Rider / JetBrains
-.idea/
-*.DotSettings.user
-
-# Visual Studio
-.vs/
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
-!.vscode/launch.json
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
+_ReSharper*/
+BenchmarkDotNet.Artifacts/
 
 ##################################################
-# MAUI ANDROID (tránh path quá dài; SDK path cục bộ)
+# ANDROID BUILD ARTIFACTS
 ##################################################
-**/android/bin/
-**/android/obj/
-**/Platforms/Android/local.properties
-local.properties
-
-# Các file build Android trong thư mục build (không ignore *.apk/*.aab ở mọi nơi — có thể cần commit bản phát hành)
 **/[Bb]in/**/*.apk
 **/[Bb]in/**/*.aab
 **/[Oo]bj/**/*.apk
 **/[Oo]bj/**/*.aab
 **/*.class
 **/*.dex
+**/android/bin/
+**/android/obj/
 
 ##################################################
-# MAUI iOS / MacCatalyst
+# IOS / MACCATALYST BUILD ARTIFACTS
 ##################################################
 **/iOS/bin/
 **/iOS/obj/
@@ -84,12 +72,47 @@ local.properties
 **/MacCatalyst/obj/
 
 ##################################################
-# MAUI WINDOWS
+# WINDOWS BUILD ARTIFACTS
 ##################################################
 **/Windows/bin/
 **/Windows/obj/
 **/[Bb]in/**/*.appx
 **/[Bb]in/**/*.msix
+**/[Bb]in/**/*.msixbundle   
+**/[Bb]in/**/*.appxbundle   
+AppPackages/                
+
+##################################################
+# PUBLISH / ARTIFACT OUTPUT (script-managed)
+##################################################
+local-publish/
+apk-output/
+publish-output/              (dùng bởi build.yml)
+artifacts/
+publish/
+
+##################################################
+# NUGET
+##################################################
+*.nuget.props
+*.nuget.targets
+packages/
+.librarymanager/
+
+##################################################
+# EDITOR — Visual Studio / VS Code / Rider
+##################################################
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+*.DotSettings.user
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
 
 ##################################################
 # HỆ ĐIỀU HÀNH
@@ -98,14 +121,20 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 .DS_Store
+._*                         
+.Spotlight-V100             
+.Trashes                    
+Icon?                       
 
 ##################################################
-# LOG / TEMP
+# LOG / TEMP / CACHE
 ##################################################
 *.log
 *.tmp
 *.temp
 *.cache
+*.bak                       
+*.orig                      
 
 ##################################################
 # TEST / COVERAGE
@@ -115,13 +144,4 @@ coverage/
 *.coverage
 *.coveragexml
 
-##################################################
-# PUBLISH / ARTIFACT
-##################################################
-publish/
-artifacts/
-BenchmarkDotNet.Artifacts/
-
-# Xuất bản cục bộ (git-sync) — không đưa lên GitHub
-local-publish/
-apk-output/
+# .devcontainer/
