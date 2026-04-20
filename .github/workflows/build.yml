@@ -89,10 +89,10 @@ jobs:
             [xml]$x = Get-Content -LiteralPath $p
             $list   = [System.Collections.Generic.List[string]]::new()
             foreach ($pg in @($x.Project.PropertyGroup)) {
-              foreach ($prop in @('TargetFrameworks','TargetFramework')) {
-                if ($null -eq $pg.$prop) { continue }
-                foreach ($node in @($pg.$prop)) {
-                  $blob = if ($node -is [System.Xml.XmlElement]) { $node.InnerText.Trim() } else { ([string]$node).Trim() }
+              if ($null -eq $pg) { continue }
+              foreach ($node in @($pg.ChildNodes)) {
+                if ($node.Name -eq 'TargetFrameworks' -or $node.Name -eq 'TargetFramework') {
+                  $blob = $node.InnerText.Trim()
                   foreach ($p2 in ($blob -split ';')) {
                     $t = $p2.Trim()
                     if (-not $t -or $t -match '^\$\(') { continue }
@@ -559,4 +559,3 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           files: publish-output/windows/*
-          

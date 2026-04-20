@@ -33,10 +33,11 @@ function Get-CsprojTfms([string]$projPath) {
     [xml]$x = Get-Content -LiteralPath $projPath
     $list = [System.Collections.Generic.List[string]]::new()
     foreach ($pg in @($x.Project.PropertyGroup)) {
-        foreach ($prop in @('TargetFrameworks','TargetFramework')) {
-            if ($null -eq $pg.$prop) { continue }
-            foreach ($node in @($pg.$prop)) {
-                $blob = if ($node -is [System.Xml.XmlElement]) { $node.InnerText.Trim() } else { ([string]$node).Trim() }
+        if ($null -eq $pg) { continue }
+        # Tránh lỗi StrictMode bằng cách duyệt ChildNodes thay vì gọi property động
+        foreach ($node in @($pg.ChildNodes)) {
+            if ($node.Name -eq 'TargetFrameworks' -or $node.Name -eq 'TargetFramework') {
+                $blob = $node.InnerText.Trim()
                 foreach ($p in ($blob -split ';')) {
                     $t = $p.Trim()
                     if (-not $t -or $t -match '^\$\(') { continue }
