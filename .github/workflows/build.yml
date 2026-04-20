@@ -409,12 +409,19 @@ jobs:
           CSPROJ:     ${{ needs.detect.outputs.csproj_path }}
           TFM:        ${{ matrix.tfm }}
           SIGNING_ON: ${{ steps.signing.outputs.enabled }}
+          PLATFORM:   ${{ matrix.platform }}
         run: |
           $csproj = Resolve-Path $env:CSPROJ
           $tfm    = $env:TFM
           Write-Host "✅ $csproj  ($tfm)"
 
           $args = @('publish', $csproj, '-c', 'Release', '-f', $tfm, '--nologo')
+          
+          # Đóng gói .ipa nếu là iOS
+          if ($env:PLATFORM -eq 'ios') {
+            $args += @('-r', 'ios-arm64', '-p:ArchiveOnBuild=true')
+          }
+          
           if ($env:SIGNING_ON -ne 'true') {
             # Unsigned / simulator
             $args += '-p:CodesignRequireProvisioningProfile=false'

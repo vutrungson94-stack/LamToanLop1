@@ -381,7 +381,13 @@ switch ($pick) {
         if (-not $iosTfm)  { Write-Host "❌ Không có TFM iOS." -ForegroundColor Red; exit 1 }
         if (-not $isMac)   { Write-Host "❌ Cần macOS + Xcode." -ForegroundColor Red; exit 1 }
         $outDir = Join-Path $root 'ios'
-        Invoke-LocalBuild $csprojFile.FullName $iosTfm $outDir
+
+        # Thêm biến môi trường bắt buộc để tạo file .ipa cho App Store
+        $iosArgs = @('-r', 'ios-arm64', '-p:ArchiveOnBuild=true')
+        
+        Write-Host "⚠️  Lưu ý: Để build được file .ipa, macOS của bạn phải cài sẵn Apple Certificate và Provisioning Profile hợp lệ trong Keychain." -ForegroundColor Yellow
+
+        Invoke-LocalBuild $csprojFile.FullName $iosTfm $outDir $iosArgs
         Write-Host "✅ Xong iOS." -ForegroundColor Green
         Show-OutputFiles $outDir @('.ipa','.app')
     }
