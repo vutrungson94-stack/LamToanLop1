@@ -21,13 +21,20 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # --- ĐỘNG HÓA SDK (Tự thích nghi mọi máy) ---
-$sdks = dotnet --list-sdks
-if ($sdks) {
-    # Lấy phiên bản SDK cao nhất đang cài trên máy này
-    $latest = ($sdks[-1] -split ' ')[0]
-    $json = "{`n  `"sdk`": {`n    `"version`": `"$latest`",`n    `"rollForward`": `"latestMajor`"`n  }`n}"
-    $json | Out-File "global.json" -Encoding utf8 -Force
-    Write-Host "🔄 Đã cập nhật global.json theo máy: $latest" -ForegroundColor Cyan
+$gJson = Join-Path $PSScriptRoot "global.json"
+
+if (Test-Path $gJson) {
+    # Xóa file cũ ngay lập tức vì nó đang gây kẹt lệnh 'dotnet'
+    Remove-Item $gJson -Force -ErrorAction SilentlyContinue
+}
+
+$allSdks = dotnet --list-sdks
+if ($allSdks) {
+    $currentSdkVersion = ($allSdks[-1] -split ' ')[0]
+    # Tạo nội dung JSON động hoàn toàn
+    $jsonContent = @{ sdk = @{ version = $currentVersion; rollForward = "latestMajor" } } | ConvertTo-Json
+    $jsonContent | Out-File $gJson -Encoding utf8 -Force
+    Write-Host "🔄 Đã đồng bộ SDK máy này: $currentSdkVersion" -ForegroundColor Cyan
 }
 $env:DOTNET_ROLL_FORWARD = "LatestMajor"
 # --------------------------------------------
@@ -42,31 +49,34 @@ if (Test-Path $sshKeyPath) {
 # HELPERS — TFM
 # ════════════════════════════════════════════════════════════════════════════
 function Get-CsprojTfms([string]$projPath) {
-    [xml]$x = Get-Content -LiteralPath $projPath
-    $list = [System.Collections.Generic.List[string]]::new()
-    foreach ($pg in @($x.Project.PropertyGroup)) {
-        if ($null -eq $pg) { continue }
-        # Tránh lỗi StrictMode bằng cách duyệt ChildNodes thay vì gọi property động
-        foreach ($node in @($pg.ChildNodes)) {
-            if ($node.Name -eq 'TargetFrameworks' -or $node.Name -eq 'TargetFramework') {
-                $blob = $node.InnerText.Trim()
-                foreach ($p in ($blob -split ';')) {
-                    $t = $p.Trim()
-                    if (-not $t -or $t -match '^\$\(') { continue }
-                    foreach ($piece in ($t -split '\s+')) {
-                        if ($piece -and $piece -notmatch '^\$\(') { [void]$list.Add($piece) }
+    [xml]$xmlData = Get-Content -LiteralPath $projPath
+    $results = New-Object System.Collections.Generic.List[string]
+
+    foreach ($group in $xmlData.Project.PropertyGroup) {
+        if ($null -eq $group) { continue }
+        # Duyệt qua các node con để tìm TargetFramework(s)
+        foreach ($node in $group.ChildNodes) {
+            if ($node.Name -eq 'TargetFramework' -or $node.Name -eq 'TargetFrameworks') {
+                $rawText = $node.InnerText.Trim()
+                foreach ($val in ($rawText -split ';')) {
+                    $clean = $val.Trim()
+                    if ($clean -and $clean -notmatch '^\$\(') { 
+                        [void]$results.Add($clean) 
                     }
                 }
             }
         }
     }
-    return ,@($list | Select-Object -Unique)
+    return ,($results | Select-Object -Unique)
 }
 
-function Pick-Tfm([string[]]$tfms, [string]$pattern) {
+function Select-Tfm {
+    param(
+        [Parameter(Mandatory=$true)] [string[]]$tfms,
+        [Parameter(Mandatory=$true)] [string]$pattern
+    )
     foreach ($t in $tfms) {
-        $m = [regex]::Match($t, $pattern)
-        if ($m.Success) { return $m.Value }
+        if ($t -match $pattern) { return $t }
     }
     return $null
 }
@@ -128,7 +138,7 @@ function Find-AndroidKeystore([string]$searchRoot) {
     return $null
 }
 
-function Prompt-SigningInfo([hashtable]$ks) {
+function Read-SigningInfo([hashtable]$ks) {
     Write-Host "`n🔑 Keystore: $($ks.KeystorePath)" -ForegroundColor Cyan
     Write-Host "   Nguồn   : $($ks.Source)" -ForegroundColor DarkGray
 
@@ -161,6 +171,9 @@ function Invoke-LocalBuild {
 
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
     Write-Host "`n⏳ dotnet publish → $OutputDir" -ForegroundColor Gray
+
+    # Thêm biến môi trường nội bộ để ép roll forward
+    $env:DOTNET_ROLL_FORWARD = "LatestMajor"
 
     $allArgs = @('publish', $CsprojPath,
         '-c', 'Release',
@@ -353,10 +366,10 @@ if (-not $csprojFile) {
 }
 
 $tfms       = @(Get-CsprojTfms $csprojFile.FullName)
-$androidTfm = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-android[0-9.]*'
-$iosTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-ios[0-9.]*'
-$macTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-maccatalyst[0-9.]*'
-$winTfm     = Pick-Tfm $tfms 'net[0-9]+\.[0-9]+-windows[0-9.]*'
+$androidTfm = Select-Tfm -Tfms $tfms -pattern '-android'
+$iosTfm     = Select-Tfm -Tfms $tfms -pattern '-ios'
+$macTfm     = Select-Tfm -Tfms $tfms -pattern '-maccatalyst'
+$winTfm     = Select-Tfm -Tfms $tfms -pattern '-windows'
 $root       = Join-Path $PSScriptRoot 'local-publish'
 
 Write-Host "`n📄 $($csprojFile.Name)  [TFMs: $($tfms -join ', ')]" -ForegroundColor DarkGray
@@ -372,7 +385,7 @@ switch ($pick) {
         $signingArgs = @("-p:AndroidPackageFormat=$fmt")
 
         if ($ksInfo) {
-            $ksInfo = Prompt-SigningInfo $ksInfo
+            $ksInfo = Read-SigningInfo $ksInfo
         }
         if ($ksInfo -and $ksInfo.StorePass) {
             Write-Host "🔏 Build với keystore ký → chỉ xuất file đã ký" -ForegroundColor Green
