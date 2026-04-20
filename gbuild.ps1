@@ -23,39 +23,42 @@ $ErrorActionPreference = 'Stop'
 # --- ĐỘNG HÓA SDK (Tái sinh global.json) ---
 $gJson = Join-Path $PSScriptRoot "global.json"
 
-# Bước 1: Ép biến môi trường để lệnh 'dotnet' thoát khỏi sự kìm kẹp của file lỗi (nếu có)
+# Bước 1: Nếu đã có global.json → xóa
+if (Test-Path $gJson) {
+    Write-Host "⚠️ Tìm thấy global.json cũ → Đang xóa..." -ForegroundColor Yellow
+    Remove-Item $gJson -Force -ErrorAction SilentlyContinue
+}
+
+# Bước 2: Ép dotnet dùng SDK mới nhất
 $env:DOTNET_ROLL_FORWARD = "LatestMajor"
 
-# Bước 2: Kiểm tra xem dotnet có đang chạy được không. 
-# Nếu không chạy được do global.json cũ, ta tạm ẩn nó đi để lấy danh sách SDK thực tế.
-if (Test-Path $gJson) {
-    $check = dotnet --version 2>&1
-    if ($check -match "compatible .NET SDK was not found") {
-        Rename-Item $gJson "$gJson.bak" -Force -ErrorAction SilentlyContinue
-    }
-}
-
-# Bước 3: Lấy SDK thực tế của máy
+# Bước 3: Lấy danh sách SDK hiện có
 $sdks = dotnet --list-sdks 2>$null
-if ($sdks) {
-    $latest = ($sdks[-1] -split ' ')[0]
-    
-    # Bước 4: TÁI SINH - Luôn tạo ra file mới với nội dung khớp máy này
-    $config = @{
-        sdk = @{
-            version = $latest
-            rollForward = "latestMajor"
-            allowPrerelease = $true
-        }
-    }
-    $config | ConvertTo-Json | Out-File $gJson -Encoding utf8 -Force
-    
-    Write-Host "✅ global.json đã được tái sinh tại: $gJson" -ForegroundColor Green
-    Write-Host "🔄 Phiên bản SDK máy này: $latest" -ForegroundColor Cyan
+
+if (-not $sdks) {
+    Write-Host "❌ Không tìm thấy .NET SDK nào trên máy!" -ForegroundColor Red
+    exit 1
 }
 
-# Dọn dẹp file tạm nếu có
-if (Test-Path "$gJson.bak") { Remove-Item "$gJson.bak" -Force }
+# Bước 4: Lấy version SDK mới nhất
+$latest = ($sdks[-1] -split ' ')[0]
+
+Write-Host "🔍 SDK mới nhất phát hiện: $latest" -ForegroundColor Cyan
+
+# Bước 5: Tạo global.json mới
+$config = @{
+    sdk = @{
+        version = $latest
+        rollForward = "latestMajor"
+        allowPrerelease = $true
+    }
+}
+
+$config |
+    ConvertTo-Json -Depth 3 |
+    Out-File $gJson -Encoding utf8 -Force
+
+Write-Host "✅ Đã tạo global.json mới tại: $gJson" -ForegroundColor Green
 # --------------------------------------------
 
 # ── SSH key tuỳ chọn ────────────────────────────────────────────────────────
