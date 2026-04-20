@@ -33,6 +33,28 @@ on:
           - android+apple
           - android+windows
           - all
+  # Khai báo secrets để linter không cảnh báo "Context access might be invalid"
+  # required: false → không bắt buộc, workflow vẫn chạy khi không có secret
+  workflow_call:
+    secrets:
+      KEYSTORE_BASE64:
+        required: false
+      KEYSTORE_PASSWORD:
+        required: false
+      KEY_ALIAS:
+        required: false
+      KEY_PASSWORD:
+        required: false
+      APPLE_CERT_P12:
+        required: false
+      APPLE_CERT_PASS:
+        required: false
+      APPLE_PROV_PROFILE:
+        required: false
+      WIN_CERT_PFX:
+        required: false
+      WIN_CERT_PASS:
+        required: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -537,3 +559,4 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           files: publish-output/windows/*
+          
