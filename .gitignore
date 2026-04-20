@@ -55,6 +55,10 @@ BenchmarkDotNet.Artifacts/
 .sdk/
 dotnet-sdk*.zip
 
+# Local SDK (portable, auto-download by gbuild.ps1)
+.sdk/
+dotnet-sdk*.zip
+
 ##################################################
 # ANDROID BUILD ARTIFACTS
 ##################################################
