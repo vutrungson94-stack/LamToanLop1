@@ -17,26 +17,45 @@ param(
     [Parameter(ParameterSetName = 'CI')] [switch]$NonInteractive
 )
 
-Set-StrictMode -Version Latest
+SeSet-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# --- ĐỘNG HÓA SDK (Tự thích nghi mọi máy) ---
+# --- ĐỘNG HÓA SDK (Tái sinh global.json) ---
 $gJson = Join-Path $PSScriptRoot "global.json"
 
+# Bước 1: Ép biến môi trường để lệnh 'dotnet' thoát khỏi sự kìm kẹp của file lỗi (nếu có)
+$env:DOTNET_ROLL_FORWARD = "LatestMajor"
+
+# Bước 2: Kiểm tra xem dotnet có đang chạy được không. 
+# Nếu không chạy được do global.json cũ, ta tạm ẩn nó đi để lấy danh sách SDK thực tế.
 if (Test-Path $gJson) {
-    # Xóa file cũ ngay lập tức vì nó đang gây kẹt lệnh 'dotnet'
-    Remove-Item $gJson -Force -ErrorAction SilentlyContinue
+    $check = dotnet --version 2>&1
+    if ($check -match "compatible .NET SDK was not found") {
+        Rename-Item $gJson "$gJson.bak" -Force -ErrorAction SilentlyContinue
+    }
 }
 
-$allSdks = dotnet --list-sdks
-if ($allSdks) {
-    $currentSdkVersion = ($allSdks[-1] -split ' ')[0]
-    # Tạo nội dung JSON động hoàn toàn
-    $jsonContent = @{ sdk = @{ version = $currentVersion; rollForward = "latestMajor" } } | ConvertTo-Json
-    $jsonContent | Out-File $gJson -Encoding utf8 -Force
-    Write-Host "🔄 Đã đồng bộ SDK máy này: $currentSdkVersion" -ForegroundColor Cyan
+# Bước 3: Lấy SDK thực tế của máy
+$sdks = dotnet --list-sdks 2>$null
+if ($sdks) {
+    $latest = ($sdks[-1] -split ' ')[0]
+    
+    # Bước 4: TÁI SINH - Luôn tạo ra file mới với nội dung khớp máy này
+    $config = @{
+        sdk = @{
+            version = $latest
+            rollForward = "latestMajor"
+            allowPrerelease = $true
+        }
+    }
+    $config | ConvertTo-Json | Out-File $gJson -Encoding utf8 -Force
+    
+    Write-Host "✅ global.json đã được tái sinh tại: $gJson" -ForegroundColor Green
+    Write-Host "🔄 Phiên bản SDK máy này: $latest" -ForegroundColor Cyan
 }
-$env:DOTNET_ROLL_FORWARD = "LatestMajor"
+
+# Dọn dẹp file tạm nếu có
+if (Test-Path "$gJson.bak") { Remove-Item "$gJson.bak" -Force }
 # --------------------------------------------
 
 # ── SSH key tuỳ chọn ────────────────────────────────────────────────────────
@@ -48,26 +67,19 @@ if (Test-Path $sshKeyPath) {
 # ════════════════════════════════════════════════════════════════════════════
 # HELPERS — TFM
 # ════════════════════════════════════════════════════════════════════════════
-function Get-CsprojTfms([string]$projPath) {
-    [xml]$xmlData = Get-Content -LiteralPath $projPath
-    $results = New-Object System.Collections.Generic.List[string]
-
-    foreach ($group in $xmlData.Project.PropertyGroup) {
-        if ($null -eq $group) { continue }
-        # Duyệt qua các node con để tìm TargetFramework(s)
-        foreach ($node in $group.ChildNodes) {
-            if ($node.Name -eq 'TargetFramework' -or $node.Name -eq 'TargetFrameworks') {
-                $rawText = $node.InnerText.Trim()
-                foreach ($val in ($rawText -split ';')) {
-                    $clean = $val.Trim()
-                    if ($clean -and $clean -notmatch '^\$\(') { 
-                        [void]$results.Add($clean) 
-                    }
-                }
-            }
+function Get-CsprojTfms {
+    param([string]$ProjPath)
+    [xml]$xml = Get-Content -LiteralPath $ProjPath
+    $list = New-Object System.Collections.Generic.List[string]
+    
+    foreach ($pg in $xml.Project.PropertyGroup) {
+        # Dùng câu lệnh if thay vì gán dấu phẩy để tránh tạo mảng lỗi
+        if ($pg.TargetFramework) { [void]$list.Add($pg.TargetFramework.Trim()) }
+        if ($pg.TargetFrameworks) { 
+            foreach($t in ($pg.TargetFrameworks -split ';')) { [void]$list.Add($t.Trim()) }
         }
     }
-    return ,($results | Select-Object -Unique)
+    return ,($list | Select-Object -Unique)
 }
 
 function Select-Tfm {
