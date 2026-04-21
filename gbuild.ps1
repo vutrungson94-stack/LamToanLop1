@@ -20,6 +20,68 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# ════════════════════════════════════════════════════════════════════════════
+# I. CÁC HÀM BỔ TRỢ (HELPERS) - ĐỊNH NGHĨA TRƯỚC
+# ════════════════════════════════════════════════════════════════════════════
+function Get-CsprojTfms {
+    param([string]$ProjPath)
+    [xml]$xml = Get-Content -LiteralPath $ProjPath
+
+    # Tìm giá trị từ tất cả các PropertyGroup có chứa TFM
+    $rawTfm = $xml.Project.PropertyGroup | 
+              Where-Object { $_.TargetFramework -or $_.TargetFrameworks } | 
+              Select-Object -First 1 | 
+              ForEach-Object { if ($_.TargetFramework) { $_.TargetFramework } else { $_.TargetFrameworks } }
+
+    if (-not $rawTfm) { return @() }
+    
+    # Trả về mảng các TFM (tách dấu ;)
+    return $rawTfm.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries).Trim()
+}
+
+function Invoke-LocalBuild {
+    param(
+        [string]   $CsprojPath,
+        [string]   $Tfm,
+        [string]   $OutputDir,
+        [string[]] $ExtraArgs = @()
+    )
+
+    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+    Write-Host "`n⏳ dotnet publish → $OutputDir" -ForegroundColor Gray
+
+    # Thêm biến môi trường nội bộ để ép roll forward
+    $env:DOTNET_ROLL_FORWARD = "LatestMajor"
+
+    $allArgs = @('publish', $CsprojPath,
+        '-c', 'Release',
+        '-f', $Tfm,
+        '-o', $OutputDir,
+        '--roll-forward', 'LatestMajor',
+        '--nologo') + $ExtraArgs
+
+    & dotnet @allArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Build thất bại (exit $LASTEXITCODE)" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
+
+function Show-OutputFiles([string]$dir, [string[]]$extensions) {
+    $files = Get-ChildItem $dir -File | Where-Object { $_.Extension -in $extensions }
+    if (-not $files) {
+        Write-Warning "⚠️ Không tìm thấy file output trong $dir"
+        return
+    }
+    Write-Host "`n📂 Output ($dir):" -ForegroundColor Cyan
+    foreach ($f in $files) {
+        $label = if ($f.Name -match '-Signed|release') { '🔏 SIGNED' } else { '📦 unsigned' }
+        Write-Host "  $label  $($f.Name)  [$([math]::Round($f.Length/1MB,2)) MB]" -ForegroundColor Green
+    }
+    if ($IsWindows) { explorer.exe ((Resolve-Path $dir).Path) }
+}
+
+
 # ===============================
 # TÌM PROJECT
 # ===============================
@@ -245,21 +307,7 @@ if (Test-Path $sshKeyPath) {
 # ════════════════════════════════════════════════════════════════════════════
 # HELPERS — TFM
 # ════════════════════════════════════════════════════════════════════════════
-function Get-CsprojTfms {
-    param([string]$ProjPath)
-    [xml]$xml = Get-Content -LiteralPath $ProjPath
 
-    # Tìm giá trị từ tất cả các PropertyGroup có chứa TFM
-    $rawTfm = $xml.Project.PropertyGroup | 
-              Where-Object { $_.TargetFramework -or $_.TargetFrameworks } | 
-              Select-Object -First 1 | 
-              ForEach-Object { if ($_.TargetFramework) { $_.TargetFramework } else { $_.TargetFrameworks } }
-
-    if (-not $rawTfm) { return @() }
-    
-    # Trả về mảng các TFM (tách dấu ;)
-    return $rawTfm.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries).Trim()
-}
 
 function Select-Tfm {
     param(
@@ -347,51 +395,6 @@ function Read-SigningInfo([hashtable]$ks) {
         $ks.KeyPass = if ([string]::IsNullOrWhiteSpace($kp)) { $ks.StorePass } else { $kp }
     }
     return $ks
-}
-
-# ════════════════════════════════════════════════════════════════════════════
-# HELPER — Build cục bộ
-# ════════════════════════════════════════════════════════════════════════════
-function Invoke-LocalBuild {
-    param(
-        [string]   $CsprojPath,
-        [string]   $Tfm,
-        [string]   $OutputDir,
-        [string[]] $ExtraArgs = @()
-    )
-
-    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-    Write-Host "`n⏳ dotnet publish → $OutputDir" -ForegroundColor Gray
-
-    # Thêm biến môi trường nội bộ để ép roll forward
-    $env:DOTNET_ROLL_FORWARD = "LatestMajor"
-
-    $allArgs = @('publish', $CsprojPath,
-        '-c', 'Release',
-        '-f', $Tfm,
-        '-o', $OutputDir,
-        '--roll-forward', 'LatestMajor',
-        '--nologo') + $ExtraArgs
-
-    & dotnet @allArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Build thất bại (exit $LASTEXITCODE)" -ForegroundColor Red
-        exit $LASTEXITCODE
-    }
-}
-
-function Show-OutputFiles([string]$dir, [string[]]$extensions) {
-    $files = Get-ChildItem $dir -File | Where-Object { $_.Extension -in $extensions }
-    if (-not $files) {
-        Write-Warning "⚠️ Không tìm thấy file output trong $dir"
-        return
-    }
-    Write-Host "`n📂 Output ($dir):" -ForegroundColor Cyan
-    foreach ($f in $files) {
-        $label = if ($f.Name -match '-Signed|release') { '🔏 SIGNED' } else { '📦 unsigned' }
-        Write-Host "  $label  $($f.Name)  [$([math]::Round($f.Length/1MB,2)) MB]" -ForegroundColor Green
-    }
-    if ($IsWindows) { explorer.exe ((Resolve-Path $dir).Path) }
 }
 
 # ════════════════════════════════════════════════════════════════════════════
