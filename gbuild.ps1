@@ -40,30 +40,19 @@ Write-Host "📄 Project: $($csproj.Name)"
 # ĐỌC TARGET FRAMEWORK
 # ===============================
 
-[xml]$projXml =
-Get-Content $csproj.FullName
+# 1. Gọi hàm để lấy danh sách TFM (Hàm này xử lý cả TargetFramework và TargetFrameworks)
+$allTfms = Get-CsprojTfms -ProjPath $csproj.FullName
 
-$tfm = $null
+# 2. Lấy TFM đầu tiên để làm mặc định
+$tfm = if ($allTfms.Count -gt 0) { $allTfms[0] } else { $null }
 
-foreach ($pg in $projXml.Project.PropertyGroup) {
-
-    if ($pg.TargetFramework) {
-        $tfm = $pg.TargetFramework.Trim()
-        break
-    }
-
-    if ($pg.TargetFrameworks) {
-        $tfm = $pg.TargetFrameworks.Split(';')[0].Trim()
-        break
-    }
-}
-
-if (-not $tfm) {
+# 3. Kiểm tra kết quả
+if ([string]::IsNullOrWhiteSpace($tfm)) {
     Write-Host "❌ Không tìm thấy TargetFramework trong project" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "🎯 TargetFramework: $tfm"
+Write-Host "🎯 TargetFramework chính: $tfm" -ForegroundColor Cyan
 
 # ===============================
 # XÁC ĐỊNH SDK MAJOR
@@ -259,16 +248,17 @@ if (Test-Path $sshKeyPath) {
 function Get-CsprojTfms {
     param([string]$ProjPath)
     [xml]$xml = Get-Content -LiteralPath $ProjPath
-    $list = New-Object System.Collections.Generic.List[string]
+
+    # Tìm giá trị từ tất cả các PropertyGroup có chứa TFM
+    $rawTfm = $xml.Project.PropertyGroup | 
+              Where-Object { $_.TargetFramework -or $_.TargetFrameworks } | 
+              Select-Object -First 1 | 
+              ForEach-Object { if ($_.TargetFramework) { $_.TargetFramework } else { $_.TargetFrameworks } }
+
+    if (-not $rawTfm) { return @() }
     
-    foreach ($pg in $xml.Project.PropertyGroup) {
-        # Dùng câu lệnh if thay vì gán dấu phẩy để tránh tạo mảng lỗi
-        if ($pg.TargetFramework) { [void]$list.Add($pg.TargetFramework.Trim()) }
-        if ($pg.TargetFrameworks) { 
-            foreach($t in ($pg.TargetFrameworks -split ';')) { [void]$list.Add($t.Trim()) }
-        }
-    }
-    return ,($list | Select-Object -Unique)
+    # Trả về mảng các TFM (tách dấu ;)
+    return $rawTfm.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries).Trim()
 }
 
 function Select-Tfm {
