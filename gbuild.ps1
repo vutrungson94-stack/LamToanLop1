@@ -27,11 +27,11 @@ function Get-CsprojTfms {
     param([string]$ProjPath)
     [xml]$xml = Get-Content -LiteralPath $ProjPath
 
-    # Tìm giá trị từ tất cả các PropertyGroup có chứa TFM
-    $rawTfm = $xml.Project.PropertyGroup | 
-              Where-Object { $_.TargetFramework -or $_.TargetFrameworks } | 
-              Select-Object -First 1 | 
-              ForEach-Object { if ($_.TargetFramework) { $_.TargetFramework } else { $_.TargetFrameworks } }
+    # Tìm PropertyGroup có TargetFramework hoặc TargetFrameworks
+    $propertyGroup = $xml.SelectSingleNode("//PropertyGroup[TargetFramework or TargetFrameworks]")
+    if (-not $propertyGroup) { return @() }
+
+    $rawTfm = if ($propertyGroup.TargetFramework) { $propertyGroup.TargetFramework } else { $propertyGroup.TargetFrameworks.TargetFrameworks }
 
     if (-not $rawTfm) { return @() }
     
