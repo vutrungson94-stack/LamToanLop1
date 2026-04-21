@@ -34,6 +34,37 @@ if ([string]::IsNullOrWhiteSpace($branch)) { $branch = 'main' }
 Write-Host "🌿 Nhánh: [$branch]" -ForegroundColor Green
 
 # ════════════════════════════════════════════════════════════════════════════
+# BƯỚC DỌN DẸP — Xử lý file lỗi và file quá lớn
+# ════════════════════════════════════════════════════════════════════════════
+Write-Host "🧹 Đang quét file rác và file >90MB..." -ForegroundColor Cyan
+
+# Lấy danh sách file lỗi
+$badFiles = @(
+    & git ls-files --ignored --cached --exclude-standard
+    & git ls-files --cached | ForEach-Object {
+        if (Test-Path $_) {
+            $f = Get-Item $_
+            if (-not $f.PSIsContainer -and $f.Length -gt 90mb) { $_ }
+        }
+    }
+) | Where-Object { $_ }
+
+# Cách kiểm tra an toàn cho mọi phiên bản PowerShell
+$badCount = ($badFiles | Measure-Object).Count
+
+if ($badCount -gt 0) {
+    Write-Host "⚠️  Phát hiện $badCount file cần gỡ khỏi Git Index." -ForegroundColor Yellow
+    foreach ($file in $badFiles) {
+        Write-Host "   -> Đang gỡ: $file" -ForegroundColor Gray
+        & git rm --cached -r -f -q "$file" 2>$null
+    }
+    & git commit -m "fix: cleanup large files and sdk" -q
+    Write-Host "✅ Đã dọn dẹp xong bộ nhớ đệm." -ForegroundColor Green
+} else {
+    Write-Host "✅ Repo sạch sẽ." -ForegroundColor Green
+}
+
+# ════════════════════════════════════════════════════════════════════════════
 # BƯỚC 1 — Kiểm tra file nhạy cảm TRƯỚC KHI làm gì cả
 # ════════════════════════════════════════════════════════════════════════════
 $BLOCKED_PATTERNS = @(

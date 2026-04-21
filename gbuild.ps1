@@ -43,13 +43,24 @@ Write-Host "📄 Project: $($csproj.Name)"
 [xml]$projXml =
 Get-Content $csproj.FullName
 
-$tfm =
-$projXml.Project.PropertyGroup.TargetFramework
+$tfm = $null
+
+foreach ($pg in $projXml.Project.PropertyGroup) {
+
+    if ($pg.TargetFramework) {
+        $tfm = $pg.TargetFramework.Trim()
+        break
+    }
+
+    if ($pg.TargetFrameworks) {
+        $tfm = $pg.TargetFrameworks.Split(';')[0].Trim()
+        break
+    }
+}
 
 if (-not $tfm) {
-
-    $tfm =
-    $projXml.Project.PropertyGroup.TargetFrameworks
+    Write-Host "❌ Không tìm thấy TargetFramework trong project" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host "🎯 TargetFramework: $tfm"
@@ -94,23 +105,48 @@ if (-not (Test-Path $sdkRoot)) {
     exit 1
 }
 
-$sdkFolders =
-Get-ChildItem $sdkRoot -Directory |
-Where-Object {
-    $_.Name.StartsWith($requiredMajor)
-} |
-Sort-Object Name -Descending
+# ===============================
+# DÙNG SDK TRỰC TIẾP TRONG .sdk
+# ===============================
 
-if (-not $sdkFolders) {
+$sdkRoot =
+Join-Path $PSScriptRoot ".sdk"
 
-    Write-Host "❌ Không có SDK phù hợp: $requiredMajor"
+$dotnetExe =
+Join-Path $sdkRoot "dotnet.exe"
+
+if (-not (Test-Path $dotnetExe)) {
+
+    Write-Host "❌ Không tìm thấy .sdk\dotnet.exe" -ForegroundColor Red
     exit 1
 }
 
-$selectedSdk =
-$sdkFolders[0]
+Write-Host "✅ Dùng SDK local"
 
-Write-Host "✅ Dùng SDK: $($selectedSdk.Name)"
+$env:DOTNET_ROOT = $sdkRoot
+
+$env:PATH =
+"$sdkRoot;" +
+"$sdkRoot\tools;" +
+$env:PATH
+
+# ===============================
+# LẤY VERSION SDK
+# ===============================
+
+$sdks =
+& $dotnetExe --list-sdks
+
+if (-not $sdks) {
+
+    Write-Host "❌ SDK local lỗi hoặc thiếu" -ForegroundColor Red
+    exit 1
+}
+
+$latest =
+($sdks[-1] -split ' ')[0]
+
+Write-Host "🔎 SDK phát hiện: $latest"
 
 # ===============================
 # SET DOTNET PATH
@@ -144,21 +180,72 @@ if (Test-Path $gJson) {
     Remove-Item $gJson -Force 
 }
 
-#Tạo global.json mới
+# ===============================
+# TẠO global.json
+# ===============================
+
+$sdks =
+& $dotnetExe --list-sdks
+
+$latest =
+($sdks[-1] -split ' ')[0]
+
+$gJson =
+Join-Path $PSScriptRoot "global.json"
+
+if (Test-Path $gJson) {
+
+    Remove-Item $gJson -Force
+}
+
 $config = @{
     sdk = @{
-        version = $selectedSdk.Name
+        version = $latest
         rollForward = "latestMajor"
         allowPrerelease = $true
     }
 }
 
 $config |
-    ConvertTo-Json -Depth 3 |
-    Out-File $gJson -Encoding utf8
+ConvertTo-Json -Depth 3 |
+Out-File $gJson -Encoding utf8
 
-Write-Host "✅ Đã tạo global.json với SDK $($selectedSdk.Name)" -ForegroundColor Green
+Write-Host "🧾 Đã tạo global.json ($latest)"
 # --------------------------------------------
+
+# ===============================
+# RESTORE WORKLOAD
+# ===============================
+
+Write-Host ""
+Write-Host "🔧 Workload restore..."
+
+& $dotnetExe workload restore
+
+if ($LASTEXITCODE -ne 0) {
+
+    Write-Host "❌ Workload restore thất bại" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "✅ Workload OK"
+
+# ===============================
+# RESTORE NUGET
+# ===============================
+
+Write-Host ""
+Write-Host "📦 NuGet restore..."
+
+& $dotnetExe restore $csproj.FullName
+
+if ($LASTEXITCODE -ne 0) {
+
+    Write-Host "❌ NuGet restore thất bại" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "✅ NuGet OK"
 
 # ── SSH key tuỳ chọn ────────────────────────────────────────────────────────
 $sshKeyPath = Join-Path $PSScriptRoot 'ssh_id'

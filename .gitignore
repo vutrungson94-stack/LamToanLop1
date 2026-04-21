@@ -51,6 +51,10 @@ obj/
 _ReSharper*/
 BenchmarkDotNet.Artifacts/
 
+# Local SDK (portable, auto-download by gbuild.ps1)
+.sdk/
+dotnet-sdk*.zip
+
 ##################################################
 # ANDROID BUILD ARTIFACTS
 ##################################################
