@@ -423,4 +423,4 @@ switch ($selectedOption) {
 }
 
 # End of main flow
-Write-Host "`nScript gbuild.ps1 hoàn tất." -ForegroundColor Green
+Write-Host "`nBbuild hoàn tất." -ForegroundColor Green
