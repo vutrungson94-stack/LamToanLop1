@@ -14,7 +14,6 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
-		<TargetFramework>net10.0-android</TargetFramework>
 
 		<ApplicationTitle>Bé làm toán lớp 1</ApplicationTitle>
 		<ApplicationId>com.vutrungson.lamtoanlop1</ApplicationId>
