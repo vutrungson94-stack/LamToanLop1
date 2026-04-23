@@ -33,28 +33,34 @@ $ErrorActionPreference = 'Stop'
 
 # 1) Resolve dotnet exe
 function Resolve-DotnetExe {
-    # Bước 1: Kiểm tra xem dotnet đã được cài đặt trên hệ thống (PATH) chưa
-    $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
-    if ($cmd) { 
-        Write-Host "ℹ️ Sử dụng .NET SDK hệ thống (Global)." -ForegroundColor DarkGray
-        return "dotnet" 
-    }
-
-    # Bước 2: Nếu máy chưa cài, tìm trong thư mục .sdk local
+    # 1. Ưu tiên tìm SDK Local trước (để đảm bảo tính portable)
     $ext = if ($IsWindows) { ".exe" } else { "" }
     $localSdkDir = Join-Path $PSScriptRoot ".sdk"
     $localDotnet = Join-Path $localSdkDir "dotnet$ext"
 
     if (Test-Path $localDotnet) {
-        Write-Host "ℹ️ Không tìm thấy SDK hệ thống, đang sử dụng SDK local tại: $localSdkDir" -ForegroundColor Yellow
+        $fullPath = (Get-Item $localDotnet).FullName
+        $fullDir = (Get-Item $localSdkDir).FullName
         
-        # QUAN TRỌNG: Thiết lập biến môi trường để SDK local tìm thấy các thư viện trong 'host', 'shared',...
-        $env:DOTNET_ROOT = (Get-Item $localSdkDir).FullName
-        
-        # Thêm SDK local vào đầu PATH tạm thời để các lệnh gọi con cũng dùng SDK này
-        $env:PATH = "$($env:DOTNET_ROOT);$($env:PATH)"
-        
-        return $localDotnet
+        Write-Host "✅ Đang sử dụng SDK Local: $fullDir" -ForegroundColor Yellow
+
+        # THIẾT LẬP MÔI TRƯỜNG ĐỂ DOTNET KHÔNG RA NGOÀI TÌM
+        $env:DOTNET_ROOT = $fullDir
+        # Ngăn dotnet tìm kiếm SDK/Runtime ở Program Files hệ thống
+        $env:DOTNET_MULTILEVEL_LOOKUP = "0" 
+        # Ép MSBuild phải dùng SDK tại thư mục này
+        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $fullDir
+        # Cập nhật PATH để các công cụ con (như nbgv, resizetizer) gọi đúng dotnet
+        $env:PATH = "$fullDir$([IO.Path]::PathSeparator)$env:PATH"
+
+        return $fullPath
+    }
+
+    # 2. Nếu không có Local, mới tìm SDK Hệ thống
+    $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($cmd) { 
+        Write-Host "ℹ️ Không thấy SDK Local, sử dụng SDK Hệ thống." -ForegroundColor DarkGray
+        return "dotnet" 
     }
 
     return $null
