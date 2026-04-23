@@ -33,7 +33,6 @@ $ErrorActionPreference = 'Stop'
 
 # 1) Resolve dotnet exe
 function Resolve-DotnetExe {
-    # 1. Ưu tiên tìm SDK Local trước (để đảm bảo tính portable)
     $ext = if ($IsWindows) { ".exe" } else { "" }
     $localSdkDir = Join-Path $PSScriptRoot ".sdk"
     $localDotnet = Join-Path $localSdkDir "dotnet$ext"
@@ -44,25 +43,22 @@ function Resolve-DotnetExe {
         
         Write-Host "✅ Đang sử dụng SDK Local: $fullDir" -ForegroundColor Yellow
 
-        # THIẾT LẬP MÔI TRƯỜNG ĐỂ DOTNET KHÔNG RA NGOÀI TÌM
+        # ÉP SDK CHỈ NHÌN VÀO THƯ MỤC LOCAL
         $env:DOTNET_ROOT = $fullDir
-        # Ngăn dotnet tìm kiếm SDK/Runtime ở Program Files hệ thống
-        $env:DOTNET_MULTILEVEL_LOOKUP = "0" 
-        # Ép MSBuild phải dùng SDK tại thư mục này
+        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
         $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $fullDir
-        # Cập nhật PATH để các công cụ con (như nbgv, resizetizer) gọi đúng dotnet
+        
+        # QUAN TRỌNG: Chỉ định nơi tìm MAUI Workload (Android/iOS)
+        $env:DOTNET_SDK_WORKLOAD_MANIFEST_ROOT = Join-Path $fullDir "sdk-manifests"
+        $env:DOTNET_SDK_WORKLOAD_PACK_ROOT = Join-Path $fullDir "packs"
+        
         $env:PATH = "$fullDir$([IO.Path]::PathSeparator)$env:PATH"
 
         return $fullPath
     }
 
-    # 2. Nếu không có Local, mới tìm SDK Hệ thống
     $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
-    if ($cmd) { 
-        Write-Host "ℹ️ Không thấy SDK Local, sử dụng SDK Hệ thống." -ForegroundColor DarkGray
-        return "dotnet" 
-    }
-
+    if ($cmd) { return "dotnet" }
     return $null
 }
 
@@ -197,52 +193,38 @@ function ProcessBuildAndShow {
     $fullOutputFolder = Join-Path $publishDir $OutputSubDir
 
     if (Test-Path $fullOutputFolder) {
-        Write-Host "🧹 Xóa thư mục output cũ: $fullOutputFolder" -ForegroundColor DarkGray
         Remove-Item $fullOutputFolder -Recurse -Force -EA SilentlyContinue
     }
     New-Item -ItemType Directory $fullOutputFolder | Out-Null
 
     $dotnetExe = Resolve-DotnetExe
-    if (-not $dotnetExe) {
-        Write-Host "❌ Lỗi: Không tìm thấy dotnet.exe" -ForegroundColor Red
-        exit 1
-    }
+    if (-not $dotnetExe) { exit 1 }
 
-    # QUAN TRỌNG: Bao bọc biến đường dẫn trong dấu ngoặc kép để xử lý khoảng trắng
+    # CÁCH VIẾT THAM SỐ CHUẨN ĐỂ KHÔNG BỊ LỖI KHOẢNG TRẮNG Ở ĐƯỜNG DẪN
     $dotnetArgs = @(
-        'publish', "`"$Project`"",
-        '-f', $Tfm,
-        '-c', 'Release',
-        '--output', "`"$fullOutputFolder`"",
-        '-p:UseMaui=true',
-        '-p:SingleProject=true'
+        "publish",
+        "`"$Project`"",
+        "-f", $Tfm,
+        "-c", "Release",
+        # Bọc toàn bộ tham số --output trong ngoặc kép
+        "--output", "`"$fullOutputFolder`"",
+        "-p:UseMaui=true",
+        "-p:SingleProject=true"
     )
     
-    if ($BuildArgs) {
-        foreach ($arg in $BuildArgs) {
-            # Nếu arg có chứa dấu bằng (ví dụ -p:Key=Value), ta cần kiểm tra xem Value có khoảng trắng ko
-            # Nhưng an toàn nhất là để nguyên hoặc wrap tùy loại. Ở đây các buildArgs mặc định đã ổn.
-            $dotnetArgs += $arg
-        }
-    }
+    foreach ($arg in $BuildArgs) { $dotnetArgs += $arg }
 
     Write-Host "`n🚀 Bắt đầu build..." -ForegroundColor Cyan
-    # Sử dụng dấu & (Call operator) thường ổn định hơn Start-Process với các tham số phức tạp
-    Write-Host "   Lệnh: $dotnetExe $($dotnetArgs -join ' ')" -ForegroundColor DarkGray
+    
+    # Chạy lệnh
+    & $dotnetExe $dotnetArgs
 
-    try {
-        # Dùng toán tử & để thực thi trực tiếp, truyền mảng tham số đã được bọc ngoặc kép
-        & $dotnetExe $dotnetArgs
-        
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "❌ Lỗi trong quá trình build .NET. Exit code: $LASTEXITCODE" -ForegroundColor Red
-            exit 1
-        }
-        Write-Host "✅ Build thành công." -ForegroundColor Green
-    } catch {
-        Write-Host "❌ Lỗi khi thực thi lệnh build: $($_.Exception.Message)" -ForegroundColor Red
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "`n❌ Build thất bại. Thử chạy lệnh sau để sửa lỗi Workload (nếu máy có mạng):" -ForegroundColor Red
+        Write-Host "   & `"$dotnetExe`" workload restore" -ForegroundColor Yellow
         exit 1
     }
+    Write-Host "✅ Build thành công." -ForegroundColor Green
 }
 
 # =======================================================================
