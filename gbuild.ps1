@@ -62,6 +62,22 @@ function Resolve-DotnetExe {
     return $null
 }
 
+function Get-AndroidSdkPath {
+    # 1. Kiểm tra biến môi trường hệ thống
+    if (Test-Path $env:ANDROID_HOME) { return $env:ANDROID_HOME }
+    if (Test-Path $env:ANDROID_SDK_ROOT) { return $env:ANDROID_SDK_ROOT }
+
+    # 2. Kiểm tra folder mặc định của Android Studio
+    $defaultPath = Join-Path $env:LOCALAPPDATA "Android\Sdk"
+    if (Test-Path $defaultPath) { return $defaultPath }
+
+    # 3. Kiểm tra nếu bạn để Android SDK ngay trong folder .sdk (portable)
+    $localPath = Join-Path $PSScriptRoot ".sdk\android-sdk"
+    if (Test-Path $localPath) { return $localPath }
+
+    return $null
+}
+
 # 2) Get-CsprojTfms: Robust parsing TargetFramework/TargetFrameworks
 function Get-CsprojTfms {
     param([string]$ProjPath)
@@ -200,28 +216,38 @@ function ProcessBuildAndShow {
     $dotnetExe = Resolve-DotnetExe
     if (-not $dotnetExe) { exit 1 }
 
-    # CÁCH VIẾT THAM SỐ CHUẨN ĐỂ KHÔNG BỊ LỖI KHOẢNG TRẮNG Ở ĐƯỜNG DẪN
+    # --- TÌM ANDROID SDK ---
+    $androidSdk = Get-AndroidSdkPath
+    $extraAndroidArgs = @()
+    if ($androidSdk) {
+        Write-Host "🤖 Đã tìm thấy Android SDK tại: $androidSdk" -ForegroundColor DarkGray
+        # Bọc toàn bộ tham số trong ngoặc kép để xử lý khoảng trắng "TRUNG SON"
+        $extraAndroidArgs += "-p:AndroidSdkDirectory=`"$androidSdk`""
+    }
+
     $dotnetArgs = @(
         "publish",
         "`"$Project`"",
         "-f", $Tfm,
         "-c", "Release",
-        # Bọc toàn bộ tham số --output trong ngoặc kép
         "--output", "`"$fullOutputFolder`"",
         "-p:UseMaui=true",
         "-p:SingleProject=true"
     )
     
+    $dotnetArgs += $extraAndroidArgs
     foreach ($arg in $BuildArgs) { $dotnetArgs += $arg }
 
     Write-Host "`n🚀 Bắt đầu build..." -ForegroundColor Cyan
     
-    # Chạy lệnh
+    # Thực thi lệnh
     & $dotnetExe $dotnetArgs
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "`n❌ Build thất bại. Thử chạy lệnh sau để sửa lỗi Workload (nếu máy có mạng):" -ForegroundColor Red
-        Write-Host "   & `"$dotnetExe`" workload restore" -ForegroundColor Yellow
+        Write-Host "`n❌ Build thất bại." -ForegroundColor Red
+        if (-not $androidSdk) {
+            Write-Host "👉 Nguyên nhân: Không tìm thấy Android SDK. Vui lòng cài đặt Android Studio hoặc copy Android SDK vào thư mục: .sdk\android-sdk" -ForegroundColor Yellow
+        }
         exit 1
     }
     Write-Host "✅ Build thành công." -ForegroundColor Green
