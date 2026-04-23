@@ -63,15 +63,21 @@ function Resolve-DotnetExe {
 }
 
 function Get-AndroidSdkPath {
-    # 1. Kiểm tra biến môi trường hệ thống
-    if (Test-Path $env:ANDROID_HOME) { return $env:ANDROID_HOME }
-    if (Test-Path $env:ANDROID_SDK_ROOT) { return $env:ANDROID_SDK_ROOT }
+    # 1. Kiểm tra biến môi trường hệ thống (Dùng toán tử -and để tránh lỗi Null)
+    if ($env:ANDROID_HOME -and (Test-Path $env:ANDROID_HOME)) { 
+        return $env:ANDROID_HOME 
+    }
+    if ($env:ANDROID_SDK_ROOT -and (Test-Path $env:ANDROID_SDK_ROOT)) { 
+        return $env:ANDROID_SDK_ROOT 
+    }
 
-    # 2. Kiểm tra folder mặc định của Android Studio
-    $defaultPath = Join-Path $env:LOCALAPPDATA "Android\Sdk"
-    if (Test-Path $defaultPath) { return $defaultPath }
+    # 2. Kiểm tra folder mặc định của Android Studio (Thường nằm ở AppData)
+    if ($env:LOCALAPPDATA) {
+        $defaultPath = Join-Path $env:LOCALAPPDATA "Android\Sdk"
+        if (Test-Path $defaultPath) { return $defaultPath }
+    }
 
-    # 3. Kiểm tra nếu bạn để Android SDK ngay trong folder .sdk (portable)
+    # 3. Kiểm tra folder .sdk\android-sdk trong thư mục project
     $localPath = Join-Path $PSScriptRoot ".sdk\android-sdk"
     if (Test-Path $localPath) { return $localPath }
 
