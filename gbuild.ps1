@@ -208,26 +208,37 @@ function ProcessBuildAndShow {
         exit 1
     }
 
+    # QUAN TRỌNG: Bao bọc biến đường dẫn trong dấu ngoặc kép để xử lý khoảng trắng
     $dotnetArgs = @(
-        'publish', $Project,
+        'publish', "`"$Project`"",
         '-f', $Tfm,
         '-c', 'Release',
-        "--output", $fullOutputFolder,
+        '--output', "`"$fullOutputFolder`"",
         '-p:UseMaui=true',
         '-p:SingleProject=true'
     )
-    $dotnetArgs += $BuildArgs
+    
+    if ($BuildArgs) {
+        foreach ($arg in $BuildArgs) {
+            # Nếu arg có chứa dấu bằng (ví dụ -p:Key=Value), ta cần kiểm tra xem Value có khoảng trắng ko
+            # Nhưng an toàn nhất là để nguyên hoặc wrap tùy loại. Ở đây các buildArgs mặc định đã ổn.
+            $dotnetArgs += $arg
+        }
+    }
 
     Write-Host "`n🚀 Bắt đầu build..." -ForegroundColor Cyan
+    # Sử dụng dấu & (Call operator) thường ổn định hơn Start-Process với các tham số phức tạp
     Write-Host "   Lệnh: $dotnetExe $($dotnetArgs -join ' ')" -ForegroundColor DarkGray
 
     try {
-        $process = Start-Process -FilePath $dotnetExe -ArgumentList $dotnetArgs -Wait -NoNewWindow -PassThru
-        if ($process.ExitCode -ne 0) {
-            Write-Host "❌ Lỗi trong quá trình build .NET. Exit code: $($process.ExitCode)" -ForegroundColor Red
+        # Dùng toán tử & để thực thi trực tiếp, truyền mảng tham số đã được bọc ngoặc kép
+        & $dotnetExe $dotnetArgs
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Lỗi trong quá trình build .NET. Exit code: $LASTEXITCODE" -ForegroundColor Red
             exit 1
         }
-        Write-Host "Build thành công." -ForegroundColor Green
+        Write-Host "✅ Build thành công." -ForegroundColor Green
     } catch {
         Write-Host "❌ Lỗi khi thực thi lệnh build: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
