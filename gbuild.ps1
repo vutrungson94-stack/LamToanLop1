@@ -222,37 +222,43 @@ function ProcessBuildAndShow {
     $dotnetExe = Resolve-DotnetExe
     if (-not $dotnetExe) { exit 1 }
 
-    # --- TÌM ANDROID SDK ---
+    # 1. Lấy đường dẫn Android SDK
     $androidSdk = Get-AndroidSdkPath
-    $extraAndroidArgs = @()
-    if ($androidSdk) {
-        Write-Host "🤖 Đã tìm thấy Android SDK tại: $androidSdk" -ForegroundColor DarkGray
-        # Bọc toàn bộ tham số trong ngoặc kép để xử lý khoảng trắng "TRUNG SON"
-        $extraAndroidArgs += "-p:AndroidSdkDirectory=`"$androidSdk`""
-    }
+    
+    # 2. Xử lý đường dẫn: Xóa dấu gạch chéo cuối cùng để tránh lỗi escape trong MSBuild
+    if ($androidSdk) { $androidSdk = $androidSdk.TrimEnd('\') }
+    $cleanProject = $Project.TrimEnd('\')
+    $cleanOutput = $fullOutputFolder.TrimEnd('\')
 
+    # 3. Tạo mảng tham số (Quan trọng: Dùng dấu nháy đơn bọc nháy kép cho thuộc tính có khoảng trắng)
     $dotnetArgs = @(
         "publish",
-        "`"$Project`"",
+        "`"$cleanProject`"",
         "-f", $Tfm,
         "-c", "Release",
-        "--output", "`"$fullOutputFolder`"",
+        "--output", "`"$cleanOutput`"",
         "-p:UseMaui=true",
         "-p:SingleProject=true"
     )
-    
-    $dotnetArgs += $extraAndroidArgs
-    foreach ($arg in $BuildArgs) { $dotnetArgs += $arg }
+
+    # Nếu tìm thấy Android SDK, ép nó sử dụng bằng tham số -p
+    if ($androidSdk) {
+        Write-Host "🤖 Sử dụng Android SDK: $androidSdk" -ForegroundColor Gray
+        $dotnetArgs += "-p:AndroidSdkDirectory=`"$androidSdk`""
+    }
+
+    if ($BuildArgs) { $dotnetArgs += $BuildArgs }
 
     Write-Host "`n🚀 Bắt đầu build..." -ForegroundColor Cyan
     
-    # Thực thi lệnh
+    # Thực thi bằng toán tử & và truyền mảng tham số
+    # Đây là cách an toàn nhất để PowerShell không làm hỏng khoảng trắng
     & $dotnetExe $dotnetArgs
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "`n❌ Build thất bại." -ForegroundColor Red
         if (-not $androidSdk) {
-            Write-Host "👉 Nguyên nhân: Không tìm thấy Android SDK. Vui lòng cài đặt Android Studio hoặc copy Android SDK vào thư mục: .sdk\android-sdk" -ForegroundColor Yellow
+            Write-Host "👉 Lỗi: Không tìm thấy Android SDK. Hãy copy Android SDK vào thư mục .sdk\android-sdk" -ForegroundColor Yellow
         }
         exit 1
     }
