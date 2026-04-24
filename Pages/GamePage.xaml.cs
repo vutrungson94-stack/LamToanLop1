@@ -1457,75 +1457,81 @@ public partial class GamePage : ContentPage
     {
 
         //Dùng _isProcessing guard đơn giản thay vì _navLock (không WaitAsync mà Release → crash)
-        if (_isProcessing) return;
+        if (_isProcessing || !_isGameActive) return;
         _isProcessing = true;
+
+        if (sender is not Button btn)
+        {
+            Debug.WriteLine("OnAnswerClicked: sender is not a Button.");
+            _isProcessing = false;
+            return;
+        }
 
         try
         {
-            if (sender is Button btn)
+            //Stop animation cũ của nút
+            AbortSpecificAnimations(btn);
+            await Task.WhenAll(
+                btn.ScaleToAsync(0.9, 100),
+                btn.ScaleToAsync(1, 100)
+            );
+
+            if (_vm.CheckAnswer(btn.Text))
             {
-                try
+                StopAllAudio(); // Dừng âm thanh cũ nếu có
+
+                // --- TRƯỜNG HỢP ĐÚNG ---
+                if (_vm.CurrentQuestion?.VisualType == "MissingNumber" && _missingSlotView != null)
                 {
-                    //Stop animation cũ của nút
-                    AbortSpecificAnimations(btn);
-                    await btn.ScaleToAsync(0.9, 100);
-                    await btn.ScaleToAsync(1, 100);
+                    // Logic bay số vào chỗ trống
+                    var flyLabel = new Label { Text = btn.Text, FontSize = 32, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#1565C0"), WidthRequest = 60, HeightRequest = 60, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center };
+                    btn.Text = ""; // Xóa chữ ở nút bấm cho đẹp
 
-                    if (_vm.CheckAnswer(btn.Text))
+                    await AnimateFlyToTarget(btn, flyLabel, _missingSlotView);
+                    if (_missingSlotView is Border slotBorder)
                     {
-                        // --- TRƯỜNG HỢP ĐÚNG ---
-                        if (_vm.CurrentQuestion?.VisualType == "MissingNumber" && _missingSlotView != null)
-                        {
-                            // Logic bay số vào chỗ trống
-                            var flyLabel = new Label { Text = btn.Text, FontSize = 32, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#1565C0"), WidthRequest = 60, HeightRequest = 60, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center };
-                            btn.Text = ""; // Xóa chữ ở nút bấm cho đẹp
-
-                            await AnimateFlyToTarget(btn, flyLabel, _missingSlotView);
-                            if (_missingSlotView is Border slotBorder)
-                            {
-                                slotBorder.Content = new Label { Text = flyLabel.Text, FontSize = 32, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#1565C0"), HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
-                                slotBorder.BackgroundColor = Colors.White;
-                                slotBorder.Stroke = Colors.Green;
-                                slotBorder.StrokeDashArray = null;
-                            }
-                            await Task.Delay(500);
-                            await HandleCorrectAnswerAsync();
-                        }
-                        else
-                        {
-                            // Logic thường
-                            await HandleCorrectAnswerAsync();
-                        }
-
-                        // _isProcessing sẽ được reset bởi RenderQuestion của câu tiếp theo
-                        return;
+                        slotBorder.Content = new Label { Text = flyLabel.Text, FontSize = 32, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#1565C0"), HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
+                        slotBorder.BackgroundColor = Colors.White;
+                        slotBorder.Stroke = Colors.Green;
+                        slotBorder.StrokeDashArray = null;
                     }
-                    else
-                    {
-                        // --- TRƯỜNG HỢP SAI ---
-
-                        // Hiệu ứng lắc qua lại
-                        await btn.TranslateToAsync(10, 0, 50);
-                        await btn.TranslateToAsync(-10, 0, 50);
-                        btn.TranslationX = 0;
-
-                        StopAllAudio();
-                        _ = _tts.SpeakWithMoodAsync("Sai rồi, thử lại nhé!", VoiceMood.Sad);
-                        // Mở khóa để bé chọn lại
-                        _isProcessing = false;
-                    }
+                    await Task.Delay(500);
+                    await HandleCorrectAnswerAsync();
                 }
-                catch (Exception ex)
+                else
                 {
-                    Debug.WriteLine($"Error in answer button animation: {ex}");
-                    _isProcessing = false; // Đảm bảo mở khóa nếu có lỗi
+                    // Logic thường cho các câu hỏi khác: chỉ cần hiệu ứng đúng rồi chuyển câu mới
+                    await HandleCorrectAnswerAsync();
                 }
+
+                // _isProcessing sẽ được reset bởi RenderQuestion của câu tiếp theo
+                return;
+            }
+            else
+            {
+                // --- TRƯỜNG HỢP SAI ---
+
+                // Hiệu ứng lắc qua lại
+                await btn.TranslateToAsync(15, 0, 40, Easing.Linear);
+                await btn.TranslateToAsync(-15, 0, 40, Easing.Linear);
+                await btn.TranslateToAsync(15, 0, 40, Easing.Linear);
+                await btn.TranslateToAsync(-15, 0, 40, Easing.Linear);
+                btn.TranslationX = 0;
+
+                StopAllAudio();
+                _ = _tts.SpeakWithMoodAsync("Sai rồi, thử lại nhé!", VoiceMood.Sad); 
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Error in OnAnswerClicked: {ex}");
-            _isProcessing = false; // Đảm bảo mở khóa nếu có lỗi
+            btn.TranslationX = 0; // Reset vị trí nếu lỗi xảy ra trong animation
+            btn.Scale = 1; // Reset scale nếu lỗi xảy ra trong animation
+        }
+        finally
+        {
+            // Đảm bảo mở khóa nếu có lỗi không lường trước
+            _isProcessing = false;
         }
     }
 
@@ -2155,6 +2161,16 @@ public partial class GamePage : ContentPage
 
     private async Task HandleCorrectAnswerAsync()
     {
+        // Nếu token cũ đã bị hủy hoặc chưa tạo, hãy tạo mới để chạy tiếp
+        if (_cts == null || _cts.IsCancellationRequested)
+        {
+            _cts = new CancellationTokenSource();
+        }
+        
+        // Đảm bảo Border chúc mừng luôn ở trạng thái sẵn sàng
+        CongratulationBorder.IsVisible = true; 
+        CongratulationBorder.Scale = 0;
+
         if (!_isGameActive) return;
         _vm.Stars++;
         await ShowCongratulationsDialogAsync();

@@ -9,11 +9,9 @@ public partial class AppShell : Shell
 		InitializeComponent();
 
         // Đăng ký đường dẫn cho các trang con
+		// Lưu ý: SplashPage và MainPage KHÔNG đăng ký ở đây
+        // vì đã khai báo trong AppShell.xaml rồi
         Routing.RegisterRoute(nameof(GamePage), typeof(GamePage));
 		Routing.RegisterRoute(nameof(AnimalPage), typeof(AnimalPage));
-		Routing.RegisterRoute(nameof(MainPage), typeof(MainPage));
-
-        // Mặc định hiển thị SplashPage
-        this.CurrentItem = this.Items[0]; // SplashPage là item đầu tiên
 	}
 }

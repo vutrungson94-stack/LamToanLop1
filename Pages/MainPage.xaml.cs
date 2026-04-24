@@ -24,11 +24,6 @@ public partial class MainPage : ContentPage
         _soundService = soundService;
     }
 
-    protected override void OnAppearing()
-    {
-        base.OnAppearing();
-    }
-
     // Xử lý nút Back vật lý để quay lại từng cấp Menu
     protected override bool OnBackButtonPressed()
     {

@@ -36,17 +36,12 @@ public static class MauiProgram
         // ================================================
         // === ĐĂNG KÝ CÁC TRANG VÀ VIEWMODEL ===
         // ================================================
-
-        // Đăng ký SplashPage là Singleton vì nó là trang đầu tiên và chỉ chạy một lần.
-        builder.Services.AddSingleton<SplashPage>();
-
-		builder.Services.AddSingleton<AppShell>();
-
-        // Đăng ký MainPage (trang chọn màn chơi) là Transient.
-        // Transient: Một instance mới được tạo mỗi khi được yêu cầu.
-		builder.Services.AddTransient<MainPage>();
-		builder.Services.AddTransient<GamePage>();
-		builder.Services.AddTransient<AnimalPage>();
+        // Transient vì chỉ hiện một lần rồi bỏ
+        builder.Services.AddTransient<SplashPage>();
+        builder.Services.AddTransient<MainPage>();
+        builder.Services.AddTransient<GamePage>();
+        builder.Services.AddTransient<AnimalPage>();
+        builder.Services.AddTransient<GameViewModel>();
 
 		builder.Services.AddTransient<GameViewModel>();
 
