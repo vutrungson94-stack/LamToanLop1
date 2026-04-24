@@ -38,7 +38,7 @@ function Write-Log([string]$msg, [string]$color = "White") {
     Write-Host $msg -ForegroundColor $color
 }
 
-# 2. Hàm Resolve đường dẫn tuyệt đối (Xử lý khoảng trắng TRUNG SON)
+# 2. Hàm Resolve đường dẫn tuyệt đối (Xử lý khoảng trắng)
 function Get-SafePath {
     param([string]$path)
     if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path $path)) { return $path }
@@ -50,7 +50,7 @@ function Get-SafePath {
     } catch { return $path }
 }
 
-# 3. Hàm lấy Short Path (8.3) để trị dứt điểm lỗi -2147450735 trên Windows
+# 3. Hàm lấy Short Path trên Windows (Giải quyết lỗi Runtime Host khi đường dẫn có khoảng trắng)
 function Get-WindowsShortPath {
     param([string]$longPath)
     if (-not $IsWindows -or -not (Test-Path $longPath)) { return $longPath }
@@ -64,7 +64,7 @@ function Get-WindowsShortPath {
     } catch { return $longPath }
 }
 
-# 4. Tìm Android SDK (Fix lỗi XA5300)
+# 4. Tìm Android SDK của Google (Hỗ trợ nhiều biến môi trường và đường dẫn mặc định)
 function Get-AndroidSdkPath {
     Write-Log "🔍 Đang săn tìm Android SDK của Google..." $C_Gray
     $searchList = @(
@@ -84,15 +84,25 @@ function Get-AndroidSdkPath {
     return $null
 }
 
-# 5. Phân giải Dotnet Exe (Ưu tiên Máy -> Local)
+# 5. Phân giải Dotnet Exe (Ưu tiên Máy -> Local thư mục .sdk)
 function Resolve-DotnetExe {
-    # Ưu tiên 1: SDK Máy
-    if (Get-Command dotnet -ErrorAction SilentlyContinue) {
-        Write-Log "🚀 Sử dụng .NET SDK hệ thống." $C_Info
-        return "dotnet"
+    Write-Log "🔍 Đang kiểm tra .NET SDK..." $C_Gray
+
+    # Ưu tiên 1: Kiểm tra SDK Máy (Đảm bảo máy có cài SDK, không chỉ là Runtime)
+    $sysDotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($sysDotnet) {
+        $sdks = & $sysDotnet.Source --list-sdks 2>&1
+        if ($LASTEXITCODE -eq 0 -and $sdks) {
+            Write-Log "🚀 Sử dụng .NET SDK hệ thống." $C_Info
+            return $sysDotnet.Source
+        } else {
+            Write-Log "⚠️ Phát hiện dotnet command nhưng không có SDK trên máy. Chuyển sang Local SDK..." $C_Warn
+        }
+    } else {
+        Write-Log "⚠️ Không tìm thấy lệnh dotnet trên máy. Chuyển sang Local SDK..." $C_Warn
     }
 
-    # Ưu tiên 2: SDK Local trong .sdk
+    # Ưu tiên 2: SDK Local trong .sdk (theo cây thư mục hiện tại)
     $localDir = Join-Path $PSScriptRoot ".sdk"
     $localExe = Join-Path $localDir "dotnet.exe"
     if (-not $IsWindows) { $localExe = Join-Path $localDir "dotnet" }
@@ -110,10 +120,14 @@ function Resolve-DotnetExe {
         $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $sdkRoot
         $env:DOTNET_SDK_WORKLOAD_MANIFEST_ROOT = Join-Path $sdkRoot "sdk-manifests"
         $env:DOTNET_SDK_WORKLOAD_PACK_ROOT = Join-Path $sdkRoot "packs"
+        
+        # Đưa path SDK local lên đầu ưu tiên
         $env:PATH = "$sdkRoot$([IO.Path]::PathSeparator)$env:PATH"
 
         return $exePath
     }
+    
+    Write-Log "❌ Không tìm thấy .NET SDK trên hệ thống lẫn trong thư mục .sdk!" $C_Err
     return $null
 }
 
