@@ -25,12 +25,7 @@ $ErrorActionPreference = 'Stop'
 $Global:StartTime = Get-Date
 
 # Bảng màu log chuyên nghiệp
-$C_Header = "Magenta"
-$C_Info   = "Cyan"
-$C_Warn   = "Yellow"
-$C_Err    = "Red"
-$C_Succ   = "Green"
-$C_Gray   = "DarkGray"
+$C_Header = "Magenta"; $C_Info = "Cyan"; $C_Warn = "Yellow"; $C_Err = "Red"; $C_Succ = "Green"; $C_Gray = "DarkGray"
 
 # ==================================================================================================
 # [SECTION 2] HÀM BỔ TRỢ (HELPERS)
@@ -44,10 +39,15 @@ function Write-Log([string]$msg, [string]$color = "White") {
 }
 
 # 2. Hàm Resolve đường dẫn tuyệt đối (Xử lý khoảng trắng TRUNG SON)
-function Get-SafePath([string]$path) {
-    if ([string]::IsNullOrWhiteSpace($path)) { return $null }
-    $full = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $path))
-    return $full.TrimEnd('\')
+function Get-SafePath {
+    param([string]$path)
+    if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path $path)) { return $path }
+    if (-not $IsWindows) { return $path }
+    try {
+        $fso = New-Object -ComObject Scripting.FileSystemObject
+        if (Test-Path $path -PathType Container) { return $fso.GetFolder($path).ShortPath }
+        return $fso.GetFile($path).ShortPath
+    } catch { return $path }
 }
 
 # 3. Hàm lấy Short Path (8.3) để trị dứt điểm lỗi -2147450735 trên Windows
@@ -66,46 +66,44 @@ function Get-WindowsShortPath {
 
 # 4. Tìm Android SDK (Fix lỗi XA5300)
 function Get-AndroidSdkPath {
-    Write-Log "🔍 Đang tìm Android SDK..." $C_Gray
-    $list = @(
+    Write-Log "🔍 Đang săn tìm Android SDK của Google..." $C_Gray
+    $searchList = @(
         (Join-Path $PSScriptRoot ".sdk\android-sdk"),
         $env:ANDROID_HOME,
         $env:ANDROID_SDK_ROOT,
-        (Join-Path $env:LOCALAPPDATA "Android\Sdk")
+        (Join-Path $env:LOCALAPPDATA "Android\Sdk"),
+        "C:\Program Files (x86)\Android\android-sdk"
     )
-    foreach ($p in $list) {
+    foreach ($p in $searchList) {
         if ($p -and (Test-Path $p)) {
-            $path = (Get-Item $p).FullName.TrimEnd('\')
-            Write-Log "✅ Thấy Android SDK: $path" $C_Succ
-            return $path
+            $found = (Get-Item $p).FullName.TrimEnd('\')
+            Write-Log "✅ Đã thấy Android SDK: $found" $C_Succ
+            return Get-SafePath $found
         }
     }
-    Write-Log "⚠️ Không thấy Android SDK trên máy!" $C_Warn
     return $null
 }
 
 # 5. Phân giải Dotnet Exe (Ưu tiên Máy -> Local)
 function Resolve-DotnetExe {
-    # 1. Thử dùng lệnh hệ thống
-    $sys = Get-Command dotnet -ErrorAction SilentlyContinue
-    if ($sys) {
+    # Ưu tiên 1: SDK Máy
+    if (Get-Command dotnet -ErrorAction SilentlyContinue) {
         Write-Log "🚀 Sử dụng .NET SDK hệ thống." $C_Info
         return "dotnet"
     }
 
-    # 2. Sử dụng SDK Local
-    $localDir = Get-SafePath ".sdk"
+    # Ưu tiên 2: SDK Local trong .sdk
+    $localDir = Join-Path $PSScriptRoot ".sdk"
     $localExe = Join-Path $localDir "dotnet.exe"
     if (-not $IsWindows) { $localExe = Join-Path $localDir "dotnet" }
 
     if (Test-Path $localExe) {
-        # Dùng Short Path cho thư mục SDK để tránh lỗi Host Runtime do khoảng trắng
-        $sdkRoot = if ($IsWindows) { Get-WindowsShortPath $localDir } else { $localDir }
+        $sdkRoot = Get-SafePath $localDir
         $exePath = Join-Path $sdkRoot (Split-Path $localExe -Leaf)
+        
+        Write-Log "📦 Kích hoạt SDK Local tại: $sdkRoot" $C_Warn
 
-        Write-Log "📦 Sử dụng SDK Local: $sdkRoot" $C_Warn
-
-        # Thiết lập biến môi trường cực kỳ chi tiết để fix lỗi -2147450735
+        # Thiết lập biến môi trường để Dotnet Host không bị lỗi đường dẫn
         $env:DOTNET_ROOT = $sdkRoot
         ${env:DOTNET_ROOT(x86)} = $sdkRoot
         $env:DOTNET_MULTILEVEL_LOOKUP = "0"
@@ -121,42 +119,40 @@ function Resolve-DotnetExe {
 
 # 6. Đọc TFMs từ file csproj
 function Get-CsprojTfms {
-    param([string]$Path)
-    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
-        Write-Log "❌ Đường dẫn project không hợp lệ: '$Path'" $C_Err
-        return @()
+    param([string]$projPath)
+    if (-not (Test-Path $projPath)) { return @() }
+    
+    $content = Get-Content $projPath -Raw
+    $tfms = @()
+
+    # Quét tất cả các thẻ TargetFramework hoặc TargetFrameworks
+    $matches = [regex]::Matches($content, '<TargetFrameworks?>([^<]+)</TargetFrameworks?>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    foreach ($m in $matches) {
+        $val = $m.Groups[1].Value.Trim()
+        $parts = $val.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
+        foreach ($p in $parts) { $tfms += $p.Trim() }
     }
-    try {
-        [xml]$xml = Get-Content -LiteralPath $Path -ErrorAction Stop
-        $tfms = @()
-        $nodes = $xml.SelectNodes("//Project/PropertyGroup[TargetFramework or TargetFrameworks]")
-        foreach ($n in $nodes) {
-            if ($n.TargetFramework) { $tfms += $n.TargetFramework }
-            if ($n.TargetFrameworks) { $tfms += $n.TargetFrameworks }
-        }
-        $result = ($tfms -join ';').Split(';', [System.StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_.Trim() }
-        return $result | Sort-Object -Unique
-    } catch {
-        Write-Log "❌ Không thể đọc file project: $($_.Exception.Message)" $C_Err
-        return @()
+
+    $uniqueTfms = $tfms | Sort-Object -Unique
+    if ($uniqueTfms) {
+        Write-Log "📱 Các nền tảng phát hiện: $($uniqueTfms -join ', ')" $C_Gray
     }
+    return $uniqueTfms
 }
 
 # 7. Tìm project MAUI thông minh hơn
 function Get-MauiCsproj {
-    Write-Log "📂 Tìm kiếm file project..." $C_Gray
-    # Tìm ưu tiên ở thư mục gốc trước, sau đó mới Recurse
-    $files = Get-ChildItem . -Filter *.csproj -File
-    if (-not $files) {
-        $files = Get-ChildItem . -Recurse -Filter *.csproj -File | 
-                 Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|.sdk)[\\/]' }
-    }
+    Write-Log "📂 Đang quét tìm file project MAUI..." $C_Gray
+    $files = Get-ChildItem . -Recurse -Filter *.csproj -File | 
+             Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|.sdk)[\\/]' }
     
     foreach ($f in $files) {
         $content = Get-Content $f.FullName -Raw -EA SilentlyContinue
-        if ($content -match '<UseMaui>\s*true\s*</UseMaui>') { return $f }
+        if ($content -match '<UseMaui>\s*true\s*</UseMaui>' -or $content -match 'net\d+(\.\d+)?-(android|ios|windows)') {
+            return $f
+        }
     }
-    return $files | Select-Object -First 1
+    return $null
 }
 
 # 8. Quản lý Keystore (Android)
@@ -222,48 +218,52 @@ function Show-BuildSummary([string]$dir) {
 # ==================================================================================================
 
 function ProcessBuildAndShow {
-     param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
+    param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
 
-    # Chuyển mọi đường dẫn về Short Path để MSBuild không bị lỗi
+    # Làm sạch folder output
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
-    if (!(Test-Path $rawOut)) { New-Item -ItemType Directory $rawOut | Out-Null }
+    if (Test-Path $rawOut) { Remove-Item $rawOut -Recurse -Force -EA SilentlyContinue }
+    New-Item -ItemType Directory $rawOut | Out-Null
     
-    $shortProject = Get-ShortPath $Project
-    $shortOut = Get-ShortPath $rawOut
+    # Chuyển mọi đường dẫn về Safe Path (Khử khoảng trắng)
+    $safeProj = Get-SafePath $Project
+    $safeOut = Get-SafePath $rawOut
 
     $dotnet = Resolve-DotnetExe
-    if (-not $dotnet) { Write-Log "❌ Không thấy SDK!" $C_Err; exit 1 }
+    if (-not $dotnet) { Write-Log "❌ Không tìm thấy SDK .NET!" $C_Err; exit 1 }
 
     $androidSdk = Get-AndroidSdkPath
 
-    # Tham số build (Sử dụng Short Path cho tất cả)
+    # Mảng tham số build chuẩn (Xử lý khoảng trắng tuyệt đối)
     $params = @(
-        "publish", $shortProject,
+        "publish", $safeProj,
         "-f", $Tfm,
         "-c", "Release",
-        "--output", $shortOut,
+        "--output", $safeOut,
         "-p:UseMaui=true",
-        "-p:SingleProject=true"
+        "-p:SingleProject=true",
+        "--no-self-contained"
     )
 
-    if ($androidSdk) { 
-        $params += "-p:AndroidSdkDirectory=$androidSdk" 
-    }
+    if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
     if ($BuildArgs) { $params += $BuildArgs }
 
-    Write-Log "🔥 Đang thực thi build..." $C_Info
-    
-    # Thực thi
+    Write-Host ("`n" + ("=" * 60)) -ForegroundColor $C_Gray
+    Write-Log "🚀 ĐANG TIẾN HÀNH BUILD: $Tfm" $C_Info
+    Write-Host ("=" * 60) -ForegroundColor $C_Gray
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     & $dotnet $params
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Log "❌ BUILD THẤT BẠI! Code: $LASTEXITCODE" $C_Err
-        if ($LASTEXITCODE -eq -2147450735) {
-            Write-Log "💡 LỖI: .NET Host vẫn không nhận diện được folder 'shared'. Hãy thử cài .NET SDK bản cài đặt (msi) lên máy." $C_Warn
-        }
+        Write-Log "❌ BUILD THẤT BẠI (Mã lỗi: $LASTEXITCODE)" $C_Err
         exit 1
     }
-    Write-Log "✅ THÀNH CÔNG!" $C_Succ
+
+    $sw.Stop()
+    Write-Log "✅ THÀNH CÔNG TRONG $($sw.Elapsed.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
+    
+    # Mở folder kết quả
     if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
 }
 
@@ -273,7 +273,7 @@ function ProcessBuildAndShow {
 
 function Invoke-GitHubBuild([string]$PackageFormat) {
     Write-Log "☁ Đang kết nối GitHub Cloud..." $C_Info
-    $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Resolve-SafePath "gh.exe" }
+    $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath "gh.exe" }
     
     if (-not (Test-Path $gh) -and $gh -ne "gh") {
         Write-Log "❌ Không tìm thấy gh.exe (GitHub CLI)!" $C_Err
@@ -295,111 +295,79 @@ function Invoke-GitHubBuild([string]$PackageFormat) {
 
 Write-Host @"
 `n╔════════════════════════════════════════════════════════════════════╗
-║         🚀  MAUI ULTIMATE BUILD TOOL — VIP PRO MAX V3             ║
+║         🚀  MAUI ULTIMATE BUILD TOOL — VIP PRO MAX V1             ║
 ║      (Fixed: Space Paths, Runtime Host & Android SDK Errors)      ║
 ╚════════════════════════════════════════════════════════════════════╝
-"@ -ForegroundColor $C_Info
+"@ -ForegroundColor $C_Header
 
 # 1. Tìm Project
 $csproj = Get-MauiCsproj
-if (-not $csproj) { Write-Log "❌ Không tìm thấy file .csproj MAUI nào!" $C_Err; exit 1 }
+if (-not $csproj) { Write-Log "❌ Không tìm thấy project MAUI nào trong thư mục này!" $C_Err; exit 1 }
 $projPath = $csproj.FullName
+Write-Log "📄 Project mục tiêu: $($csproj.Name)" $C_Info
 
-# 2. Xử lý TFM (Hỗ trợ net10 fallback)
-$rawTfms = Get-CsprojTfms -ProjPath $projPath
-$tfms = @()
+# 2. Xử lý Nền tảng (TFM)
+$tfms = @(Get-CsprojTfms -projPath $projPath)
+if ($tfms.Count -eq 0) { Write-Log "❌ Không thể đọc danh sách TargetFrameworks!" $C_Err; exit 1 }
 
-foreach ($t in $rawTfms) {
-    if ($t -like 'net10.0*') { 
-        $osPart = $t -replace '^net10\.0-',''
-        $tfms += "net8.0-$osPart"
-        Write-Log "🔄 Auto-fallback: $t -> net8.0-$osPart" $C_Gray
-    } else { $tfms += $t }
-}
-$tfms = $tfms | Sort-Object -Unique
-
-# Phân tách nền tảng
 $androidTfm = $tfms | Where-Object { $_ -match 'android' } | Select-Object -First 1
 $winTfm     = $tfms | Where-Object { $_ -match 'windows' } | Select-Object -First 1
 $iosTfm     = $tfms | Where-Object { $_ -match 'ios' } | Select-Object -First 1
+$macTfm     = $tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -First 1
 
-# 3. Xử lý Lựa chọn (Menu hoặc Param)
+# 3. Menu Lựa chọn
 $choice = '0'
-
 if ($GitHub -or $NonInteractive) {
     $choice = '6'
 } else {
-    Write-Host "`n🎯 CHỌN NỀN TẢNG MUỐN BUILD:" -ForegroundColor White
-    Write-Host "  [1] Android APK  (Phát triển/Cài nhanh)" -ForegroundColor $C_Info
-    Write-Host "  [2] Android AAB  (Phát hành Google Play - Có ký)" -ForegroundColor $C_Info
-    
-    if ($IsWindows) {
-        Write-Host "  [5] Windows MSIX (Cài trên PC)" -ForegroundColor $C_Warn
+    Write-Host "`n👉 CHỌN NỀN TẢNG MUỐN XUẤT BẢN:" -ForegroundColor White
+    if ($androidTfm) { 
+        Write-Host "  [1] Android APK  (Cài đặt nhanh)" -ForegroundColor $C_Info
+        Write-Host "  [2] Android AAB  (Google Play)" -ForegroundColor $C_Info
     }
-    if ($IsMacOS) {
-        Write-Host "  [3] iOS IPA      (Cần Xcode/Mac)" -ForegroundColor $C_Warn
-    }
+    if ($iosTfm -and $IsMacOS) { Write-Host "  [3] iOS IPA" -ForegroundColor "Magenta" }
+    if ($macTfm -and $IsMacOS) { Write-Host "  [4] Mac Catalyst" -ForegroundColor "Magenta" }
+    if ($winTfm -and $IsWindows) { Write-Host "  [5] Windows MSIX" -ForegroundColor "DarkYellow" }
     
-    Write-Host "  [6] GitHub Build (Build trên Cloud GitHub)" -ForegroundColor $C_Succ
+    Write-Host "  [6] GitHub Cloud Build" -ForegroundColor $C_Succ
     Write-Host "  [0] Thoát" -ForegroundColor $C_Gray
     
-    $userInput = Read-Host "`n👉 Lựa chọn của bạn"
-    $choice = if ($userInput) { $userInput } else { '1' }
+    $in = Read-Host "`n⌨  Nhập số"
+    $choice = if ($in) { $in } else { '1' }
 }
 
-# 4. Thực thi Build
+# 4. Thực thi Logic Build
 switch ($choice) {
-    '0' { Write-Log "👋 Tạm biệt!" $C_Gray; exit 0 }
-    
-    '1' {
-        if (-not $androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
-        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "android-apk" -BuildArgs @("-p:AndroidPackageFormat=apk")
+    '1' { 
+        if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
+        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk") 
     }
-
     '2' {
-        if (-not $androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
+        if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
         $ks = Find-AndroidKeystore (Split-Path $projPath)
-        $signArgs = @("-p:AndroidPackageFormat=aab")
-        
+        $bArgs = @("-p:AndroidPackageFormat=aab")
         if ($ks) {
-            $ks = Read-KeystoreInteractive $ks
-            if ($ks) {
-                Write-Log "🔏 Đang áp dụng chứng chỉ ký cho AAB..." $C_Succ
-                $signArgs += "-p:AndroidSigningKeyStore=$($ks.Path)"
-                $signArgs += "-p:AndroidSigningStorePass=$($ks.StorePass)"
-                $signArgs += "-p:AndroidSigningKeyAlias=$($ks.Alias)"
-                $signArgs += "-p:AndroidSigningKeyPass=$($ks.KeyPass)"
+            $p = Read-Host "🔑 Nhập Keystore Password để ký AAB"
+            if ($p) {
+                $bArgs += "-p:AndroidSigningKeyStore=$($ks.Path)"
+                $bArgs += "-p:AndroidSigningStorePass=$p"
+                $bArgs += "-p:AndroidSigningKeyAlias=key0"
+                $bArgs += "-p:AndroidSigningKeyPass=$p"
             }
         }
-        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "android-aab" -BuildArgs $signArgs
+        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "aab" -BuildArgs $bArgs
     }
-
-    '3' {
-        if (-not $IsMacOS) { Write-ColorLog "❌ iOS build chỉ hỗ trợ trên macOS!" $C_Err; exit 1 }
-        ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios-ipa" -BuildArgs @("-p:ArchiveOnBuild=true", "-p:RuntimeIdentifier=ios-arm64")
-    }
-
-    '4' {
-        if (-not $IsMacOS) { Write-ColorLog "❌ Mac build chỉ hỗ trợ trên macOS!" $C_Err; exit 1 }
-        ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac-bundle" -BuildArgs @("-p:RuntimeIdentifier=maccatalyst-x64")
-    }
-
-    '5' {
-        if (-not $IsWindows) { Write-Log "Chỉ chạy được trên Windows!" $C_Err; exit 1 }
-        ProcessBuildAndShow -Project $projPath -Tfm $winTfm -OutputSubDir "windows" -BuildArgs @("-p:WindowsPackageType=MSIX")
-    }
-
+    '3' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") }
+    '4' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" }
+    '5' { ProcessBuildAndShow -Project $projPath -Tfm $winTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=MSIX") }
     '6' {
-        $fmt = if ($Format) { $Format } else { "apk" }
-        Invoke-GitHubBuild -PackageFormat $fmt
+        $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath (Join-Path $PSScriptRoot "gh.exe") }
+        if ($gh -eq "gh" -or (Test-Path $gh)) { & $gh workflow run build.yml -f "package_format=apk" ; Write-Log "🚀 Đã gửi lên GitHub!" $C_Succ }
     }
-
-    default { Write-Log "Lựa chọn không hợp lệ!" $C_Err }
+    '0' { exit 0 }
 }
 
-$totalTime = (Get-Date) - $Global:StartTime
-Write-Host "`n✨ HOÀN TẤT TRONG $($totalTime.Minutes)m $($totalTime.Seconds)s. CHÚC MẠNH KHỎE!" -ForegroundColor $C_Succ
-
+Write-Log "🏁 HOÀN TẤT TRONG $([math]::Round(((Get-Date) - $Global:StartTime).TotalSeconds, 1))s." $C_Gray
 # ==================================================================================================
 # KẾT THÚC FILE (END OF SCRIPT)
 # ==================================================================================================

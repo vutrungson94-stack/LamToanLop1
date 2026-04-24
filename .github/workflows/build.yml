@@ -191,6 +191,50 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # ─────────────────────────────────────────────
+      # Fallback to local dotnet if missing
+      # ─────────────────────────────────────────────
+      - name: 🧩 Fallback dotnet (system SDK if available, else local)
+        shell: pwsh
+        run: |
+          Write-Host "Checking system dotnet SDK..."
+          $hasDotnet = $false
+          try {
+            $out = dotnet --list-sdks 2>&1
+            if ($LASTEXITCODE -eq 0 -and $out) { $hasDotnet = $true }
+          } catch {
+            $hasDotnet = $false
+          }
+
+          if ($hasDotnet) {
+            Write-Host "System dotnet SDK found. Using system dotnet."
+            & dotnet --info
+          } else {
+            Write-Host "No system dotnet SDK found. Using local dotnet.exe from repo."
+
+            $repoRoot = Resolve-Path $PSScriptRoot/..
+            $localDotnet = Join-Path $repoRoot "dotnet.exe"
+
+            # If runner is Linux, local may not have dotnet.exe (but your image shows dotnet.exe).
+            # Still keep check for dotnet.exe as requested.
+            if (!(Test-Path $localDotnet)) {
+              # Try fallback to dotnet (non-windows) in case file is named "dotnet"
+              $localDotnet2 = Join-Path $repoRoot "dotnet"
+              if (Test-Path $localDotnet2) {
+                $localDotnet = $localDotnet2
+              } else {
+                throw "Local dotnet not found. Expected: $localDotnet or $localDotnet2"
+              }
+            }
+
+            $env:DOTNET_ROOT = $repoRoot
+            $env:PATH = "$repoRoot;$env:PATH"
+
+            Write-Host "Using local dotnet: $localDotnet"
+            & $localDotnet --info
+            & dotnet --list-sdks
+          }
+
       - name: 🕒 Cache NuGet
         uses: actions/cache@v4
         with:
@@ -367,6 +411,42 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # fallback local dotnet
+      - name: 🧩 Fallback dotnet (system SDK if available, else local)
+        shell: pwsh
+        run: |
+          Write-Host "Checking system dotnet SDK..."
+          $hasDotnet = $false
+          try {
+            $out = dotnet --list-sdks 2>&1
+            if ($LASTEXITCODE -eq 0 -and $out) { $hasDotnet = $true }
+          } catch {
+            $hasDotnet = $false
+          }
+
+          if ($hasDotnet) {
+            Write-Host "System dotnet SDK found. Using system dotnet."
+            & dotnet --info
+          } else {
+            Write-Host "No system dotnet SDK found. Using local dotnet from repo."
+
+            $repoRoot = Resolve-Path $PSScriptRoot/..
+            $localDotnet = Join-Path $repoRoot "dotnet"
+
+            if (!(Test-Path $localDotnet)) {
+              $localDotnet2 = Join-Path $repoRoot "dotnet.exe"
+              if (Test-Path $localDotnet2) { $localDotnet = $localDotnet2 }
+              else { throw "Local dotnet not found in repo root: $localDotnet or $localDotnet2" }
+            }
+
+            $env:DOTNET_ROOT = $repoRoot
+            $env:PATH = "$repoRoot;$env:PATH"
+
+            Write-Host "Using local dotnet: $localDotnet"
+            & $localDotnet --info
+            & dotnet --list-sdks
+          }
+
       - name: ⚡ Install MAUI ${{ matrix.platform }}
         run: dotnet workload install maui-${{ matrix.platform }}
 
@@ -490,6 +570,39 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # NEW: fallback local dotnet
+      - name: 🧩 Fallback dotnet (system SDK if available, else local)
+        shell: pwsh
+        run: |
+          Write-Host "Checking system dotnet SDK..."
+          $hasDotnet = $false
+          try {
+            $out = dotnet --list-sdks 2>&1
+            if ($LASTEXITCODE -eq 0 -and $out) { $hasDotnet = $true }
+          } catch {
+            $hasDotnet = $false
+          }
+
+          if ($hasDotnet) {
+            Write-Host "System dotnet SDK found. Using system dotnet."
+            & dotnet --info
+          } else {
+            Write-Host "No system dotnet SDK found. Using local dotnet.exe from repo."
+
+            $repoRoot = Resolve-Path $PSScriptRoot/..
+            $localDotnet = Join-Path $repoRoot "dotnet.exe"
+            if (!(Test-Path $localDotnet)) {
+              throw "Local dotnet.exe not found at: $localDotnet"
+            }
+
+            $env:DOTNET_ROOT = $repoRoot
+            $env:PATH = "$repoRoot;$env:PATH"
+
+            Write-Host "Using local dotnet: $localDotnet"
+            & $localDotnet --info
+            & dotnet --list-sdks
+          }
 
       - name: ⚡ Install MAUI Windows workload
         run: dotnet workload install maui-windows
