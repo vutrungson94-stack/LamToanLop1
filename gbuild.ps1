@@ -84,6 +84,20 @@ function Get-AndroidSdkPath {
     return $null
 }
 
+# Hàm tìm đường dẫn Java JDK (Local hoặc System)
+function Get-JavaSdkPath {
+    # 1. Ưu tiên kiểm tra folder .sdk/jdk trong project
+    $localJdk = Join-Path $PSScriptRoot ".sdk\jdk"
+    if (Test-Path (Join-Path $localJdk "bin\javac.exe")) {
+        return Get-SafePath $localJdk
+    }
+    # 2. Nếu không có, thử lấy từ biến môi trường của máy
+    if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME "bin\javac.exe"))) {
+        return Get-SafePath $env:JAVA_HOME
+    }
+    return $null
+}
+
 # 5. Phân giải Dotnet Exe (Ưu tiên Máy -> Local thư mục .sdk)
 function Resolve-DotnetExe {
     Write-Log "🔍 Đang kiểm tra .NET SDK..." $C_Gray
@@ -246,7 +260,9 @@ function ProcessBuildAndShow {
     $dotnet = Resolve-DotnetExe
     if (-not $dotnet) { Write-Log "❌ Không tìm thấy SDK .NET!" $C_Err; exit 1 }
 
+    # Lấy đường dẫn các SDK quan trọng
     $androidSdk = Get-AndroidSdkPath
+    $javaSdk = Get-JavaSdkPath
 
     # Mảng tham số build chuẩn (Xử lý khoảng trắng tuyệt đối)
     $params = @(
@@ -259,14 +275,24 @@ function ProcessBuildAndShow {
         "--no-self-contained"
     )
 
+    # Tự động gán Android SDK nếu tìm thấy
     if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
+    
+    # Tự động gán Java SDK nếu tìm thấy (Hỗ trợ build Android)
+    if ($javaSdk) { $params += "-p:JavaSdkDirectory=$javaSdk" }
+    
+    # Nối thêm các tham số tùy chỉnh khác (như định dạng apk/aab)
     if ($BuildArgs) { $params += $BuildArgs }
 
-    Write-Host ("`n" + ("=" * 60)) -ForegroundColor $C_Gray
-    Write-Log "🚀 ĐANG TIẾN HÀNH BUILD: $Tfm" $C_Info
-    Write-Host ("=" * 60) -ForegroundColor $C_Gray
+    # Hiển thị tiêu đề Build chuyên nghiệp
+    Write-Host ("`n" + "┌" + ("─" * 58) + "┐") -ForegroundColor $C_Gray
+    Write-Log " 🚀 ĐANG TIẾN HÀNH BUILD: $Tfm" $C_Info
+    Write-Log " 📁 Output: $OutputSubDir" $C_Gray
+    Write-Host ("└" + ("─" * 58) + "┘") -ForegroundColor $C_Gray
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
+    # Thực thi lệnh build
     & $dotnet $params
 
     if ($LASTEXITCODE -ne 0) {
