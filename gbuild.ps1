@@ -140,8 +140,8 @@ function Get-CsprojTfms {
     $tfms = @()
 
     # Quét tất cả các thẻ TargetFramework hoặc TargetFrameworks
-    $matches = [regex]::Matches($content, '<TargetFrameworks?>([^<]+)</TargetFrameworks?>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-    foreach ($m in $matches) {
+    $tfmMatches = [regex]::Matches($content, '<TargetFrameworks?>([^<]+)</TargetFrameworks?>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    foreach ($m in $tfmMatches) {
         $val = $m.Groups[1].Value.Trim()
         $parts = $val.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
         foreach ($p in $parts) { $tfms += $p.Trim() }
