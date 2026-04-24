@@ -335,8 +335,8 @@ function Invoke-GitHubBuild([string]$PackageFormat) {
 
 Write-Host @"
 `n╔════════════════════════════════════════════════════════════════════╗
-║         🚀  MAUI ULTIMATE BUILD TOOL — VIP PRO MAX V1             ║
-║      (Fixed: Space Paths, Runtime Host & Android SDK Errors)      ║
+║         🚀  MAUI ULTIMATE BUILD TOOL — VIP PRO MAX V1              ║
+║      (Fixed: Space Paths, Runtime Host & Android SDK Errors)       ║
 ╚════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
 
