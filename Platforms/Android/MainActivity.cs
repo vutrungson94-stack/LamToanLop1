@@ -2,7 +2,7 @@
 {
     // Sử dụng global:: để chỉ định thư viện Android hệ thống, tránh xung đột với namespace hiện tại
     [global::Android.App.Activity(
-        Theme = "@style/MainTheme",
+        Theme = "@style/Maui.SplashTheme",
         MainLauncher = true,
         LaunchMode = global::Android.Content.PM.LaunchMode.SingleTop,
         ConfigurationChanges = global::Android.Content.PM.ConfigChanges.ScreenSize |

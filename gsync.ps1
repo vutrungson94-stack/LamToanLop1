@@ -238,7 +238,10 @@ $hasCode      = $stagedFinal | Where-Object { $_ -match '\.(cs|xaml|razor)$' }
 $suggestion = if ($hasWorkflow)   { "ci: cập nhật workflow CI/CD" }
             elseif ($hasCsproj)   { "build: cập nhật cấu hình project" }
             elseif ($hasResources){ "res: cập nhật tài nguyên" }
-            elseif ($hasCode)     { "feat: cập nhật $($hasCode.Count) file code" }
+            elseif ($hasCode) { 
+                $count = if ($hasCode -is [System.Collections.ICollection]) { $hasCode.Count } else { 1 }
+                "feat: cập nhật $count file code" 
+            }
             else                  { "chore: cập nhật lúc $(Get-Date -Format 'HH:mm dd/MM/yyyy')" }
 
 Write-Host "`n💬 Gợi ý: `"$suggestion`"" -ForegroundColor DarkGray
