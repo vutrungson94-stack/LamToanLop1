@@ -1,22 +1,29 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <Shell
-    x:Class="LamToanLop1.AppShell"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:pages="clr-namespace:LamToanLop1.Pages"
-    xmlns:root="clr-namespace:LamToanLop1"
-    xmlns:viewmodels="clr-namespace:LamToanLop1.ViewModels"
-    x:DataType="viewmodels:GameViewModel"
-    Shell.FlyoutBehavior="Disabled">
+    x:Class="LamToanLop1.AppShell">
 
     <ShellContent
-        Title="Loading"
+        Title="Loading..."
         ContentTemplate="{DataTemplate pages:SplashPage}"
-        Route="SplashPage" />
+        Route="SplashPage"
+        Shell.FlyoutBehavior="Disabled" />
 
     <ShellContent
         Title="Bé làm toán lớp 1"
-        ContentTemplate="{DataTemplate root:MainPage}"
+        ContentTemplate="{DataTemplate pages:MainPage}"
         Route="MainPage" />
+
+    <ShellContent
+        Title="Bé Khám Phá Thế Giới Động Vật"
+        ContentTemplate="{DataTemplate pages:AnimalPage}"
+        Route="AnimalPage" />
+
+    <ShellContent
+        Title="Bé Thử Tài Toán Học"
+        ContentTemplate="{DataTemplate pages:GamePage}"
+        Route="GamePage" />
 
 </Shell>

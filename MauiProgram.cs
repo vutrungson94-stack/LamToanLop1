@@ -43,8 +43,6 @@ public static class MauiProgram
         builder.Services.AddTransient<AnimalPage>();
         builder.Services.AddTransient<GameViewModel>();
 
-		builder.Services.AddTransient<GameViewModel>();
-
         return builder.Build();
 	}
 }
