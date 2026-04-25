@@ -1,0 +1,890 @@
+--------- beginning of system
+04-25 19:59:14.973  1967  3899 E ActivityTaskManager: Background activity launch blocked! goo.gle/android-bal [callingPackage: com.halo.wifikey.wifilocating; callingPackageTargetSdk: 35; callingUid: 10058; callingPid: 17135; appSwitchState: 1; callingUidHasVisibleActivity: false; callingUidHasNonAppVisibleWindow: false; callingUidProcState: FOREGROUND_SERVICE; isCallingUidPersistentSystemProcess: false; allowBalExemptionForSystemProcess: false; intent: Intent { flg=0x10000000 xflg=0x4 cmp=com.halo.wifikey.wifilocating/com.wifi.newdam.onep.OnePActivity }; callerApp: ProcessRecord{7ff62f0 17135:com.halo.wifikey.wifilocating:persistent/u0a58}; inVisibleTask: false; balAllowedByPiCreator: BSP.ALLOW_BAL; resultIfPiCreatorAllowsBal: BAL_BLOCK; callerStartMode: MODE_BACKGROUND_ACTIVITY_START_SYSTEM_DEFINED; hasRealCaller: true; isCallForResult: false; isPendingIntent: false; autoOptInReason: notPendingIntent; realCallingPackage: com.halo.wifikey.wifilocating; realCallingPackageTargetSdk: 35; realCallingUid: 10058; realCallingPid: 17135; realCallingUidHasVisibleActivity: false; realCallingUidHasNonAppVisibleWindow: false; realCallingUidProcState: FOREGROUND_SERVICE; isRealCallingUidPersistentSystemProcess: false; originatingPendingIntent: null; realCallerApp: ProcessRecord{7ff62f0 17135:com.halo.wifikey.wifilocating:persistent/u0a58}; realInVisibleTask: false; balAllowedByPiSender: BSP.ALLOW_BAL; resultIfPiSenderAllowsBal: BAL_BLOCK; realCallerStartMode: MODE_BACKGROUND_ACTIVITY_START_SYSTEM_DEFINED; balRequireOptInByPendingIntentCreator: true; balDontBringExistingBackgroundTaskStackToFg: true]
+04-25 19:59:15.018  1967  2315 E ProcessManager: error write exception log
+04-25 19:59:15.059  1967  3899 E ActivityTaskManager: Abort background activity starts from 10058
+04-25 19:59:15.549  1967  3010 E AppOps  : Bad call made by uid 1000. Package "com.google.android.apps.photos" does not belong to uid 1000.
+04-25 19:59:15.556  1967  2315 E ProcessManager: error write exception log
+04-25 19:59:16.193  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 19:59:18.317  2737  2844 E ActivityThread: Failed to find provider info for com.miui.personalassistant.servicedeliver.system.provider
+04-25 19:59:32.674  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:00:16.997 26334 26334 E MiuiPreloadClassImpl: invoke error.
+04-25 20:00:20.934  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:00:31.165  1967  2136 E JobScheduler.SSRU: Job is being prepared but doesn't have a pre-existing accountToJobMap
+04-25 20:00:31.178  1967  2136 E JobScheduler.SSRU: Job is being prepared but doesn't have a pre-existing accountToJobMap
+04-25 20:00:31.423 26362 26362 E MiuiPreloadClassImpl: invoke error.
+04-25 20:00:31.423 26363 26363 E MiuiPreloadClassImpl: invoke error.
+04-25 20:00:31.773 26363 26363 E TurboSchedMonitor: failed to find setSchedAffinity method com.xiaomi.mipicks
+04-25 20:00:32.142  1967  1981 E JobScheduler.SSRU: Job is being prepared but doesn't have a pre-existing accountToJobMap
+04-25 20:00:32.490  1967  1980 E JobScheduler.SSRU: Job is being prepared but doesn't have a pre-existing accountToJobMap
+04-25 20:00:40.124  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:01:19.404  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: Cannot acquire BluetoothActivityEnergyInfo
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: java.util.concurrent.ExecutionException: java.lang.RuntimeException: error: 11
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:372)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2072)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:192)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectStats(BluetoothPowerStatsCollector.java:155)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector.collectAndDeliverStats(PowerStatsCollector.java:176)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: Caused by: java.lang.RuntimeException: error: 11
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector$1.onBluetoothActivityEnergyInfoError(BluetoothPowerStatsCollector.java:181)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.lambda$onBluetoothActivityEnergyInfoAvailable$0(BluetoothAdapter.java:1097)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.SystemServerInitThreadPool$$ExternalSyntheticLambda0.execute(D8$$SyntheticClass:0)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.onBluetoothActivityEnergyInfoAvailable(BluetoothAdapter.java:1095)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.IBluetoothActivityEnergyInfoListener$Stub.onTransact(IBluetoothActivityEnergyInfoListener.java:98)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransactInternal(Binder.java:1433)
+04-25 20:01:47.131  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransact(Binder.java:1372)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: Cannot acquire BluetoothActivityEnergyInfo
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: java.util.concurrent.ExecutionException: java.lang.RuntimeException: error: 11
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:372)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2072)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:192)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectStats(BluetoothPowerStatsCollector.java:155)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector.collectAndDeliverStats(PowerStatsCollector.java:176)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: Caused by: java.lang.RuntimeException: error: 11
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector$1.onBluetoothActivityEnergyInfoError(BluetoothPowerStatsCollector.java:181)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.lambda$onBluetoothActivityEnergyInfoAvailable$0(BluetoothAdapter.java:1097)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.SystemServerInitThreadPool$$ExternalSyntheticLambda0.execute(D8$$SyntheticClass:0)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.onBluetoothActivityEnergyInfoAvailable(BluetoothAdapter.java:1095)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.IBluetoothActivityEnergyInfoListener$Stub.onTransact(IBluetoothActivityEnergyInfoListener.java:98)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransactInternal(Binder.java:1433)
+04-25 20:01:47.282  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransact(Binder.java:1372)
+04-25 20:01:50.695  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:02:21.283  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:03:15.871  1967  2315 E ProcessManager: error write exception log
+04-25 20:03:16.035 26683 26683 E MiuiPreloadClassImpl: invoke error.
+04-25 20:03:16.208 26683 26683 E TurboSchedMonitor: failed to find setSchedAffinity method com.ss.android.ugc.trill
+04-25 20:03:16.434  1967  2315 E ProcessManager: error write exception log
+04-25 20:03:16.676  1967  2315 E ProcessManager: error write exception log
+04-25 20:03:16.751 26683 26683 E TurboSchedMonitor: failed to find setSchedAffinity method com.ss.android.ugc.trill
+04-25 20:03:16.944  1967  2315 E ProcessManager: error write exception log
+04-25 20:03:17.034  1967  2315 E ProcessManager: error write exception log
+04-25 20:03:17.053  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:03:17.053  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:03:17.053  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:03:17.053  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:03:17.053  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:03:17.359 26683 26824 E ActivityThread: Failed to find provider info for com.ss.android.ugc.trill.apm
+04-25 20:03:17.361 26683 26824 E ActivityThread: Failed to find provider info for com.ss.android.ugc.trill.apm
+04-25 20:03:17.366 26683 26824 E ActivityThread: Failed to find provider info for com.ss.android.ugc.trill.apm
+04-25 20:03:17.713  1967  2315 E ProcessManager: error write exception log
+04-25 20:03:48.776 26888 26888 E MiuiPreloadClassImpl: invoke error.
+04-25 20:03:49.588 26888 26888 E TurboSchedMonitor: failed to find setSchedAffinity method com.miui.android.fashiongallery
+04-25 20:03:49.630 26888 26888 E TurboSchedMonitor: failed to find setSchedAffinity method com.miui.android.fashiongallery
+04-25 20:03:49.928 26888 26888 E TurboSchedMonitor: failed to find setSchedAffinity method com.miui.android.fashiongallery
+04-25 20:03:49.933 26888 26888 E TurboSchedMonitor: failed to find setSchedAffinity method com.miui.android.fashiongallery
+04-25 20:03:50.067  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:03:50.099 26888 26888 E TurboSchedMonitor: failed to find setSchedAffinity method com.miui.android.fashiongallery
+04-25 20:03:50.167 26888 26888 E TurboSchedMonitor: failed to find setSchedAffinity method com.miui.android.fashiongallery
+04-25 20:03:50.414 26945 26945 E MiuiPreloadClassImpl: invoke error.
+04-25 20:04:11.440  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:04:36.723  3908 10489 E ActivityThread: Failed to find provider info for gmail-ofls
+04-25 20:04:37.034  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:04:45.953  3908 10489 E ActivityThread: Failed to find provider info for gmail-ofls
+04-25 20:06:16.634  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:06:38.654  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:06:38.655  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:06:38.656  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:06:38.656  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:06:38.656  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:08:45.845  6885  6885 E IMiCharge: MiCharge method 4 val = None
+04-25 20:08:45.988  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:10:33.952 27188 27188 E MiuiPreloadClassImpl: invoke error.
+04-25 20:10:34.021 27188 27188 E TurboSchedMonitor: failed to find setSchedAffinity method com.facebook.appmanager
+04-25 20:10:34.033 27188 27188 E TurboSchedMonitor: failed to find setSchedAffinity method com.facebook.appmanager
+04-25 20:10:34.043 27188 27188 E TurboSchedMonitor: failed to find setSchedAffinity method com.facebook.appmanager
+04-25 20:10:34.098 27188 27188 E TurboSchedMonitor: failed to find setSchedAffinity method com.facebook.appmanager
+04-25 20:10:34.913 27234 27234 E MiuiPreloadClassImpl: invoke error.
+04-25 20:10:43.338 27188 27229 E ActivityThread: Failed to find provider info for com.facebook.appmanager.nekodirect
+04-25 20:10:48.061  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:14:56.266  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: Cannot acquire BluetoothActivityEnergyInfo
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: java.util.concurrent.ExecutionException: java.lang.RuntimeException: error: 11
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:372)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2072)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:192)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectStats(BluetoothPowerStatsCollector.java:155)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector.collectAndDeliverStats(PowerStatsCollector.java:176)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: Caused by: java.lang.RuntimeException: error: 11
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector$1.onBluetoothActivityEnergyInfoError(BluetoothPowerStatsCollector.java:181)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.lambda$onBluetoothActivityEnergyInfoAvailable$0(BluetoothAdapter.java:1097)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.SystemServerInitThreadPool$$ExternalSyntheticLambda0.execute(D8$$SyntheticClass:0)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.onBluetoothActivityEnergyInfoAvailable(BluetoothAdapter.java:1095)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.IBluetoothActivityEnergyInfoListener$Stub.onTransact(IBluetoothActivityEnergyInfoListener.java:98)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransactInternal(Binder.java:1433)
+04-25 20:14:57.634  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransact(Binder.java:1372)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: Cannot acquire BluetoothActivityEnergyInfo
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: java.util.concurrent.ExecutionException: java.lang.RuntimeException: error: 11
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:372)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2072)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:192)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectStats(BluetoothPowerStatsCollector.java:155)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector.collectAndDeliverStats(PowerStatsCollector.java:176)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: Caused by: java.lang.RuntimeException: error: 11
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector$1.onBluetoothActivityEnergyInfoError(BluetoothPowerStatsCollector.java:181)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.lambda$onBluetoothActivityEnergyInfoAvailable$0(BluetoothAdapter.java:1097)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.SystemServerInitThreadPool$$ExternalSyntheticLambda0.execute(D8$$SyntheticClass:0)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.onBluetoothActivityEnergyInfoAvailable(BluetoothAdapter.java:1095)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.IBluetoothActivityEnergyInfoListener$Stub.onTransact(IBluetoothActivityEnergyInfoListener.java:98)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransactInternal(Binder.java:1433)
+04-25 20:14:57.728  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransact(Binder.java:1372)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: Cannot acquire BluetoothActivityEnergyInfo
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: java.util.concurrent.ExecutionException: java.lang.RuntimeException: error: 11
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:372)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2072)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:192)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectStats(BluetoothPowerStatsCollector.java:155)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector.collectAndDeliverStats(PowerStatsCollector.java:176)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: Caused by: java.lang.RuntimeException: error: 11
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector$1.onBluetoothActivityEnergyInfoError(BluetoothPowerStatsCollector.java:181)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.lambda$onBluetoothActivityEnergyInfoAvailable$0(BluetoothAdapter.java:1097)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.SystemServerInitThreadPool$$ExternalSyntheticLambda0.execute(D8$$SyntheticClass:0)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.onBluetoothActivityEnergyInfoAvailable(BluetoothAdapter.java:1095)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.IBluetoothActivityEnergyInfoListener$Stub.onTransact(IBluetoothActivityEnergyInfoListener.java:98)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransactInternal(Binder.java:1433)
+04-25 20:14:57.980  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransact(Binder.java:1372)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: Cannot acquire BluetoothActivityEnergyInfo
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: java.util.concurrent.ExecutionException: java.lang.RuntimeException: error: 11
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:372)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2072)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:192)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectStats(BluetoothPowerStatsCollector.java:155)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector.collectAndDeliverStats(PowerStatsCollector.java:176)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: Caused by: java.lang.RuntimeException: error: 11
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector$1.onBluetoothActivityEnergyInfoError(BluetoothPowerStatsCollector.java:181)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.lambda$onBluetoothActivityEnergyInfoAvailable$0(BluetoothAdapter.java:1097)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.SystemServerInitThreadPool$$ExternalSyntheticLambda0.execute(D8$$SyntheticClass:0)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.onBluetoothActivityEnergyInfoAvailable(BluetoothAdapter.java:1095)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.IBluetoothActivityEnergyInfoListener$Stub.onTransact(IBluetoothActivityEnergyInfoListener.java:98)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransactInternal(Binder.java:1433)
+04-25 20:14:58.063  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransact(Binder.java:1372)
+04-25 20:15:19.996  6885  6885 E IMiCharge: MiCharge method 4 val = None
+04-25 20:17:37.948  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: Cannot acquire BluetoothActivityEnergyInfo
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: java.util.concurrent.ExecutionException: java.lang.RuntimeException: error: 11
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:372)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2072)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:192)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectStats(BluetoothPowerStatsCollector.java:155)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector.collectAndDeliverStats(PowerStatsCollector.java:176)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: Caused by: java.lang.RuntimeException: error: 11
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector$1.onBluetoothActivityEnergyInfoError(BluetoothPowerStatsCollector.java:181)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.lambda$onBluetoothActivityEnergyInfoAvailable$0(BluetoothAdapter.java:1097)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at com.android.server.SystemServerInitThreadPool$$ExternalSyntheticLambda0.execute(D8$$SyntheticClass:0)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.onBluetoothActivityEnergyInfoAvailable(BluetoothAdapter.java:1095)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.bluetooth.IBluetoothActivityEnergyInfoListener$Stub.onTransact(IBluetoothActivityEnergyInfoListener.java:98)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransactInternal(Binder.java:1433)
+04-25 20:17:38.066  1967  2032 E BluetoothPowerStatsCollector: 	at android.os.Binder.execTransact(Binder.java:1372)
+04-25 20:19:33.790  1967  1967 E ChargeIntentReceiver: notifyChange failed
+04-25 20:19:33.834  6885  6885 E IMiCharge: MiCharge method 4 val = None
+04-25 20:19:34.407  6885  6885 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:34.438  6885  6885 E IMiCharge: MiCharge method 19 val = 0
+04-25 20:19:34.450  1967  2016 E IMiCharge: MiCharge method 14 val = 0
+04-25 20:19:34.461  1967  2016 E IMiCharge: MiCharge method 13 val = 
+04-25 20:19:34.593  1967  5572 E VibratorManagerServiceImpl: vibrationThreadSetParameters
+04-25 20:19:34.650  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:34.712  1967  1967 E ChargeIntentReceiver: notifyChange failed
+04-25 20:19:35.002 27345 27345 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:35.179  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:35.322  6885  6885 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:35.523  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:35.605  1967  2136 E JobScheduler.SSRU: Job is being prepared but doesn't have a pre-existing accountToJobMap
+04-25 20:19:35.656  1967  2032 E BatteryStatsService: note track volume change AudioToPower BatteryStatsservices 1000 6885 729 1.0 1.0
+04-25 20:19:35.670  1967  2032 E BatteryStatsService: note track volume change AudioToPower BatteryStatsservices 1000 6885 729 1.0 1.0
+04-25 20:19:35.670  1967  2032 E BatteryStatsService: note StartAudioToPower BatteryStatsservices1000 6885 729 101 2
+04-25 20:19:35.674  1967  2032 E BatteryStatsService: note device change AudioToPower BatteryStatsservices 1000 6885 729 2
+04-25 20:19:35.686  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:19:35.746  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:35.776  1967  1985 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:35.956  1967  2032 E BatteryStatsService: note final volume change AudioToPower BatteryStatsservices 1000 6885 729 0.044668663
+04-25 20:19:35.960 27410 27410 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:36.153  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:36.224  1967  2247 E NotificationVibratorHelper: Error creating vibration waveform with pattern: [0]
+04-25 20:19:36.272  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:36.273  1967  1967 E ScreenIntentReceiver: notifyChange failed
+04-25 20:19:36.477  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:36.486  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:36.486  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:36.486  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:36.486  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:36.739  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:36.789  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:37.141  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:37.151  1967  2032 E BatteryStatsService: note final volume change AudioToPower BatteryStatsservices 1000 6885 729 0.0
+04-25 20:19:37.165  1967  2032 E BatteryStatsService: note track volume change AudioToPower BatteryStatsservices 1000 6885 729 1.0 1.0
+04-25 20:19:37.195  1967  2032 E BatteryStatsService: note StopAudioToPower BatteryStatsservices1000 6885 729 101 2
+04-25 20:19:37.296  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:37.453 27487 27487 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:37.615  1967  2247 E NotificationVibratorHelper: Error creating vibration waveform with pattern: [0]
+04-25 20:19:37.643  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:37.661  6885  8532 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:37.792  1967  2032 E BatteryStatsService: note track volume change AudioToPower BatteryStatsservices 1000 2719 737 1.0 1.0
+04-25 20:19:37.792  1967  2032 E BatteryStatsService: note track volume change AudioToPower BatteryStatsservices 1000 2719 737 1.0 1.0
+04-25 20:19:37.804  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:37.828  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:37.842  1967  2032 E BatteryStatsService: note StartAudioToPower BatteryStatsservices1000 2719 737 102 2
+04-25 20:19:37.859  1967  2032 E BatteryStatsService: note device change AudioToPower BatteryStatsservices 1000 2719 737 2
+04-25 20:19:37.975  1967  2032 E BatteryStatsService: note final volume change AudioToPower BatteryStatsservices 1000 2719 737 0.08912554
+04-25 20:19:38.102  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:38.242  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:38.317  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:38.623  1967  2032 E BatteryStatsService: note StopAudioToPower BatteryStatsservices1000 2719 737 102 2
+04-25 20:19:38.670  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:38.830  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:38.958  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:39.340  6885  8411 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:19:39.548  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:40.067 27598 27598 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:40.303 27598 27598 E TurboSchedMonitor: failed to find setSchedAffinity method com.android.camera
+04-25 20:19:40.386 27628 27628 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:40.590 27676 27676 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:40.655 27685 27685 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:40.690  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:19:40.769  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:40.942  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:41.092 27792 27792 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:41.138 27685 27685 E TurboSchedMonitor: failed to find setSchedAffinity method com.google.android.apps.tachyon
+04-25 20:19:41.755 27873 27873 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:41.875 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:41.899 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:41.976  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:41.990 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:42.070 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:42.161 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:42.249 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:42.260 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:42.267 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:42.296 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:42.470  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:43.140 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:43.324 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:43.407 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:43.422 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:43.600 28026 28026 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:44.109 28175 28175 E MQSEventManagerDelegate: failed to get MQSService.
+04-25 20:19:44.126 28175 28186 E MQSEventManagerDelegate: failed to get MQSService.
+04-25 20:19:44.129 28175 28185 E ForceDarkHelperStubImpl: getForceDarkOriginState transact failed , mService: null
+04-25 20:19:44.255 27873 27873 E TurboSchedMonitor: failed to find setSchedAffinity method vn.com.vng.zalopay
+04-25 20:19:44.982 28264 28264 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:45.091 28265 28265 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:45.217  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:45.419  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:45.694  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:19:45.931  1967  2136 E JobScheduler.SSRU: Job is being prepared but doesn't have a pre-existing accountToJobMap
+04-25 20:19:45.974  1967  2136 E JobScheduler.SSRU: Job is being prepared but doesn't have a pre-existing accountToJobMap
+04-25 20:19:46.465  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:46.465  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:46.465  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:46.465  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:46.465  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:19:46.716 28446 28446 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:47.391  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:47.530  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:47.783  1967  2315 E ProcessManager: error write exception log
+04-25 20:19:50.700  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:19:54.602  1967  1967 E ScreenIntentReceiver: notifyChange failed
+--------- beginning of main
+04-25 20:19:54.675  1967  2136 E AlarmManager: not align this alarm: Alarm{7d7c2f2 type 2 origWhen 10557126 whenElapsed 10557126 android}, reason=0
+04-25 20:19:54.679  1967  2136 E AlarmManager: not align this alarm: Alarm{7c49fc0 type 2 origWhen 10557129 whenElapsed 10557129 android}, reason=0
+04-25 20:19:54.692  2719  2719 E ThemeUtils: View class miuix.androidbasewidget.widget.ClearableEditText is an AppCompat widget that can only be used with a Theme.AppCompat theme (or descendant).
+04-25 20:19:54.695  1507  1577 E VPUD    : [Warning] MV_EXT maybe overwritting (0xffffffff, 0xff000000, 357376)
+04-25 20:19:54.732  1507  1577 E VPUD    : [Warning] MV_EXT maybe overwritting (0xffffffff, 0xff000000, 357376)
+04-25 20:19:54.750  1967  3897 E AlarmManager: not align this alarm: Alarm{7faf07c type 2 origWhen 8817185 whenElapsed 8817185 com.facebook.katana}, reason=0
+04-25 20:19:54.756  2719  2719 E ClockDataUtils: name not found pkg=com.mi.health
+04-25 20:19:54.771  1507  1577 E VPUD    : [Warning] MV_EXT maybe overwritting (0xffffffff, 0xff000000, 357376)
+04-25 20:19:54.776  2719  2719 E DozeService: setDozeScreenState: 1 mPendingBrightness 0 mCurrentBrightness 0
+04-25 20:19:54.802  1967  3897 E AlarmManager: not align this alarm: Alarm{f051bf6 type 2 origWhen 8702451 whenElapsed 8702451 com.android.systemui}, reason=0
+04-25 20:19:54.808  1507  1577 E VPUD    : [Warning] MV_EXT maybe overwritting (0xffffffff, 0xff000000, 357376)
+04-25 20:19:54.841  1507  1577 E VPUD    : [Warning] MV_EXT maybe overwritting (0xffffffff, 0xff000000, 357376)
+04-25 20:19:54.842  2719  2719 E LockScreenMagazinePreView: getFullScreenLayout()  mRemoteFullScreenView:null
+04-25 20:19:54.842  2719  2719 E LockScreenMagazinePreView: getFullScreenLayout()  mRemoteFullScreenView:null
+04-25 20:19:54.872  2719  2719 E LockScreenMagazinePreView: getFullScreenLayout()  mRemoteFullScreenView:null
+04-25 20:19:54.872  2719  2719 E LockScreenMagazinePreView: getFullScreenLayout()  mRemoteFullScreenView:null
+04-25 20:19:54.878  1507  1577 E VPUD    : [Warning] MV_EXT maybe overwritting (0xffffffff, 0xff000000, 357376)
+04-25 20:19:54.913  1507  1577 E VPUD    : [Warning] MV_EXT maybe overwritting (0xffffffff, 0xff000000, 357376)
+04-25 20:19:54.930  2719  2719 E AnimationHelper: com.android.keyguard.clock.animation.AnimationHelper@6393ad3 doAnimationToNotification hasNotification: true, fromKeyguard: true, mHasNotification: true, sToAod: true
+04-25 20:19:54.941  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:19:54.957  2719  2719 E DozeService: setDozeScreenState: 3 mPendingBrightness 0 mCurrentBrightness 0
+04-25 20:19:54.991  1967  2228 E WifiStaIfaceAidlImpl: setDtimMultiplier failed with service-specific exception: android.os.ServiceSpecificException:  (code 4)
+04-25 20:19:55.026  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:19:55.034  1267  1267 E MI-SF   : sendMessageSync sendMessageSync stateIndex:3 value:1 done
+04-25 20:19:55.040  2719 27359 E send_data_to_xlog: send_video_play_to_xlog, start
+04-25 20:19:55.057  2719 27359 E xlog_client: _xlog_write_flat_msg:fail to  send msg {"name":"video_play","audio_event":{"video_play_framerate":"0","video_play_hdr":"0","video_play_width_height":"1080_1284","video_play_framratecal":"60","video_play_frc":"0","video_play_aie":"0","video_play_ais":"0","video_play_ace":"0","video_play_dolbyvision":"-1", "video_play_codecdomain":"2", "video_play_durationsec":"19","video_play_heif_decode":"0","video_play_heif_encode":"0","video_play_codec":"video/avc", "video_play_app":"audio_app_other"},"dgt":"null","audio_ext":"null" }
+04-25 20:19:55.067  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:19:55.069  2719 27342 E libffmpeg4.3_log: [AVIOContext @ 0xb400006ec6727970] Statistics: 34238297 bytes read, 7 seeks
+04-25 20:19:55.073  2719  3146 E GraphicsTracker: cannot deallocate due to being stopped
+04-25 20:19:55.074  2719  3146 E GraphicsTracker: cannot deallocate due to being stopped
+04-25 20:19:55.081  2719  3146 E Surface : freeAllBuffers: 1 buffers were freed while being dequeued!
+04-25 20:19:55.094  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:19:55.106  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:19:55.113  1967  2279 E AlarmManager: not align this alarm: Alarm{d8f96f type 3 origWhen 315368697556 whenElapsed 315368697556 com.google.android.gms}, reason=3
+04-25 20:19:55.126  1967  5489 E ActivityTaskManager: Background activity launch blocked! goo.gle/android-bal [callingPackage: com.halo.wifikey.wifilocating; callingPackageTargetSdk: 35; callingUid: 10058; callingPid: 17135; appSwitchState: 1; callingUidHasVisibleActivity: false; callingUidHasNonAppVisibleWindow: false; callingUidProcState: FOREGROUND_SERVICE; isCallingUidPersistentSystemProcess: false; allowBalExemptionForSystemProcess: false; intent: Intent { flg=0x10000000 xflg=0x4 cmp=com.halo.wifikey.wifilocating/com.wifi.newdam.onep.OnePActivity }; callerApp: ProcessRecord{7ff62f0 17135:com.halo.wifikey.wifilocating:persistent/u0a58}; inVisibleTask: false; balAllowedByPiCreator: BSP.ALLOW_BAL; resultIfPiCreatorAllowsBal: BAL_BLOCK; callerStartMode: MODE_BACKGROUND_ACTIVITY_START_SYSTEM_DEFINED; hasRealCaller: true; isCallForResult: false; isPendingIntent: false; autoOptInReason: notPendingIntent; realCallingPackage: com.halo.wifikey.wifilocating; realCallingPackageTargetSdk: 35; realCallingUid: 10058; realCallingPid: 17135; realCallingUidHasVisibleActivity: false; realCallingUidHasNonAppVisibleWindow: false; realCallingUidProcState: FOREGROUND_SERVICE; isRealCallingUidPersistentSystemProcess: false; originatingPendingIntent: null; realCallerApp: ProcessRecord{7ff62f0 17135:com.halo.wifikey.wifilocating:persistent/u0a58}; realInVisibleTask: false; balAllowedByPiSender: BSP.ALLOW_BAL; resultIfPiSenderAllowsBal: BAL_BLOCK; realCallerStartMode: MODE_BACKGROUND_ACTIVITY_START_SYSTEM_DEFINED; balRequireOptInByPendingIntentCreator: true; balDontBringExistingBackgroundTaskStackToFg: true]
+04-25 20:19:55.129  2719  3613 E VRI[gxzw_anim]: performDraw: Not drawing due to screen off
+04-25 20:19:55.188  1967  5489 E ActivityTaskManager: Abort background activity starts from 10058
+04-25 20:19:55.217  1599  2187 E libsensor-displayInfoManager: power state = 0
+04-25 20:19:55.224  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:55.226  1267  1267 E MI-SF   : surfaceflinger setAffinity success
+04-25 20:19:55.231  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:55.239  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:55.249  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:55.252  1599 22609 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:55.253  1218  1218 E XMLParser: Could not access the XML file at odm/etc/dsi_o6_41_02_0b_dsc_vdo_mi.xml
+04-25 20:19:55.258 18716 18716 E AD-PLUGIN-AdRequestManager: cancel runnable
+04-25 20:19:55.268  1218  1218 E XMLParser: Could not access the XML file at odm/etc/dsi_o6_41_02_0b_dsc_vdo_mi.xml
+04-25 20:19:55.278  1599 22609 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:55.386  2719  2719 E AnimationHelper: com.android.keyguard.clock.animation.AnimationHelper@6393ad3 doAnimationToNotification hasNotification: true, fromKeyguard: true, mHasNotification: true, sToAod: true
+04-25 20:19:55.403  2719  2719 E AnimationHelper: com.android.keyguard.clock.animation.AnimationHelper@6393ad3 doAnimationToNotification hasNotification: true, fromKeyguard: true, mHasNotification: true, sToAod: true
+04-25 20:19:55.406  1967  1980 E AlarmManager: not align this alarm: Alarm{95d97e6 type 2 origWhen 30280605 whenElapsed 30280605 com.android.systemui}, reason=3
+04-25 20:19:55.407  1967  1980 E AlarmManager: not align this alarm: Alarm{305f127 type 2 origWhen 267878742 whenElapsed 267878742 com.android.systemui}, reason=3
+04-25 20:19:55.431  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:55.436 26363 26473 E MiPicks-PrefUtils: Unknown sharedpreferences file name app_auto_download
+04-25 20:19:55.437  2719  2719 E AnimationHelper: com.android.keyguard.clock.animation.AnimationHelper@6393ad3 doAnimationToNotification hasNotification: true, fromKeyguard: true, mHasNotification: true, sToAod: true
+04-25 20:19:55.438  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:55.456 28544 28544 E Zygote  : process_name_ptr:28544 com.xiaomi.discover
+04-25 20:19:55.457 28544 28544 E Zygote  : SetMemoryProtected process_name_ptr:28544 com.xiaomi.discover
+04-25 20:19:55.459  1599 22609 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:55.607  2719  2719 E AnimationHelper: com.android.keyguard.clock.animation.AnimationHelper@6393ad3 doAnimationToNotification hasNotification: true, fromKeyguard: true, mHasNotification: true, sToAod: true
+04-25 20:19:55.619 28544 28544 E MiuiPreloadClassImpl: invoke error.
+04-25 20:19:55.632 28544 28555 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+04-25 20:19:55.632  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:55.638  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:55.643  2719  2719 E AnimationHelper: com.android.keyguard.clock.animation.AnimationHelper@6393ad3 doAnimationToNotification hasNotification: true, fromKeyguard: true, mHasNotification: true, sToAod: true
+04-25 20:19:55.663  1599 22609 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:55.680 28544 28544 E TurboSchedMonitor: failed to find setSchedAffinity method com.xiaomi.discover
+04-25 20:19:55.680 28544 28544 E MPMsgCenterWrapper: init----------------
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: com.tiktok.manager
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: android.content.pm.PackageManager$NameNotFoundException: com.tiktok.manager
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ApplicationPackageManager.getApplicationInfoAsUser(ApplicationPackageManager.java:549)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ApplicationPackageManager.getApplicationInfo(ApplicationPackageManager.java:532)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ApplicationPackageManager.getApplicationInfo(ApplicationPackageManager.java:526)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.utils.c.a(SourceFile:30)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.process.ProcessServiceImpl.v1(SourceFile:9)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.process.ProcessServiceImpl.init(SourceFile:6)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.process.c.b(SourceFile:14)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.MPMsgCenterWrapper.d(SourceFile:18)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.d.c(SourceFile:8)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.platform.c.a(SourceFile:10)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.platform.b.a(SourceFile:11)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.market.MarketApp.o(SourceFile:83)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.market.MarketApp.onCreate(SourceFile:39)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.Instrumentation.callApplicationOnCreate(Instrumentation.java:1392)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ActivityThread.handleBindApplication(ActivityThread.java:8730)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ActivityThread.-$$Nest$mhandleBindApplication(Unknown Source:0)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2808)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.os.Handler.dispatchMessage(Handler.java:110)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ActivityThread.main(ActivityThread.java:10054)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at java.lang.reflect.Method.invoke(Native Method)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:616)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1115)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: com.xiaomi.demo
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: android.content.pm.PackageManager$NameNotFoundException: com.xiaomi.demo
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ApplicationPackageManager.getApplicationInfoAsUser(ApplicationPackageManager.java:549)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ApplicationPackageManager.getApplicationInfo(ApplicationPackageManager.java:532)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ApplicationPackageManager.getApplicationInfo(ApplicationPackageManager.java:526)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.utils.c.a(SourceFile:30)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.process.ProcessServiceImpl.v1(SourceFile:9)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.process.ProcessServiceImpl.init(SourceFile:6)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.process.c.b(SourceFile:14)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.MPMsgCenterWrapper.d(SourceFile:18)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.core.d.c(SourceFile:8)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.platform.c.a(SourceFile:10)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.mipicks.openstore.platform.b.a(SourceFile:11)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.market.MarketApp.o(SourceFile:83)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.xiaomi.market.MarketApp.onCreate(SourceFile:39)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.Instrumentation.callApplicationOnCreate(Instrumentation.java:1392)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ActivityThread.handleBindApplication(ActivityThread.java:8730)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ActivityThread.-$$Nest$mhandleBindApplication(Unknown Source:0)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2808)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.os.Handler.dispatchMessage(Handler.java:110)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at android.app.ActivityThread.main(ActivityThread.java:10054)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at java.lang.reflect.Method.invoke(Native Method)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:616)
+04-25 20:19:55.682 28544 28544 E MsgCenterConfig: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1115)
+04-25 20:19:55.690 28544 28544 E TurboSchedMonitor: failed to find setSchedAffinity method com.xiaomi.discover
+04-25 20:19:55.702  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:19:55.833  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:55.841  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:55.862  1599 22609 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:56.101  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:56.108  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:56.110  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:56.116  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:56.131  1599 22609 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:56.132 28544 28617 E xiaomi.discover: No package ID 6a found for resource ID 0x6a0b0013.
+04-25 20:19:56.139  1599  1613 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:56.666  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:56.671  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:56.694  1599  1613 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:56.752  2719  4338 E DozeHost: NativeHeapAllocatedSize: 174891504
+04-25 20:19:57.077  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:57.082  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:57.104  1599  1613 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:57.880  8705 10063 E FileUtil: FileUtil
+04-25 20:19:57.880  8705 10063 E FileUtil: java.io.IOException: read failed: ENODATA (No data available)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at libcore.io.IoBridge.read(IoBridge.java:614)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.io.FileInputStream.read(FileInputStream.java:353)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at sun.nio.cs.StreamDecoder.readBytes(StreamDecoder.java:309)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at sun.nio.cs.StreamDecoder.implRead(StreamDecoder.java:373)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at sun.nio.cs.StreamDecoder.read(StreamDecoder.java:183)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.io.InputStreamReader.read(InputStreamReader.java:177)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.io.BufferedReader.fill(BufferedReader.java:172)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.io.BufferedReader.readLine(BufferedReader.java:337)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.io.BufferedReader.readLine(BufferedReader.java:403)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.utils.FileUtil.getFileString(FileUtil.java:7)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.utils.FileUtil.getFileString(FileUtil.java:2)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.collector.ThermalPlusCollector.readNtcTemp(ThermalPlusCollector.java:17)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.collector.ThermalPlusCollector.lambda$getNtcThermalTemp$0(ThermalPlusCollector.java:11)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.collector.ThermalPlusCollector.a(ThermalPlusCollector.java:1)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.collector.g.apply(R8$$SyntheticClass:5)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.Collectors.lambda$uniqKeysMapAccumulator$1(Collectors.java:180)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.Collectors$$ExternalSyntheticLambda1.accept(D8$$SyntheticClass:0)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.ReduceOps$3ReducingSink.accept(ReduceOps.java:169)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.HashMap$EntrySpliterator.forEachRemaining(HashMap.java:1856)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:574)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:564)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.ReduceOps$ReduceOp.evaluateSequential(ReduceOps.java:921)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:267)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.ReferencePipeline.collect(ReferencePipeline.java:748)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.collector.ThermalPlusCollector.getNtcThermalTemp(ThermalPlusCollector.java:25)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.collector.ThermalPlusCollector.collect(ThermalPlusCollector.java:41)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.collector.BaseCollector.collectData(BaseCollector.java:1)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.q.apply(R8$$SyntheticClass:3)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:227)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.ReferencePipeline$2$1.accept(ReferencePipeline.java:209)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:227)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.HashMap$KeySpliterator.forEachRemaining(HashMap.java:1713)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:574)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:564)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.ReduceOps$ReduceOp.evaluateSequential(ReduceOps.java:921)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:267)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at java.util.stream.ReferencePipeline.collect(ReferencePipeline.java:748)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.CollectorManager$TriggerCallback.collect(CollectorManager.java:45)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.trigger.BaseTrigger.handleRuleMessage(BaseTrigger.java:94)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.trigger.ForegroundTrigger.onStateChanged(ForegroundTrigger.java:13)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at com.miui.powerkeeper.thermalcollector.trigger.BaseTrigger$TriggerHandler.handleMessage(BaseTrigger.java:3)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at android.os.Handler.dispatchMessage(Handler.java:110)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:19:57.880  8705 10063 E FileUtil: Caused by: android.system.ErrnoException: read failed: ENODATA (No data available)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at libcore.io.Linux.readBytes(Native Method)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at libcore.io.Linux.read(Linux.java:231)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at libcore.io.ForwardingOs.read(ForwardingOs.java:624)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at libcore.io.BlockGuardOs.read(BlockGuardOs.java:325)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at libcore.io.ForwardingOs.read(ForwardingOs.java:624)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	at libcore.io.IoBridge.read(IoBridge.java:604)
+04-25 20:19:57.880  8705 10063 E FileUtil: 	... 44 more
+04-25 20:19:58.875  2719  2719 E DozeService: setDozeScreenState: 1 mPendingBrightness 0 mCurrentBrightness 4095
+04-25 20:19:58.877  1599  2185 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : first_time getDispDump Enable ret = 0
+04-25 20:19:58.879  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:58.893  2719  2719 E AnimationHelper: com.android.keyguard.clock.animation.AnimationHelper@6393ad3 doAnimationToNotification hasNotification: true, fromKeyguard: true, mHasNotification: true, sToAod: true
+04-25 20:19:58.896  1267  1267 E HwcComposer: presentOrValidateDisplay 0 presentFence:-1
+04-25 20:19:58.899  1267  1267 E MI-SF   : sendMessageSync sendMessageSync stateIndex:3 value:0 done
+04-25 20:19:58.902  1599  1613 E libsensor-frameBufferManager: frameBufferManager_sensor_debug : getDispDump_Disable ret = 0
+04-25 20:19:58.909  1599  2187 E libsensor-displayInfoManager: power state = 0
+04-25 20:19:59.573 27873 28624 E FilePhenotypeFlags: Config package com.google.android.gms.clearcut_client#vn.com.vng.zalopay cannot use FILE backing without declarative registration. See go/phenotype-android-integration#phenotype for more information. This will lead to stale flags.
+04-25 20:19:59.600 27873 28624 E FilePhenotypeFlags: Config package com.google.android.gms.clearcut_client#vn.com.vng.zalopay cannot use FILE backing without declarative registration. See go/phenotype-android-integration#phenotype for more information. This will lead to stale flags.
+04-25 20:19:59.600 27873 28624 E FilePhenotypeFlags: Config package com.google.android.gms.clearcut_client#vn.com.vng.zalopay cannot use FILE backing without declarative registration. See go/phenotype-android-integration#phenotype for more information. This will lead to stale flags.
+04-25 20:20:00.027  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:00.706  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:03.636 26363 26528 E FirebaseMessaging: Topic operation failed: SERVICE_NOT_AVAILABLE. Will retry Topic operation.
+04-25 20:20:04.568  1967  2159 E AlarmManager: not align this alarm: Alarm{fa61f7 type 3 origWhen 8762451 whenElapsed 8762451 android}, reason=1
+04-25 20:20:04.583  2719  2719 E AnimationHelper: updateTime sToAod:true mHasNotification: true, mClockType: classic
+04-25 20:20:04.589  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:04.591  1967  1985 E IMiCharge: MiCharge method 9 val = 298
+04-25 20:20:04.591  1967  1967 E AlarmManager: not align this alarm: Alarm{b692693 type 2 origWhen 8737039 whenElapsed 8737039 android}, reason=1
+04-25 20:20:04.592  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:04.592  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:04.592  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:04.592  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:04.593  1967  1985 E IMiCharge: MiCharge method 10 val = 0
+04-25 20:20:04.606  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:20:04.610  2719  2719 E VRI[StatusBar]: performDraw: Not drawing due to screen off
+04-25 20:20:04.611  2719  2719 E VRI[StatusBar1]: performDraw: Not drawing due to screen off
+04-25 20:20:04.619  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:20:04.632  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:20:05.030  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:05.712  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:06.494 28636 28636 E Zygote  : process_name_ptr:28636 com.google.android.rkpdapp
+04-25 20:20:06.495 28636 28636 E Zygote  : SetMemoryProtected process_name_ptr:28636 com.google.android.rkpdapp
+04-25 20:20:06.599 28636 28636 E MiuiPreloadClassImpl: invoke error.
+04-25 20:20:06.617 28636 28647 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+04-25 20:20:06.671   627   627 E [MITEE] : Request: 0 Max size: 131072
+04-25 20:20:06.674   627   627 E TEEC    : invoke, command=0x0000008C, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:20:06.674   627   627 E TEEC    : 
+04-25 20:20:06.721   627   627 E [MITEE] : Request: 600 Max size: 131072
+04-25 20:20:06.750   627   627 E TEEC    : invoke, command=0x00000000, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:20:06.750   627   627 E TEEC    : 
+04-25 20:20:06.771   627   627 E [MITEE] : Request: 68 Max size: 131072
+04-25 20:20:06.773   627   627 E TEEC    : invoke, command=0x00000020, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:20:06.773   627   627 E TEEC    : 
+04-25 20:20:06.787   627   627 E [MITEE] : Request: 0 Max size: 131072
+04-25 20:20:06.789   627   627 E TEEC    : invoke, command=0x0000008C, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:20:06.789   627   627 E TEEC    : 
+04-25 20:20:06.789   627   627 E [MITEE] : Request: 0 Max size: 131072
+04-25 20:20:06.791   627   627 E TEEC    : invoke, command=0x0000008C, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:20:06.791   627   627 E TEEC    : 
+04-25 20:20:06.810   627   627 E [MITEE] : Request: 600 Max size: 131072
+04-25 20:20:06.831   627   627 E TEEC    : invoke, command=0x00000000, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:20:06.831   627   627 E TEEC    : 
+04-25 20:20:06.926 28671 28673 E VirtualizationService: avflog: Status(-7, EX_UNSUPPORTED_OPERATION): 'Protected VM support is missing for this operation'
+04-25 20:20:07.047  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:20:10.031  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:10.718  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:13.665  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 430604kb -> 519056kb
+04-25 20:20:14.596  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:14.597  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:14.597  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:14.598  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:14.599  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:15.032  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:15.723  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:16.576  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 519056kb -> 625244kb
+04-25 20:20:18.212  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 625244kb -> 751344kb
+04-25 20:20:18.670  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 751344kb -> 577424kb
+04-25 20:20:19.510  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 577424kb -> 694776kb
+04-25 20:20:20.033  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:20.305  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 694776kb -> 539640kb
+04-25 20:20:20.729  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:21.037  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 539640kb -> 649148kb
+04-25 20:20:25.034  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:25.734  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:30.034  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:30.741  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:34.601  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:34.602  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:34.602  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:34.603  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:34.603  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:34.604  1967  1985 E IMiCharge: MiCharge method 9 val = 298
+04-25 20:20:34.604  1967  1967 E AlarmManager: not align this alarm: Alarm{163b7d type 2 origWhen 8767053 whenElapsed 8767053 android}, reason=1
+04-25 20:20:34.605  1967  1985 E IMiCharge: MiCharge method 10 val = 0
+04-25 20:20:35.035  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:35.747  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:38.158  2702  2702 E SatelliteModemInterface: Error binding to the satellite service. Retrying in 46975 ms.
+04-25 20:20:40.036  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:40.754  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:44.607  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:44.608  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:44.608  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:44.608  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:44.609  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:20:45.037  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:45.758  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:47.488  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 649148kb -> 450944kb
+04-25 20:20:50.038  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:50.763  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:20:55.039  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:20:55.766  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:00.041  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:00.770  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:04.605  1967  2159 E AlarmManager: not align this alarm: Alarm{323eb1b type 3 origWhen 8822451 whenElapsed 8822451 android}, reason=1
+04-25 20:21:04.625  1967  1967 E AlarmManager: not align this alarm: Alarm{a0c1df7 type 2 origWhen 8797075 whenElapsed 8797075 android}, reason=1
+04-25 20:21:04.628  1967  1985 E IMiCharge: MiCharge method 9 val = 299
+04-25 20:21:04.631  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:04.631  1967  1985 E IMiCharge: MiCharge method 10 val = 0
+04-25 20:21:04.631  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:04.632  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:04.632  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:04.632  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:04.650  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:21:04.651  2719  2719 E VRI[StatusBar]: performDraw: Not drawing due to screen off
+04-25 20:21:04.652  2719  2719 E VRI[StatusBar1]: performDraw: Not drawing due to screen off
+04-25 20:21:04.654  2719  2719 E AnimationHelper: updateTime sToAod:true mHasNotification: true, mClockType: classic
+04-25 20:21:04.677  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:21:04.692  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:21:05.044  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:05.776  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:10.045  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:10.785  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:14.636  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:14.636  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:14.637  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:14.637  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:14.637  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:14.859  1967  2122 E AlarmManager: not align this alarm: Alarm{5b22d3d type 3 origWhen 8880785 whenElapsed 8880785 android}, reason=3
+04-25 20:21:14.860  1967  2122 E AlarmManager: not align this alarm: Alarm{d40932 type 2 origWhen 10824663 whenElapsed 10824663 android}, reason=3
+04-25 20:21:14.909 28703 28703 E Zygote  : process_name_ptr:28703 com.android.chrome
+04-25 20:21:14.909 28703 28703 E Zygote  : SetMemoryProtected process_name_ptr:28703 com.android.chrome
+04-25 20:21:15.027 28703 28703 E MiuiPreloadClassImpl: invoke error.
+04-25 20:21:15.046  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:15.049 28703 28714 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+04-25 20:21:15.067 28703 28703 E TurboSchedMonitor: failed to find setSchedAffinity method com.android.chrome
+04-25 20:21:15.141 28703 28703 E TurboSchedMonitor: failed to find setSchedAffinity method com.android.chrome
+04-25 20:21:15.465 28703 28703 E TurboSchedMonitor: failed to find setSchedAffinity method com.android.chrome
+04-25 20:21:15.790  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:15.991 28703 28751 E FilePhenotypeFlags: Config package com.google.android.gms.auth_account_client#com.android.chrome cannot use FILE backing without declarative registration. See go/phenotype-android-integration#phenotype for more information. This will lead to stale flags.
+04-25 20:21:16.030  6220 21615 E adservices.measurement: Measurement API is disabled by kill-switch.
+04-25 20:21:16.364 28777 28777 E Zygote  : process_name_ptr:28777 com.android.htmlviewer:remote
+04-25 20:21:16.365 28777 28777 E Zygote  : SetMemoryProtected process_name_ptr:28777 com.android.htmlviewer:remote
+04-25 20:21:16.484 28777 28777 E MiuiPreloadClassImpl: invoke error.
+04-25 20:21:16.500 28777 28788 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+04-25 20:21:16.601 28703 28703 E TurboSchedMonitor: failed to find setSchedAffinity method com.android.chrome
+04-25 20:21:20.050  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:20.794  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:25.051  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:25.145  2702  2702 E SatelliteModemInterface: Error binding to the satellite service. Retrying in 42103 ms.
+04-25 20:21:25.798  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:26.152 28703 28749 E chromium: [ERROR:components/sync/engine/get_updates_processor.cc:270] PostClientToServerMessage() failed during GetUpdates with error Network error (ERR_NAME_NOT_RESOLVED)
+04-25 20:21:28.695 28703 28749 E chromium: [ERROR:components/sync/engine/get_updates_processor.cc:270] PostClientToServerMessage() failed during GetUpdates with error Network error (ERR_NAME_NOT_RESOLVED)
+04-25 20:21:30.052  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:30.803  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:32.282  6885  6885 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:21:32.282  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:21:32.283  2719  2719 E VRI[StatusBar]: performDraw: Not drawing due to screen off
+04-25 20:21:32.283  2719  2719 E VRI[StatusBar1]: performDraw: Not drawing due to screen off
+04-25 20:21:32.310  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:21:33.766  6885  8532 E IMiCharge: MiCharge method 4 val = USB
+04-25 20:21:34.639  1967  1967 E AlarmManager: not align this alarm: Alarm{c0c9495 type 2 origWhen 8827087 whenElapsed 8827087 android}, reason=1
+04-25 20:21:34.640  1967  1985 E IMiCharge: MiCharge method 9 val = 298
+04-25 20:21:34.640  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:34.640  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:34.640  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:34.641  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:34.641  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:34.643  1967  1985 E IMiCharge: MiCharge method 10 val = 0
+04-25 20:21:35.054  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:35.808  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:40.055  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:40.815  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:44.646  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:44.646  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:44.646  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:44.646  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:44.646  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:21:45.056  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:45.823  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:50.058  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:50.831  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:21:55.059  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:21:55.834  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:00.061  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:00.838  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:03.901 26363 26528 E FirebaseMessaging: Topic operation failed: SERVICE_NOT_AVAILABLE. Will retry Topic operation.
+04-25 20:22:04.640  1967  2159 E AlarmManager: not align this alarm: Alarm{74ec5b0 type 3 origWhen 8882451 whenElapsed 8882451 android}, reason=1
+04-25 20:22:04.664  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:04.664  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:04.664  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:04.664  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:04.664  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:04.666  1967  1967 E AlarmManager: not align this alarm: Alarm{8d28cdc type 2 origWhen 8857113 whenElapsed 8857113 android}, reason=1
+04-25 20:22:04.667  1967  1985 E IMiCharge: MiCharge method 9 val = 303
+04-25 20:22:04.670  1967  1985 E IMiCharge: MiCharge method 10 val = 0
+04-25 20:22:04.673  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:22:04.676  2719  2719 E VRI[StatusBar]: performDraw: Not drawing due to screen off
+04-25 20:22:04.677  2719  2719 E VRI[StatusBar1]: performDraw: Not drawing due to screen off
+04-25 20:22:04.696  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:22:04.698  2719  2719 E AnimationHelper: updateTime sToAod:true mHasNotification: true, mClockType: classic
+04-25 20:22:04.708  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:22:04.723  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:22:05.062  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:05.846  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:07.286  2702  2702 E SatelliteModemInterface: Error binding to the satellite service. Retrying in 39425 ms.
+04-25 20:22:10.064  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:10.852  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:14.668  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:14.668  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:14.668  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:14.668  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:14.669  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:14.836  1967  2983 E AlarmManager: not align this alarm: Alarm{66a1d28 type 2 origWhen 10637286 whenElapsed 10637286 com.google.android.gms}, reason=3
+04-25 20:22:14.857  1967  2984 E AlarmManager: not align this alarm: Alarm{b4ec97d type 2 origWhen 8957303 whenElapsed 8957303 com.google.android.gms}, reason=3
+04-25 20:22:14.909 28845 28845 E Zygote  : process_name_ptr:28845 com.google.android.gm
+04-25 20:22:14.909 28845 28845 E Zygote  : SetMemoryProtected process_name_ptr:28845 com.google.android.gm
+04-25 20:22:15.065  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:15.115 28845 28845 E MiuiPreloadClassImpl: invoke error.
+04-25 20:22:15.155 28845 28857 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+04-25 20:22:15.230 28845 28845 E TurboSchedMonitor: failed to find setSchedAffinity method com.google.android.gm
+04-25 20:22:15.701  1967  2779 E AlarmManager: not align this alarm: Alarm{541a88f type 3 origWhen 8863989 whenElapsed 8863989 android}, reason=3
+04-25 20:22:15.771  1967  2279 E AlarmManager: not align this alarm: Alarm{dc1a87 type 3 origWhen 8880785 whenElapsed 8880785 android}, reason=3
+04-25 20:22:15.858  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: Failed to get service from broker. 
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: java.lang.SecurityException: Unknown calling package name 'com.google.android.gms'.
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3361)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.Parcel.createException(Parcel.java:3345)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.Parcel.readException(Parcel.java:3328)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.Parcel.readException(Parcel.java:3270)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at biww.a(:com.google.android.gms@261533035@26.15.33 (260400-900762463):36)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at biuu.z(:com.google.android.gms@261533035@26.15.33 (260400-900762463):143)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at biar.run(:com.google.android.gms@261533035@26.15.33 (260400-900762463):42)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at cyvu.mz(:com.google.android.gms@261533035@26.15.33 (260400-900762463):1)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at cyvu.dispatchMessage(:com.google.android.gms@261533035@26.15.33 (260400-900762463):5)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:22:16.135 28845 28934 E GoogleApiManager: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: Failed to get service from broker. 
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: java.lang.SecurityException: Unknown calling package name 'com.google.android.gms'.
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3361)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.Parcel.createException(Parcel.java:3345)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.Parcel.readException(Parcel.java:3328)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.Parcel.readException(Parcel.java:3270)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at biww.a(:com.google.android.gms@261533035@26.15.33 (260400-900762463):36)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at biuu.z(:com.google.android.gms@261533035@26.15.33 (260400-900762463):143)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at biar.run(:com.google.android.gms@261533035@26.15.33 (260400-900762463):42)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at cyvu.mz(:com.google.android.gms@261533035@26.15.33 (260400-900762463):1)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at cyvu.dispatchMessage(:com.google.android.gms@261533035@26.15.33 (260400-900762463):5)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:22:16.158 28845 28934 E GoogleApiManager: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:22:20.068  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:20.866  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:25.068  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:25.871  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: Failed to get service from broker. 
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: java.lang.SecurityException: Unknown calling package name 'com.google.android.gms'.
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3361)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.Parcel.createException(Parcel.java:3345)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.Parcel.readException(Parcel.java:3328)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.Parcel.readException(Parcel.java:3270)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at biww.a(:com.google.android.gms@261533035@26.15.33 (260400-900762463):36)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at biuu.z(:com.google.android.gms@261533035@26.15.33 (260400-900762463):143)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at biar.run(:com.google.android.gms@261533035@26.15.33 (260400-900762463):42)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.Handler.handleCallback(Handler.java:995)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at cyvu.mz(:com.google.android.gms@261533035@26.15.33 (260400-900762463):1)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at cyvu.dispatchMessage(:com.google.android.gms@261533035@26.15.33 (260400-900762463):5)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.Looper.loopOnce(Looper.java:267)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.Looper.loop(Looper.java:360)
+04-25 20:22:26.175 28845 28934 E GoogleApiManager: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-25 20:22:30.069  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:30.874  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:34.680  1967  1967 E AlarmManager: not align this alarm: Alarm{c9ca6e6 type 2 origWhen 8887130 whenElapsed 8887130 android}, reason=1
+04-25 20:22:34.681  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:34.681  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:34.682  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:34.682  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:34.682  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:34.686  1967  1985 E IMiCharge: MiCharge method 9 val = 300
+04-25 20:22:34.687  1967  1985 E IMiCharge: MiCharge method 10 val = 0
+04-25 20:22:35.070  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:35.882  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:40.071  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:40.889  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:44.694  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:44.694  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:44.694  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:44.694  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:44.694  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:22:45.072  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:45.894  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:46.740  2702  2702 E SatelliteModemInterface: Error binding to the satellite service. Retrying in 49088 ms.
+04-25 20:22:48.151  3506 27304 E WakeLock: *gms_scheduler*/com.google.android.gms/.udc.service.UdcContextInitService ** IS FORCE-RELEASED ON TIMEOUT ** [CONTEXT service_id=259 ]
+04-25 20:22:48.893  3506 27304 E WakeLock: *gms_scheduler*/com.google.android.gms/.semanticlocationhistory.deidentifieddata.uploads.BatchDeidentifiedDataUploadService ** IS FORCE-RELEASED ON TIMEOUT ** [CONTEXT service_id=259 ]
+04-25 20:22:50.073  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:50.900  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:55.073  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:22:55.906  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:22:57.713  3506 27304 E WakeLock: *gms_scheduler*/com.google.android.gms/.clearcut.uploader.QosUploaderService ** IS FORCE-RELEASED ON TIMEOUT ** [CONTEXT service_id=259 ]
+04-25 20:23:00.074  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:23:00.910  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:23:04.682  1967  2159 E AlarmManager: not align this alarm: Alarm{5b09570 type 3 origWhen 8942451 whenElapsed 8942451 android}, reason=1
+04-25 20:23:04.702  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:04.702  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:04.702  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:04.702  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:04.703  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:04.703  1967  1967 E AlarmManager: not align this alarm: Alarm{1e1989c type 2 origWhen 8917154 whenElapsed 8917154 android}, reason=1
+04-25 20:23:04.706  1967  1985 E IMiCharge: MiCharge method 9 val = 300
+04-25 20:23:04.709  1967  1985 E IMiCharge: MiCharge method 10 val = 0
+04-25 20:23:04.726  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:23:04.728  2719  2719 E VRI[StatusBar]: performDraw: Not drawing due to screen off
+04-25 20:23:04.728  2719  2719 E VRI[StatusBar1]: performDraw: Not drawing due to screen off
+04-25 20:23:04.730  2719  2719 E AnimationHelper: updateTime sToAod:true mHasNotification: true, mClockType: classic
+04-25 20:23:04.754  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:23:04.769  2719  2719 E VRI[NotificationShade]: performDraw: Not drawing due to screen off
+04-25 20:23:05.077  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:23:05.916  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:23:10.079  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:23:10.923  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:23:14.704  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:14.704  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:14.705  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:14.705  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:14.705  1967  2136 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.google.android.apps.turbo
+04-25 20:23:15.082  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:23:15.929  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:23:18.298   627   627 E [MITEE] : Request: 0 Max size: 131072
+04-25 20:23:18.301   627   627 E TEEC    : invoke, command=0x0000008C, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:23:18.301   627   627 E TEEC    : 
+04-25 20:23:18.325   627   627 E [MITEE] : Request: 600 Max size: 131072
+04-25 20:23:18.348   627   627 E TEEC    : invoke, command=0x00000000, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:23:18.348   627   627 E TEEC    : 
+04-25 20:23:18.371   627   627 E [MITEE] : Request: 68 Max size: 131072
+04-25 20:23:18.374   627   627 E TEEC    : invoke, command=0x00000020, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:23:18.374   627   627 E TEEC    : 
+04-25 20:23:18.381   627   627 E [MITEE] : Request: 0 Max size: 131072
+04-25 20:23:18.384   627   627 E TEEC    : invoke, command=0x0000008C, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:23:18.384   627   627 E TEEC    : 
+04-25 20:23:18.403   627   627 E [MITEE] : Request: 600 Max size: 131072
+04-25 20:23:18.430   627   627 E TEEC    : invoke, command=0x00000000, result=0x00000000, oresult=0x00000004, res=0x00000000
+04-25 20:23:18.430   627   627 E TEEC    : 
+04-25 20:23:20.083  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:23:20.935  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:23:25.083  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:23:25.941  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:23:26.155  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 450944kb -> 542780kb
+04-25 20:23:27.822  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 542780kb -> 654844kb
+04-25 20:23:28.507  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 654844kb -> 514244kb
+04-25 20:23:29.007  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 514244kb -> 620820kb
+04-25 20:23:29.663  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 620820kb -> 745460kb
+04-25 20:23:30.080  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 745460kb -> 576640kb
+04-25 20:23:30.084  3726  3863 E frs     : Failed to open /sys/kernel/thermal/frs_nl_id: No such file or directory
+04-25 20:23:30.258  1967  2159 E AlarmManager: not align this alarm: Alarm{ca2923c type 3 origWhen 9188946 whenElapsed 9188946 com.miui.powerkeeper}, reason=4
+04-25 20:23:30.946  1967  2396 E DeviceGuardManagerService: bindLockRemoteService result = null
+04-25 20:23:31.109  1967  2372 E HyperSentinel: ->pid:27873,processName:"com.google.android.deskclock",Rss Memory Size Change 576640kb -> 694820kb
