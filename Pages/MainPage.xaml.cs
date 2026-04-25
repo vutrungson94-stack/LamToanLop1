@@ -1,7 +1,6 @@
-﻿using LamToanLop1.Models;
-using LamToanLop1.Services;
+﻿using LamToanLop1.Services;
 
-namespace LamToanLop1;
+namespace LamToanLop1.Pages;
 
 public partial class MainPage : ContentPage
 {

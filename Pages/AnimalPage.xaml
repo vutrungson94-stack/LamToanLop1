@@ -2,9 +2,9 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" 
-	xmlns:viewmodels="clr-namespace:LamToanLop1.ViewModels" 
-	x:DataType="viewmodels:GameViewModel"
-	x:Class="LamToanLop1.Pages.AnimalPage"
+    xmlns:local="clr-namespace:LamToanLop1.Pages"
+    x:Class="LamToanLop1.Pages.AnimalPage"
+    x:DataType="local:AnimalPage"
     Title="Khám phá động vật"
 	BackgroundColor="#E0F7FA">
 

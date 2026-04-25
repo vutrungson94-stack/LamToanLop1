@@ -1,6 +1,4 @@
-﻿using LamToanLop1.Pages;
-
-namespace LamToanLop1;
+﻿namespace LamToanLop1;
 
 public partial class App : Microsoft.Maui.Controls.Application
 {
