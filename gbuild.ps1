@@ -168,11 +168,19 @@ function Invoke-DeviceDebug {
         return
     }
 
-    Write-Host "`n📱 THIẾT BỊ PHÁT HIỆN:" -ForegroundColor $C_Info
-    foreach ($dev in $devices) { Write-Host "  -> $($dev.ToString().Trim())" -ForegroundColor White }
+    # TỰ ĐỘNG CẤU HÌNH CHO MỘT SỐ THIẾT BỊ NHƯ XIAOMI (Tránh lỗi cài đặt qua USB)
+    $sdk = Get-AndroidSdkPath
+    $adb = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
 
+    Write-Log "🛠  Đang tối ưu cấu hình cài đặt cho Xiaomi..." $C_Gray
+    # Tắt xác minh app qua USB (Tránh bảng hỏi của Google Play Protect)
+    & $adb shell settings put global verifier_verify_adb_installs 0
+    & $adb shell settings put global package_verifier_enable 0
+    # ---------------------------------------
+
+    Write-Host "`n📱 PHÁT HIỆN THIẾT BỊ: $($devices[0].ToString().Trim())" -ForegroundColor $C_Info
     $confirm = Read-Host "`n❓ Bạn có muốn bắt đầu gỡ lỗi trên thiết bị này không? (Y/N)"
-    if ($confirm -ne 'y' -and $confirm -ne 'Y') { Write-Log "🚫 Đã hủy thao tác." $C_Gray; return }
+    if ($confirm -ne 'y' -and $confirm -ne 'Y') { return }
 
     $dotnet = Resolve-DotnetExe
     $androidSdk = Get-AndroidSdkPath
@@ -400,32 +408,36 @@ $macTfm     = $tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -
 # 3. Menu Lựa chọn
 $choice = '0'
 if ($GitHub -or $NonInteractive) {
-    $choice = '6'
+    $choice = '1'
 } else {
     Write-Host "`n👉 CHỌN NỀN TẢNG MUỐN XUẤT BẢN:" -ForegroundColor White
     if ($androidTfm) { 
-        Write-Host "  [1] Android APK  (Cài đặt nhanh)" -ForegroundColor $C_Info
-        Write-Host "  [2] Android AAB  (Google Play)" -ForegroundColor $C_Info
-        Write-Host "  [7] Debug trên thiết bị Android" -ForegroundColor $C_Gray
+        Write-Host "  [1] Debug trên thiết bị Android" -ForegroundColor $C_Gray
+        Write-Host "  [2] Android APK  (Cài đặt nhanh)" -ForegroundColor $C_Info
+        Write-Host "  [3] Android AAB  (Google Play)" -ForegroundColor $C_Info
     }
-    if ($iosTfm -and $IsMacOS) { Write-Host "  [3] iOS IPA" -ForegroundColor "Magenta" }
-    if ($macTfm -and $IsMacOS) { Write-Host "  [4] Mac Catalyst" -ForegroundColor "Magenta" }
-    if ($winTfm -and $IsWindows) { Write-Host "  [5] Windows MSIX" -ForegroundColor "DarkYellow" }
+    if ($iosTfm -and $IsMacOS) { Write-Host "  [4] iOS IPA" -ForegroundColor "Magenta" }
+    if ($macTfm -and $IsMacOS) { Write-Host "  [5] Mac Catalyst" -ForegroundColor "Magenta" }
+    if ($winTfm -and $IsWindows) { Write-Host "  [6] Windows MSIX" -ForegroundColor "DarkYellow" }
     
-    Write-Host "  [6] GitHub Cloud Build" -ForegroundColor $C_Succ
+    Write-Host "  [7] GitHub Cloud Build" -ForegroundColor $C_Succ
     Write-Host "  [0] Thoát" -ForegroundColor $C_Gray
     
     $choice = Read-Host "`n⌨  Nhập số"
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '7' } # Mặc định là debug nếu chỉ nhấn Enter
+    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' } # Mặc định là debug nếu chỉ nhấn Enter
 }
 
 # 4. Thực thi Logic Build
 switch ($choice) {
-    '1' { 
+    '1' {
+        if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
+        Invoke-DeviceDebug -Project $projPath -Tfm $androidTfm
+    }
+    '2' { 
         if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
         ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk") 
     }
-    '2' {
+    '3' {
         if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
         $ks = Find-AndroidKeystore (Split-Path $projPath)
         $bArgs = @("-p:AndroidPackageFormat=aab")
@@ -440,16 +452,12 @@ switch ($choice) {
         }
         ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "aab" -BuildArgs $bArgs
     }
-    '3' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") }
-    '4' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" }
-    '5' { ProcessBuildAndShow -Project $projPath -Tfm $winTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=MSIX") }
-    '6' {
+    '4' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") }
+    '5' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" }
+    '6' { ProcessBuildAndShow -Project $projPath -Tfm $winTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=MSIX") }
+    '7' {
         $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath (Join-Path $PSScriptRoot "gh.exe") }
         if ($gh -eq "gh" -or (Test-Path $gh)) { & $gh workflow run build.yml -f "package_format=apk" ; Write-Log "🚀 Đã gửi lên GitHub!" $C_Succ }
-    }
-    '7' {
-        if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
-        Invoke-DeviceDebug -Project $projPath -Tfm $androidTfm
     }
     '0' { exit 0 }
 }
