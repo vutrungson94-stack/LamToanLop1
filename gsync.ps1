@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env pwsh
 # ==============================================================================
-#  gsync.ps1  — Đồng bộ Git (pull / commit / push).  Không build.
+#  gsync.ps1  — Đồng bộ Git (pull / commit / push). Không build.
 #  Drop vào bất kỳ repo nào, chạy được ngay.
 # ==============================================================================
 
@@ -84,7 +84,6 @@ $ALLOWED_EXCEPTIONS = @(
     '\.env\.example$', '\.env\.template$', '\.env\.sample$'
 )
 
-# Khởi tạo các mảng để tránh lỗi “variable not set”
 $blocked  = @()
 $warnings = @()
 
@@ -104,18 +103,23 @@ if (-not (Test-Path $gitignorePath)) {
 }
 
 # ======================================================================
-# BƯỚC 3 — git pull (nếu working tree sạch)
+# BƯỚC 3 — Hỏi và thực hiện git pull
 # ======================================================================
-$statusBefore = @(git status --porcelain 2>$null)
-if (-not $statusBefore) {
-    Write-Host "🔄 Working tree sạch — thực hiện git pull --rebase…" -ForegroundColor Magenta
-    git pull --rebase origin $branch
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Pull thất bại — hãy giải quyết xung đột rồi chạy lại." -ForegroundColor Red
-        exit 1
+$askPull = Read-Host "`n📥 Bạn có muốn PULL (kéo code) từ nhánh $branch không? (y/n) [Mặc định: y]"
+if ([string]::IsNullOrWhiteSpace($askPull) -or $askPull.ToLower() -eq 'y') {
+    $statusBefore = @(git status --porcelain 2>$null)
+    if (-not $statusBefore) {
+        Write-Host "🔄 Working tree sạch — thực hiện git pull --rebase…" -ForegroundColor Magenta
+        git pull --rebase origin $branch
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Pull thất bại — hãy giải quyết xung đột rồi chạy lại." -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "✏️  Có thay đổi cục bộ — bỏ qua pull tự động để tránh mất code." -ForegroundColor DarkGray
     }
 } else {
-    Write-Host "✏️  Có thay đổi cục bộ — bỏ qua pull." -ForegroundColor DarkGray
+    Write-Host "⏭️ Đã bỏ qua bước PULL." -ForegroundColor Gray
 }
 
 # ======================================================================
@@ -123,7 +127,7 @@ if (-not $statusBefore) {
 # ======================================================================
 $status = @(git status --porcelain 2>$null)
 if (-not $status) {
-    Write-Host "✅ Không có gì để commit / push." -ForegroundColor Green
+    Write-Host "✅ Không có gì mới để commit / push." -ForegroundColor Green
     exit 0
 }
 
@@ -132,7 +136,6 @@ if (-not $status) {
 # ======================================================================
 Write-Host "`n📂 Thay đổi:" -ForegroundColor Yellow
 
-# Reset arrays (tránh carry‑over nếu script được gọi lại trong cùng session)
 $blocked  = @()
 $warnings = @()
 
@@ -142,12 +145,10 @@ foreach ($line in $status) {
     $filePath   = $line.Substring(3).Trim().Trim('"')
     $statusCode = $line.Substring(0,2).Trim()
 
-    # Cảnh báo thư mục bin/obj (không chặn, chỉ nhắc)
     if ($filePath -match '(^|[\\/])(bin|obj)([\\/]|$)') {
         $warnings += $filePath
     }
 
-    # Kiểm tra file nhạy cảm
     if (Test-SensitiveFile $filePath) {
         $blocked += $filePath
         Write-Host "  🚫 [$statusCode] $filePath" -ForegroundColor Red
@@ -163,7 +164,6 @@ foreach ($line in $status) {
     }
 }
 
-# Cảnh báo bin/obj (không chặn, chỉ nhắc)
 if ($warnings.Count -gt 0) {
     Write-Host "`n⚠️  Cảnh báo: Có file trong bin/ hoặc obj/ — kiểm tra .gitignore!" -ForegroundColor Yellow
     $warnings | ForEach-Object { Write-Host "   $_" -ForegroundColor DarkYellow }
@@ -171,23 +171,17 @@ if ($warnings.Count -gt 0) {
     if ($continue -ne 'y') { Write-Host "Đã hủy." -ForegroundColor Gray; exit 0 }
 }
 
-# Xử lý tự động các file nhạy cảm (nếu có)
 if ($blocked.Count -gt 0) {
     Write-Host "`n🚫 DỪNG LẠI — $($blocked.Count) file nhạy cảm sẽ bị commit:" -ForegroundColor Red
     foreach ($f in $blocked) { Write-Host "   $f" -ForegroundColor Gray }
 
-    # 1️⃣ Gỡ khỏi staging
     foreach ($f in $blocked) {
         & git rm --cached -r -f -- "$f" 2>$null
     }
 
-    # 2️⃣ Thêm pattern vào .gitignore (mặc định là publish-output/, nhưng script sẽ tự nhận pattern từ danh sách)
     foreach ($f in $blocked) {
-        # Lấy phần pattern đại diện (đối với folder, dùng dạng 'folder/')
         $pattern = if ($f -match '[\\/]+$') { $f } else { "$f" }
-        # Escape để tránh regex đặc biệt
         $escapedPattern = [regex]::Escape($pattern).TrimEnd('\')
-        # Kiểm tra đã có trong .gitignore chưa
         $already = Select-String -Path $gitignorePath -Pattern "^$escapedPattern$" -Quiet
         if (-not $already) {
             Add-Content -Path $gitignorePath -Value $pattern
@@ -195,11 +189,9 @@ if ($blocked.Count -gt 0) {
         }
     }
 
-    # 3️⃣ Thêm lại các file còn lại (không nhạy cảm)
     Write-Host "🔄 Thực hiện lại 'git add .' để staging các file an toàn…" -ForegroundColor Cyan
     git add .
 } else {
-    # Không có file nhạy cảm – vẫn cần add để đồng bộ các thay đổi mới
     git add .
 }
 
@@ -255,35 +247,38 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ======================================================================
-# BƯỚC 8 — git push
+# BƯỚC 8 — Hỏi và thực hiện git push
 # ======================================================================
-Write-Host "`n🚀 git push origin $branch …" -ForegroundColor Cyan
-git push origin $branch
+$askPush = Read-Host "`n📤 Bạn có muốn PUSH (đẩy code) lên nhánh $branch không? (y/n) [Mặc định: y]"
+if ([string]::IsNullOrWhiteSpace($askPush) -or $askPush.ToLower() -eq 'y') {
+    Write-Host "🚀 git push origin $branch …" -ForegroundColor Cyan
+    git push origin $branch
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "`n⚠️  Push bị từ chối (có thể remote đã có commit mới)." -ForegroundColor Yellow
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "`n⚠️  Push bị từ chối (có thể remote đã có commit mới)." -ForegroundColor Yellow
 
-    $ans = Read-Host "👉 Thử pull --rebase rồi push lại? (y/n)"
-    if ($ans -eq 'y') {
-        git pull --rebase origin $branch
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "❌ Rebase thất bại — giải quyết conflict rồi chạy lại." -ForegroundColor Red
-            exit 1
+        $ans = Read-Host "👉 Thử pull --rebase rồi push lại? (y/n)"
+        if ($ans -eq 'y') {
+            git pull --rebase origin $branch
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "❌ Rebase thất bại — giải quyết conflict rồi chạy lại." -ForegroundColor Red
+                exit 1
+            }
+            git push origin $branch
+            if ($LASTEXITCODE -ne 0) {
+                $force = Read-Host "❓ Vẫn lỗi — force‑with‑lease? (y/n)"
+                if ($force -eq 'y') { git push origin $branch --force-with-lease }
+                else { exit 1 }
+            }
         }
-        git push origin $branch
-        if ($LASTEXITCODE -ne 0) {
-            $force = Read-Host "❓ Vẫn lỗi — force‑with‑lease? (y/n)"
-            if ($force -eq 'y') { git push origin $branch --force-with-lease }
-            else { exit 1 }
-        }
-    } else {
-        exit 1
     }
+} else {
+    Write-Host "⏭️ Đã bỏ qua bước PUSH. Code mới chỉ được lưu ở Local Commit." -ForegroundColor Gray
 }
 
 # ── Thống kê ─────────────────────────────────────────────────────────────────
 Write-Host "`n📊 Diff stat:" -ForegroundColor DarkGray
 git diff HEAD~1 --stat 2>$null | Write-Host -ForegroundColor DarkGray
 
-Write-Host "`n🎉 Đồng bộ xong!" -ForegroundColor Green
+Write-Host "`n🎉 Hoàn tất!" -ForegroundColor Green
 Write-Host "`a" -NoNewline
