@@ -2,7 +2,6 @@
 using LamToanLop1.ViewModels;
 using LamToanLop1.Pages;
 using Plugin.Maui.Audio;
-using Microsoft.Extensions.Logging;
 
 namespace LamToanLop1;
 
@@ -32,6 +31,8 @@ public static class MauiProgram
         // ================================================
         builder.Services.AddSingleton<ITtsService, GoogleTtsService>();
 		builder.Services.AddSingleton<ISoundService, SoundService>();
+
+        builder.Services.AddSingleton<AppShell>(); // Đăng ký AppShell làm singleton để có thể điều hướng từ bất kỳ đâu trong ứng dụng
 
         // ================================================
         // === ĐĂNG KÝ CÁC TRANG VÀ VIEWMODEL ===

@@ -17,14 +17,4 @@
         ContentTemplate="{DataTemplate pages:MainPage}"
         Route="MainPage" />
 
-    <ShellContent
-        Title="Bé Khám Phá Thế Giới Động Vật"
-        ContentTemplate="{DataTemplate pages:AnimalPage}"
-        Route="AnimalPage" />
-
-    <ShellContent
-        Title="Bé Thử Tài Toán Học"
-        ContentTemplate="{DataTemplate pages:GamePage}"
-        Route="GamePage" />
-
 </Shell>
