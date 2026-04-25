@@ -1,4 +1,6 @@
-﻿namespace LamToanLop1;
+﻿using LamToanLop1.Services;
+
+namespace LamToanLop1;
 
 public partial class App : Microsoft.Maui.Controls.Application
 {
@@ -8,23 +10,27 @@ public partial class App : Microsoft.Maui.Controls.Application
     // Sự kiện báo App đã quay lại -> THÊM DÒNG NÀY
     public static event Action? AppResumed;
 
-    private readonly AppShell _appShell;
+    private readonly ITtsService _ttsService;
+    private readonly ISoundService _soundService;
 
-    public App(AppShell appShell)
+    public App(ITtsService ttsService, ISoundService soundService)
     {
         InitializeComponent();
-        _appShell = appShell;
+        _ttsService = ttsService;
+        _soundService = soundService;
     }
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        return new Window(_appShell);
+        return new Window(new AppShell());
     }
 
     protected override void OnSleep()
 	{
         base.OnSleep();
         // Bắn tín hiệu cho GamePage biết để tạm dừng vòng lặp
+        _ttsService.Stop();
+        _soundService.StopAll();
         AppHidden?.Invoke();
     }
 
