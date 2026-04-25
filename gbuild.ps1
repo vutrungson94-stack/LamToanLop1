@@ -145,6 +145,48 @@ function Resolve-DotnetExe {
     return $null
 }
 
+# QUÉT THIẾT BỊ ĐANG KẾT NỐI VỚI ADB (Dành cho Android Debug/Run trực tiếp)
+function Get-ConnectedDevices {
+    $sdk = Get-AndroidSdkPath
+    if (!$sdk) { return @() }
+    $adb = Join-Path $sdk "platform-tools\adb.exe"
+    if (!(Test-Path $adb)) { return @() }
+    
+    # Lấy danh sách thiết bị từ adb
+    $adbOut = & $adb devices | Select-String -Pattern "\tdevice$"
+    return $adbOut
+}
+
+# THỰC THI DEBUG (RUN) TRỰC TIẾP LÊN THIẾT BỊ (Sử dụng -t:Run thay vì publish)
+function Invoke-DeviceDebug {
+    param([string]$Project, [string]$Tfm)
+    
+    $devices = @(Get-ConnectedDevices)
+    if ($devices.Length -eq 0) {
+        Write-Log "❌ Không tìm thấy thiết bị Android nào đang kết nối (device)!" $C_Err
+        Write-Log "👉 Hãy đảm bảo đã bật USB Debugging và 'adb devices' có phản hồi." $C_Warn
+        return
+    }
+
+    Write-Host "`n📱 THIẾT BỊ PHÁT HIỆN:" -ForegroundColor $C_Info
+    foreach ($dev in $devices) { Write-Host "  -> $($dev.ToString().Trim())" -ForegroundColor White }
+
+    $confirm = Read-Host "`n❓ Bạn có muốn bắt đầu gỡ lỗi trên thiết bị này không? (Y/N)"
+    if ($confirm -ne 'y' -and $confirm -ne 'Y') { Write-Log "🚫 Đã hủy thao tác." $C_Gray; return }
+
+    $dotnet = Resolve-DotnetExe
+    $androidSdk = Get-AndroidSdkPath
+    $javaSdk = Get-JavaSdkPath
+
+    Write-Log "🚀 Đang triển khai app lên thiết bị... (Vui lòng mở khóa màn hình)" $C_Succ
+    
+    # Lệnh chạy debug (Sử dụng -t:Run)
+    & $dotnet build -t:Run -f $Tfm `
+        "-p:AndroidSdkDirectory=$androidSdk" `
+        "-p:JavaSdkDirectory=$javaSdk" `
+        (Get-SafePath $Project)
+}
+
 # 6. Đọc TFMs từ file csproj
 function Get-CsprojTfms {
     param([string]$projPath)
@@ -364,6 +406,7 @@ if ($GitHub -or $NonInteractive) {
     if ($androidTfm) { 
         Write-Host "  [1] Android APK  (Cài đặt nhanh)" -ForegroundColor $C_Info
         Write-Host "  [2] Android AAB  (Google Play)" -ForegroundColor $C_Info
+        Write-Host "  [7] Debug trên thiết bị Android" -ForegroundColor $C_Gray
     }
     if ($iosTfm -and $IsMacOS) { Write-Host "  [3] iOS IPA" -ForegroundColor "Magenta" }
     if ($macTfm -and $IsMacOS) { Write-Host "  [4] Mac Catalyst" -ForegroundColor "Magenta" }
@@ -372,8 +415,8 @@ if ($GitHub -or $NonInteractive) {
     Write-Host "  [6] GitHub Cloud Build" -ForegroundColor $C_Succ
     Write-Host "  [0] Thoát" -ForegroundColor $C_Gray
     
-    $in = Read-Host "`n⌨  Nhập số"
-    $choice = if ($in) { $in } else { '1' }
+    $choice = Read-Host "`n⌨  Nhập số"
+    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '7' } # Mặc định là debug nếu chỉ nhấn Enter
 }
 
 # 4. Thực thi Logic Build
@@ -403,6 +446,10 @@ switch ($choice) {
     '6' {
         $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath (Join-Path $PSScriptRoot "gh.exe") }
         if ($gh -eq "gh" -or (Test-Path $gh)) { & $gh workflow run build.yml -f "package_format=apk" ; Write-Log "🚀 Đã gửi lên GitHub!" $C_Succ }
+    }
+    '7' {
+        if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
+        Invoke-DeviceDebug -Project $projPath -Tfm $androidTfm
     }
     '0' { exit 0 }
 }
