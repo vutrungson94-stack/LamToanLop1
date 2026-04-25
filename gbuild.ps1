@@ -162,7 +162,7 @@ function Invoke-DeviceDebug {
     param([string]$Project, [string]$Tfm)
     
     $devices = @(Get-ConnectedDevices)
-    if ($devices.Length -eq 0) {
+    if ($devices.Count -eq 0) {
         Write-Log "❌ Không tìm thấy thiết bị Android nào đang kết nối (device)!" $C_Err
         Write-Log "👉 Hãy đảm bảo đã bật USB Debugging và 'adb devices' có phản hồi." $C_Warn
         return
