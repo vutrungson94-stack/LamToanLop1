@@ -247,33 +247,30 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ======================================================================
-# BƯỚC 8 — Hỏi và thực hiện git push
+# BƯỚC 8 — Mặc định git push
 # ======================================================================
-$askPush = Read-Host "`n📤 Bạn có muốn PUSH (đẩy code) lên nhánh $branch không? (y/n) [Mặc định: y]"
-if ([string]::IsNullOrWhiteSpace($askPush) -or $askPush.ToLower() -eq 'y') {
-    Write-Host "🚀 git push origin $branch …" -ForegroundColor Cyan
-    git push origin $branch
+Write-Host "`n🚀 Đang tự động PUSH lên origin $branch …" -ForegroundColor Cyan
+git push origin $branch
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "`n⚠️  Push bị từ chối (có thể remote đã có commit mới)." -ForegroundColor Yellow
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "`n⚠️  Push bị từ chối (có thể remote đã có commit mới)." -ForegroundColor Yellow
 
-        $ans = Read-Host "👉 Thử pull --rebase rồi push lại? (y/n)"
-        if ($ans -eq 'y') {
-            git pull --rebase origin $branch
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "❌ Rebase thất bại — giải quyết conflict rồi chạy lại." -ForegroundColor Red
-                exit 1
-            }
-            git push origin $branch
-            if ($LASTEXITCODE -ne 0) {
-                $force = Read-Host "❓ Vẫn lỗi — force‑with‑lease? (y/n)"
-                if ($force -eq 'y') { git push origin $branch --force-with-lease }
-                else { exit 1 }
-            }
+    $ans = Read-Host "👉 Thử pull --rebase rồi push lại? (y/n)"
+    if ($ans -eq 'y') {
+        git pull --rebase origin $branch
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Rebase thất bại — giải quyết conflict rồi chạy lại." -ForegroundColor Red
+            exit 1
         }
+        git push origin $branch
+        if ($LASTEXITCODE -ne 0) {
+            $force = Read-Host "❓ Vẫn lỗi — force‑with‑lease? (y/n)"
+            if ($force -eq 'y') { git push origin $branch --force-with-lease }
+            else { exit 1 }
+        }
+    } else {
+        exit 1
     }
-} else {
-    Write-Host "⏭️ Đã bỏ qua bước PUSH. Code mới chỉ được lưu ở Local Commit." -ForegroundColor Gray
 }
 
 # ── Thống kê ─────────────────────────────────────────────────────────────────
