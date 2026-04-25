@@ -346,7 +346,7 @@ function ProcessBuildAndShow {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
     # Thực thi lệnh build
-    & $dotnet $params
+    & $dotnet $params -v diag
 
     if ($LASTEXITCODE -ne 0) {
         Write-Log "❌ BUILD THẤT BẠI (Mã lỗi: $LASTEXITCODE)" $C_Err
