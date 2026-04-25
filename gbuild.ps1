@@ -300,8 +300,11 @@ function ProcessBuildAndShow {
 
     # Làm sạch folder output
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
-    if (Test-Path $rawOut) { Remove-Item $rawOut -Recurse -Force -EA SilentlyContinue }
-    New-Item -ItemType Directory $rawOut | Out-Null
+    if (Test-Path $rawOut) { 
+        Get-ChildItem $rawOut -Recurse | Remove-Item -Force -EA SilentlyContinue
+        Remove-Item $rawOut -Recurse -Force -EA SilentlyContinue 
+    }
+    New-Item -ItemType Directory -Force -Path $rawOut | Out-Null
     
     # Chuyển mọi đường dẫn về Safe Path (Khử khoảng trắng)
     $safeProj = Get-SafePath $Project
