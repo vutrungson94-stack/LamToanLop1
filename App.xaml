@@ -3,4 +3,7 @@
     x:Class="LamToanLop1.App"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    <Application.Resources>
+        <!-- Ở đây bạn có thể định nghĩa các Resource chung cho toàn ứng dụng, như màu sắc, kiểu chữ, v.v. -->
+    </Application.Resources>
 </Application>

@@ -8,12 +8,12 @@
 
     <ShellContent
         Title="Loading..."
-        ContentTemplate="{DataTemplate pages:SplashPage}"
+        ContentTemplate="{DataTemplate local:SplashPage}"
         Route="SplashPage" />
 
     <ShellContent
         Title="Bé làm toán lớp 1"
-        ContentTemplate="{DataTemplate pages:MainPage}"
+        ContentTemplate="{DataTemplate local:MainPage}"
         Route="MainPage" />
 
 </Shell>
