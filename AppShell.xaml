@@ -8,7 +8,7 @@
 
     <ShellContent
         Title="Loading..."
-        ContentTemplate="{DataTemplate roots:SplashPage}"
+        ContentTemplate="{DataTemplate pages:SplashPage}"
         Route="SplashPage" />
 
     <ShellContent
