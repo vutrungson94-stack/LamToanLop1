@@ -32,6 +32,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<ITtsService, GoogleTtsService>();
 		builder.Services.AddSingleton<ISoundService, SoundService>();
 
+        builder.Services.AddSingleton<AppShell>(); // Đăng ký AppShell để có thể lấy instance trong App.xaml.cs
         // ================================================
         // === ĐĂNG KÝ CÁC TRANG VÀ VIEWMODEL ===
         // ================================================
