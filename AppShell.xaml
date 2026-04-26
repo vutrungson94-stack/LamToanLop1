@@ -8,7 +8,7 @@
 
     <ShellContent
         Title="Loading..."
-        ContentTemplate="{DataTemplate pages:SplashPage}"
+        ContentTemplate="{DataTemplate root:SplashPage}"
         Route="SplashPage"
         Shell.FlyoutBehavior="Disabled"
         Shell.NavBarIsVisible="False" />
