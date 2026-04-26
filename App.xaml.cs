@@ -22,7 +22,8 @@ public partial class App : Microsoft.Maui.Controls.Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        var appShell = Handler?.MauiContext?.Services.GetService<AppShell>();
+        var services = IPlatformApplication.Current!.Services;
+        var appShell = services.GetService<AppShell>();
         return new Window(appShell!);
     }
 

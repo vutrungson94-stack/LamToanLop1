@@ -58,7 +58,6 @@
                         x:Name="QuestionText" 
                         FontFamily="NunitoExtraBold"
                         Grid.Column="1"
-                        Text="{Binding CurrentQuestion.Title}" 
                         FontSize="22" 
                         FontAttributes="Bold" 
                         TextColor="#D84315" 
