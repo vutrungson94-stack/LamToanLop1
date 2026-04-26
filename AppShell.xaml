@@ -8,15 +8,12 @@
 
     <ShellContent
         Title="Loading..."
-        ContentTemplate="{DataTemplate root:SplashPage}"
-        Route="SplashPage"
-        Shell.FlyoutBehavior="Disabled"
-        Shell.NavBarIsVisible="False" />
+        ContentTemplate="{DataTemplate pages:SplashPage}"
+        Route="SplashPage" />
 
     <ShellContent
         Title="Bé làm toán lớp 1"
         ContentTemplate="{DataTemplate pages:MainPage}"
-        Route="MainPage"
-        Shell.NavBarIsVisible="False" />
+        Route="MainPage" />
 
 </Shell>
