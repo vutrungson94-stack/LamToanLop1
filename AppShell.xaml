@@ -4,7 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:pages="clr-namespace:LamToanLop1.Pages"
     xmlns:roots="clr-namespace:LamToanLop1"
-    x:Class="LamToanLop1.AppShell">
+    x:Class="LamToanLop1.AppShell"
+    FlyoutBehavior="Disabled"
+    NavBarIsVisible="False">
 
     <ShellContent
         Title="Loading..."

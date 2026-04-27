@@ -70,7 +70,12 @@ namespace LamToanLop1.Services
             IProgress<int>? progress = null,
             CancellationToken cancellationToken = default)
         {
-            if(Preferences.Get(PREF_ANIMAL_CACHE_READY, false)) { progress?.Report(100); return; }
+            bool CacheReady = false;
+            await MainThread.InvokeOnMainThreadAsync(() => {
+                CacheReady = Preferences.Get(PREF_ANIMAL_CACHE_READY, false);
+            });
+            if(CacheReady) { progress?.Report(100); return; }
+
             if (Connectivity.Current.NetworkAccess != NetworkAccess.Internet) return;
 
             var list = animalNames.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
@@ -84,7 +89,9 @@ namespace LamToanLop1.Services
                 finally { semaphore.Release(); progress?.Report(Interlocked.Increment(ref completed) * 100 / list.Count); }
             });
             await Task.WhenAll(tasks);
-            Preferences.Set(PREF_ANIMAL_CACHE_READY, true);
+            await MainThread.InvokeOnMainThreadAsync(() => {
+                Preferences.Set(PREF_ANIMAL_CACHE_READY, true);
+            });
         }
 
         public async Task SpeakAsync(string text)

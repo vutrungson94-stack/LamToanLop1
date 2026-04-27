@@ -22,15 +22,18 @@ public static class MauiProgram
 #if DEBUG
 		builder.Logging.AddDebug();
 #endif
-		builder.Services.AddSingleton(AudioManager.Current); // Đăng ký AudioManager từ Plugin.Maui.Audio
-
-        // ================================================
-        // === ĐĂNG KÝ DỊCH VỤ (SINGLETON) ===
-        // Singleton: Chỉ có một instance được tạo và tái sử dụng trong toàn bộ ứng dụng.
-        // Phù hợp cho các dịch vụ cốt lõi và không lưu trạng thái cụ thể của một trang.
-        // ================================================
-        builder.Services.AddSingleton<ITtsService, GoogleTtsService>();
-		builder.Services.AddSingleton<ISoundService, SoundService>();
+		builder.Services.AddSingleton<IAudioManager>(provider => {
+            var manager = AudioManager.Current;
+            if (manager == null)
+            {
+                // Fallback: nếu null, có thể throw hoặc trả về dummy (ở đây ta throw để dễ phát hiện)
+                System.Diagnostics.Debug.WriteLine("CRITICAL: AudioManager.Current is null. Plugin may not be initialized.");
+                throw new InvalidOperationException("AudioManager.Current is null. Ensure Plugin.Maui.Audio is properly installed and initialized.");
+            }
+            return manager;
+        });
+        
+        builder.Services.AddSingleton<ISoundService, SoundService>();
 
         builder.Services.AddTransient<AppShell>(); // Đăng ký AppShell để có thể lấy instance trong App.xaml.cs
         // ================================================
