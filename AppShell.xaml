@@ -8,7 +8,6 @@
     Shell.NavBarIsVisible="False">
 
     <ShellContent
-        Shell.NavBarIsVisible="False"
         ContentTemplate="{DataTemplate pages:SplashPage}"
         Route="SplashPage" />
 
