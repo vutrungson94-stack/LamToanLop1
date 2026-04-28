@@ -19,9 +19,8 @@ public static class MauiProgram
 				fonts.AddFont("PatrickHand-Regular.ttf", "PatrickHandRegular"); // Dùng cho lời khen, tiêu đề vui
 				fonts.AddFont("BalooTammudu2-ExtraBold.ttf", "BalooTammudu2ExtraBold");   // Dùng cho SỐ TO, TIÊU ĐỀ LỚN
 			});
-#if DEBUG
-		builder.Logging.AddDebug();
-#endif
+
+        
 		builder.Services.AddSingleton<IAudioManager>(provider => {
             var manager = AudioManager.Current;
             if (manager == null)
@@ -33,6 +32,7 @@ public static class MauiProgram
             return manager;
         });
         
+        builder.Services.AddSingleton<ITtsService, GoogleTtsService>();
         builder.Services.AddSingleton<ISoundService, SoundService>();
 
         builder.Services.AddTransient<AppShell>(); // Đăng ký AppShell để có thể lấy instance trong App.xaml.cs

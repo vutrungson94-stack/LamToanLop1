@@ -21,6 +21,8 @@ public partial class SplashPage : ContentPage
     {
         base.OnAppearing();
 
+        await Task.Delay(3000); // Đảm bảo UI đã render trước khi bắt đầu preload
+
         if (_isTransitioning) return;
 
         _isTransitioning = true;
