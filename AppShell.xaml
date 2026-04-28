@@ -6,11 +6,18 @@
     xmlns:roots="clr-namespace:LamToanLop1"
     x:Class="LamToanLop1.AppShell"
     FlyoutBehavior="Disabled"
-    NavBarIsVisible="False">
+    Shell.NavBarIsVisible="False">
 
+    <!-- SplashPage: trang đầu tiên khi mở app -->
     <ShellContent
         Title="Loading..."
         ContentTemplate="{DataTemplate pages:SplashPage}"
         Route="SplashPage" />
+
+    <!-- MainPage: SplashPage sẽ navigate đến đây -->
+    <ShellContent
+        Title="Bé làm toán lớp 1"
+        ContentTemplate="{DataTemplate roots:MainPage}"
+        Route="MainPage" />
 
 </Shell>
