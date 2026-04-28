@@ -11,6 +11,7 @@ public partial class AppShell : Shell
 		// Thêm mainpage bằng code-behind để đảm bảo nó luôn là trang đầu tiên, không bị ảnh hưởng bởi routing
 		Items.Add(new ShellContent
 		{
+			Title = "",
 			Route = "MainPage",
 			ContentTemplate = new DataTemplate(typeof(MainPage))
 		});
