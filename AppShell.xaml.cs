@@ -9,12 +9,14 @@ public partial class AppShell : Shell
 		InitializeComponent();
 
 		// Thêm mainpage bằng code-behind để đảm bảo nó luôn là trang đầu tiên, không bị ảnh hưởng bởi routing
-		Items.Add(new ShellContent
+		var mainPage = new ShellContent
 		{
 			Title = "",
 			Route = "MainPage",
 			ContentTemplate = new DataTemplate(typeof(MainPage))
-		});
+		};
+		Shell.SetNavBarIsVisible(mainPage, false); // Ẩn thanh điều hướng cho MainPage
+		Items.Add(mainPage);
 
 		// Đăng ký đường dẫn cho các trang con
 		// Lưu ý: SplashPage và MainPage KHÔNG đăng ký ở đây
