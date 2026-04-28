@@ -12,4 +12,9 @@
         ContentTemplate="{DataTemplate pages:SplashPage}"
         Route="SplashPage" />
 
+    <ShellContent
+        Title="Bé làm toán lớp 1"
+        ContentTemplate="{DataTemplate pages:MainPage}"
+        Route="MainPage" />
+
 </Shell>

@@ -1,11 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-	package="com.lamtoanlop1">
+	package="com.vutrungson.lamtoanlop1">
 	<application 
 		android:allowBackup="true" 
 		android:icon="@mipmap/icon_lam_toan_lop_1"
 		android:supportsRtl="true"
-		android:usesCleartextTraffic="true">
+		android:usesCleartextTraffic="true"
+		android:theme="@style/Maui.SplashTheme">
 	</application>
 	<uses-permission android:name="android.permission.INTERNET" />
 	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

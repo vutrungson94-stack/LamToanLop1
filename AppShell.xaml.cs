@@ -8,13 +8,6 @@ public partial class AppShell : Shell
 	{
 		InitializeComponent();
 
-		Items.Add(new ShellContent
-		{
-			Title = "Bé lam toán lớp 1",
-			Route = "MainPage",
-			ContentTemplate = new DataTemplate(typeof(MainPage))
-		});
-
         // Đăng ký đường dẫn cho các trang con
 		// Lưu ý: SplashPage và MainPage KHÔNG đăng ký ở đây
         // vì đã khai báo trong AppShell.xaml rồi
