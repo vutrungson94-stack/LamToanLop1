@@ -2,19 +2,17 @@
 <Shell
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    xmlns:pages="clr-namespace:LamToanLop1.Pages"
-    xmlns:roots="clr-namespace:LamToanLop1"
+    xmlns:pages="clr-namespace:LamToanLop1.Pages;assembly=LamToanLop1"
+    xmlns:roots="clr-namespace:LamToanLop1;assembly=LamToanLop1"
     x:Class="LamToanLop1.AppShell"
     FlyoutBehavior="Disabled"
     Shell.NavBarIsVisible="False">
 
-    <!-- SplashPage: trang đầu tiên khi mở app -->
     <ShellContent
         Title="Loading..."
         ContentTemplate="{DataTemplate pages:SplashPage}"
         Route="SplashPage" />
 
-    <!-- MainPage: SplashPage sẽ navigate đến đây -->
     <ShellContent
         Title="Bé làm toán lớp 1"
         ContentTemplate="{DataTemplate roots:MainPage}"
