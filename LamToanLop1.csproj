@@ -23,6 +23,8 @@
 
 		<WindowsPackageType>None</WindowsPackageType>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	
+		<DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
@@ -65,7 +67,7 @@
 	<ItemGroup>
 		<MauiXaml Update="App.xaml" Generator="MSBuild:Compile" />
 		<MauiXaml Update="AppShell.xaml" Generator="MSBuild:Compile" />
-		<MauiXaml Update="MainPage.xaml" Generator="MSBuild:Compile" />
+		<MauiXaml Update="Pages\MainPage.xaml" Generator="MSBuild:Compile" />
 		<MauiXaml Update="Pages\AnimalPage.xaml" Generator="MSBuild:Compile" />
 		<MauiXaml Update="Pages\GamePage.xaml" Generator="MSBuild:Compile" />
 		<MauiXaml Update="Pages\SplashPage.xaml" Generator="MSBuild:Compile" />
