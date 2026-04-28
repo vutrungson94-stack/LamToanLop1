@@ -5,7 +5,8 @@
     xmlns:local="clr-namespace:LamToanLop1.Pages"
     x:Class="LamToanLop1.Pages.AnimalPage"
     Title="Khám phá động vật"
-	BackgroundColor="#E0F7FA">
+	BackgroundColor="#E0F7FA"
+	Shell.NavBarIsVisible="False">
 
 	<VerticalStackLayout 
 		Padding="20" 

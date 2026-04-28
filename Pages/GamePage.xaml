@@ -5,7 +5,8 @@
              xmlns:local="clr-namespace:LamToanLop1.ViewModels"
              x:Class="LamToanLop1.Pages.GamePage"
              Title="BÉ HỌC TOÁN"
-             BackgroundColor="White">
+             BackgroundColor="White"
+             Shell.NavBarIsVisible="False">
 
     <Grid>
         <Image 
