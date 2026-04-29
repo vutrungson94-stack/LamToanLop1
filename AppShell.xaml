@@ -4,11 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:pages="clr-namespace:LamToanLop1.Pages"
     x:Class="LamToanLop1.AppShell"
-    FlyoutBehavior="Disabled">
-
-    <ShellContent
-        Title=""
-        ContentTemplate="{DataTemplate pages:SplashPage}"
-        Route="SplashPage" />
+    FlyoutBehavior="Disabled"
+    Shell.NavBarIsVisible="False">
 
 </Shell>

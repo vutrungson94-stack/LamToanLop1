@@ -8,19 +8,25 @@ public partial class AppShell : Shell
 	{
 		InitializeComponent();
 
-		// Thêm mainpage bằng code-behind để đảm bảo nó luôn là trang đầu tiên, không bị ảnh hưởng bởi routing
-		var mainPage = new ShellContent
-		{
-			Title = "",
-			Route = "MainPage",
-			ContentTemplate = new DataTemplate(typeof(MainPage))
-		};
-		Shell.SetNavBarIsVisible(mainPage, false); // Ẩn thanh điều hướng cho MainPage
-		Items.Add(mainPage);
+		// SplashPage: trang đầu tiên, cần ITtsService → phải dùng DI factory
+        Items.Add(new ShellContent
+        {
+            Route = "SplashPage",
+            ContentTemplate = new DataTemplate(() =>
+                IPlatformApplication.Current!.Services
+                    .GetRequiredService<SplashPage>())
+        });
+
+        // MainPage: cần ITtsService + ISoundService → phải dùng DI factory
+        Items.Add(new ShellContent
+        {
+            Route = "MainPage",
+            ContentTemplate = new DataTemplate(() =>
+                IPlatformApplication.Current!.Services
+                    .GetRequiredService<MainPage>())
+        });
 
 		// Đăng ký đường dẫn cho các trang con
-		// Lưu ý: SplashPage và MainPage KHÔNG đăng ký ở đây
-        // vì đã khai báo trong AppShell.xaml rồi
 		Routing.RegisterRoute(nameof(GamePage), typeof(GamePage));
 		Routing.RegisterRoute(nameof(AnimalPage), typeof(AnimalPage));
 	}
