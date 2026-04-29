@@ -80,6 +80,7 @@ public partial class SplashPage : ContentPage
         }
     }
 
+    [Obsolete]
     private static async Task NavigateToAppShell()
     {
         try
@@ -92,6 +93,10 @@ public partial class SplashPage : ContentPage
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
+            MainThread.BeginInvokeOnMainThread(static () =>
+            {
+                Application.Current.MainPage = IPlatformApplication.Current.Services.GetRequiredService<MenuPage>();
+            });
         }
     }
 }
