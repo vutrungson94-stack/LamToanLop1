@@ -153,7 +153,7 @@ function Get-ConnectedDevices {
     if (!(Test-Path $adb)) { return @() }
     
     # Lấy danh sách thiết bị từ adb
-    $adbOut = & $adb devices | Select-String -Pattern "\tdevice$"
+    $adbOut = @(& $adb devices | Select-String -Pattern "\tdevice$")
     return $adbOut
 }
 
@@ -308,12 +308,12 @@ function Invoke-AutoDeploy {
     }
 
     # ── BƯỚC 1: Lấy toàn bộ danh sách thiết bị đang kết nối ──────────────
-    $rawList = & $adb devices 2>&1
-    $allDevices = $rawList |
+    $rawList = @(& $adb devices 2>&1)
+    $allDevices = @($rawList |
         Where-Object { $_ -match "\tdevice$" } |
-        ForEach-Object { ($_ -split "\t")[0].Trim() }
+        ForEach-Object { ($_ -split "\t")[0].Trim() })
 
-    if (-not $allDevices -or $allDevices.Count -eq 0) {
+    if ($allDevices.Count -eq 0) {
         Write-Log "⚠️ Không tìm thấy thiết bị nào - Bỏ qua auto deploy." $C_Warn
         Write-Log "👉 Cắm USB / Bật USB Debugging / adb connect <ip>:5555" $C_Info
         return
