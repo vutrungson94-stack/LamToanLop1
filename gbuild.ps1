@@ -325,7 +325,8 @@ function ProcessBuildAndShow {
         "--output", $safeOut,
         "-p:UseMaui=true",
         "-p:SingleProject=true",
-        "--no-self-contained"
+        "-p:EmbedAssembliesIntoApk=true",
+        "-p:AndroidUseSharedRuntime=false"
     )
 
     # Tự động gán Android SDK nếu tìm thấy

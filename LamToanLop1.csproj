@@ -48,6 +48,8 @@
 		<PublishTrimmed>false</PublishTrimmed>	
 		<RunAOTCompilation>false</RunAOTCompilation>
 		<AndroidUseLlvm>false</AndroidUseLlvm>	
+		<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+		<AndroidUseSharedRuntime>false</AndroidUseSharedRuntime>
 	</PropertyGroup>
 
 	<ItemGroup>
