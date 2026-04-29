@@ -4,7 +4,7 @@ namespace LamToanLop1;
 
 public partial class AppShell : Shell
 {
-	public AppShell()
+	public AppShell(IServiceProvider serviceProvider)
 	{
 		InitializeComponent();
 
@@ -13,17 +13,15 @@ public partial class AppShell : Shell
         {
             Route = "SplashPage",
             ContentTemplate = new DataTemplate(() =>
-                IPlatformApplication.Current!.Services
-                    .GetRequiredService<SplashPage>())
+                serviceProvider.GetRequiredService<SplashPage>()!)
         });
 
-        // MainPage: cần ITtsService + ISoundService → phải dùng DI factory
+        // MenuPage: cần ITtsService + ISoundService → phải dùng DI factory
         Items.Add(new ShellContent
         {
-            Route = "MainPage",
+            Route = "MenuPage",
             ContentTemplate = new DataTemplate(() =>
-                IPlatformApplication.Current!.Services
-                    .GetRequiredService<MainPage>())
+                serviceProvider.GetRequiredService<MenuPage>()!)
         });
 
 		// Đăng ký đường dẫn cho các trang con

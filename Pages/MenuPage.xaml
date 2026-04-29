@@ -2,7 +2,7 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:local="clr-namespace:LamToanLop1.Pages" 
-             x:Class="LamToanLop1.Pages.MainPage"
+             x:Class="LamToanLop1.Pages.MenuPage"
              BackgroundColor="#E3F2FD"
              Shell.NavBarIsVisible="False">
 

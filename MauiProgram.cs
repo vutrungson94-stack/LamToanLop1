@@ -30,7 +30,7 @@ public static class MauiProgram
         builder.Services.AddTransient<AppShell>();
 
         builder.Services.AddTransient<SplashPage>();
-        builder.Services.AddTransient<MainPage>();
+        builder.Services.AddTransient<MenuPage>();
         builder.Services.AddTransient<GamePage>();
         builder.Services.AddTransient<AnimalPage>();
         builder.Services.AddTransient<GameViewModel>();

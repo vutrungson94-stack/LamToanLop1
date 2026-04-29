@@ -2,7 +2,7 @@
 
 namespace LamToanLop1.Pages;
 
-public partial class MainPage : ContentPage
+public partial class MenuPage : ContentPage
 {
     // ===============================
     // CORE SERVICES
@@ -16,7 +16,7 @@ public partial class MainPage : ContentPage
     // 1 = Cơ bản (PV 10), 2 = Nâng cao (PV 100)
     private int _selectedRange = 1;
 
-    public MainPage(ITtsService tts, ISoundService soundService)
+    public MenuPage(ITtsService tts, ISoundService soundService)
     {
         InitializeComponent();
         _tts = tts;
@@ -79,9 +79,7 @@ public partial class MainPage : ContentPage
             throw new InvalidOperationException("MAUI services (MauiContext) are not available. Ensure the page is attached to a Window before navigating.");
         }
 
-        var animalPage = services.GetRequiredService<LamToanLop1.Pages.AnimalPage>();
-
-        await Navigation.PushAsync(animalPage);
+        await Shell.Current.GoToAsync(nameof(AnimalPage));
     }
 
     // --- 2. CHỌN PHẠM VI (RANGE) ---
@@ -150,12 +148,8 @@ public partial class MainPage : ContentPage
         }
 
         services = services ?? throw new InvalidOperationException("MAUI services (MauiContext) are not available. Ensure the page is attached to a Window before starting the game.");
-        var page = services.GetRequiredService<LamToanLop1.Pages.GamePage>();
-
-        // Prepare the page with parameters and navigate
-        page.PrepareGame(_selectedRange, level);
-
-        await Navigation.PushAsync(page);
+        
+        await Shell.Current.GoToAsync($"{nameof(GamePage)}?range={_selectedRange}&level={level}");
     }
 
     // --- CÁC NÚT QUAY LẠI ---

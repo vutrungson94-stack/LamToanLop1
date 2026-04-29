@@ -86,7 +86,7 @@ public partial class SplashPage : ContentPage
         {
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                await Shell.Current.GoToAsync("//MainPage");
+                await Shell.Current.GoToAsync("//MenuPage");
             });
         }
         catch (Exception ex)
