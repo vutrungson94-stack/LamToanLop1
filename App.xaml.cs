@@ -24,7 +24,7 @@ public partial class App : Microsoft.Maui.Controls.Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        return new Window(this._appShell!);
+        return new Window(_appShell);
     }
 
     protected override void OnSleep()

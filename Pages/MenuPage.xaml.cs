@@ -66,19 +66,6 @@ public partial class MenuPage : ContentPage
             await btn.ScaleToAsync(1.0, 100);
         }
 
-        var services = this.Handler?.MauiContext?.Services;
-        if (services == null)
-        {
-            var windows = Application.Current?.Windows;
-            var firstWindow = (windows != null && windows.Count > 0) ? windows[0] : null;
-            services = firstWindow?.Handler?.MauiContext?.Services;
-        }
-
-        if (services == null)
-        {
-            throw new InvalidOperationException("MAUI services (MauiContext) are not available. Ensure the page is attached to a Window before navigating.");
-        }
-
         await Shell.Current.GoToAsync(nameof(AnimalPage));
     }
 

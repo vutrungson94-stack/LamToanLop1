@@ -27,7 +27,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<ITtsService, GoogleTtsService>();
         builder.Services.AddSingleton<ISoundService, SoundService>();
 
-        builder.Services.AddTransient<AppShell>();
+        builder.Services.AddSingleton<AppShell>();
 
         builder.Services.AddTransient<SplashPage>();
         builder.Services.AddTransient<MenuPage>();

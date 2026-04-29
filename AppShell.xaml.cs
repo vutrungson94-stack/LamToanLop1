@@ -13,7 +13,7 @@ public partial class AppShell : Shell
         {
             Route = "SplashPage",
             ContentTemplate = new DataTemplate(() =>
-                serviceProvider.GetRequiredService<SplashPage>()!)
+                serviceProvider.GetRequiredService<SplashPage>())
         });
 
         // MenuPage: cần ITtsService + ISoundService → phải dùng DI factory
@@ -21,7 +21,7 @@ public partial class AppShell : Shell
         {
             Route = "MenuPage",
             ContentTemplate = new DataTemplate(() =>
-                serviceProvider.GetRequiredService<MenuPage>()!)
+                serviceProvider.GetRequiredService<MenuPage>())
         });
 
 		// Đăng ký đường dẫn cho các trang con
