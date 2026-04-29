@@ -295,6 +295,127 @@ function Show-BuildSummary([string]$dir) {
 # [SECTION 3] TIẾN TRÌNH BUILD CHÍNH (THE CORE ENGINE)
 # ==================================================================================================
 
+# 11. Tự động tìm thiết bị + deploy APK (Ưu tiên máy thật)
+function Invoke-AutoDeploy {
+    param([string]$ApkPath, [string]$AppId)
+
+    $sdk    = Get-AndroidSdkPath
+    $adb    = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
+
+    if (-not (Test-Path $adb) -and $adb -ne "adb") {
+        Write-Log "⚠️ Không tìm thấy adb.exe - Bỏ qua auto deploy." $C_Warn
+        return
+    }
+
+    # ── BƯỚC 1: Lấy toàn bộ danh sách thiết bị đang kết nối ──────────────
+    $rawList = & $adb devices 2>&1
+    $allDevices = $rawList |
+        Where-Object { $_ -match "\tdevice$" } |
+        ForEach-Object { ($_ -split "\t")[0].Trim() }
+
+    if (-not $allDevices -or $allDevices.Count -eq 0) {
+        Write-Log "⚠️ Không tìm thấy thiết bị nào - Bỏ qua auto deploy." $C_Warn
+        Write-Log "👉 Cắm USB / Bật USB Debugging / adb connect <ip>:5555" $C_Info
+        return
+    }
+
+    # ── BƯỚC 2: Phân loại thiết bị ────────────────────────────────────────
+    # Máy thật: serial có dạng ABC123XY hoặc IP (WiFi ADB)
+    # Máy ảo:   serial bắt đầu bằng "emulator-" hoặc "127.0.0.1:"
+    $realDevices = @($allDevices | Where-Object {
+        $_ -notmatch "^emulator-" -and $_ -notmatch "^127\.0\.0\."
+    })
+    $emulators = @($allDevices | Where-Object {
+        $_ -match "^emulator-" -or $_ -match "^127\.0\.0\."
+    })
+
+    # Ưu tiên: Máy thật → Máy ảo
+    $orderedDevices = @()
+    if ($realDevices.Count -gt 0) { $orderedDevices += $realDevices }
+    if ($emulators.Count -gt 0)   { $orderedDevices += $emulators }
+
+    Write-Log "📱 Thiết bị phát hiện: $($allDevices.Count) (Thật: $($realDevices.Count), Ảo: $($emulators.Count))" $C_Info
+
+    # ── BƯỚC 3: Chọn thiết bị ─────────────────────────────────────────────
+    $targetDevice = $null
+
+    if ($orderedDevices.Count -eq 1) {
+        # Chỉ có 1 thiết bị → Chọn luôn
+        $targetDevice = $orderedDevices[0]
+        $label = if ($realDevices -contains $targetDevice) { "📱 Máy thật" } else { "🖥️  Máy ảo" }
+        Write-Log "$label được chọn tự động: $targetDevice" $C_Succ
+    } else {
+        # Nhiều thiết bị → Hiển thị menu chọn
+        Write-Host "`n📋 DANH SÁCH THIẾT BỊ:" -ForegroundColor $C_Info
+        for ($i = 0; $i -lt $orderedDevices.Count; $i++) {
+            $d = $orderedDevices[$i]
+            # Lấy tên model thiết bị
+            $model = & $adb -s $d shell getprop ro.product.model 2>&1
+            $model = $model -replace "`r|`n", ""
+            $label = if ($realDevices -contains $d) { "📱 Máy thật" } else { "🖥️  Máy ảo " }
+            Write-Host "  [$($i+1)] $label | $d | $model" -ForegroundColor White
+        }
+        Write-Host "  [0] Bỏ qua deploy" -ForegroundColor $C_Gray
+
+        $choice = Read-Host "`n⌨  Chọn thiết bị (Enter = tự động chọn thiết bị đầu tiên)"
+        if ([string]::IsNullOrWhiteSpace($choice)) {
+            $targetDevice = $orderedDevices[0]
+        } elseif ($choice -eq "0") {
+            Write-Log "⏭️  Bỏ qua deploy." $C_Gray
+            return
+        } else {
+            $idx = [int]$choice - 1
+            if ($idx -ge 0 -and $idx -lt $orderedDevices.Count) {
+                $targetDevice = $orderedDevices[$idx]
+            } else {
+                Write-Log "❌ Lựa chọn không hợp lệ." $C_Err
+                return
+            }
+        }
+    }
+
+    # ── BƯỚC 4: Lấy tên model thiết bị đã chọn ───────────────────────────
+    $modelName = (& $adb -s $targetDevice shell getprop ro.product.model 2>&1) -replace "`r|`n", ""
+    Write-Log "🎯 Deploy lên: $modelName ($targetDevice)" $C_Info
+
+    # ── BƯỚC 5: Gỡ app cũ + xóa cache Dalvik ────────────────────────────
+    Write-Log "🗑️  Gỡ app cũ ($AppId)..." $C_Warn
+    & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-Null
+
+    Write-Log "🧹 Xóa Dalvik cache..." $C_Warn
+    & $adb -s $targetDevice shell "run-as $AppId rm -rf /data/data/$AppId/cache" 2>&1 | Out-Null
+    & $adb -s $targetDevice shell "rm -rf /data/dalvik-cache/*" 2>&1 | Out-Null
+
+    # ── BƯỚC 6: Cài APK mới ──────────────────────────────────────────────
+    Write-Log "📦 Đang cài APK..." $C_Info
+    $installOut = & $adb -s $targetDevice install -r "`"$ApkPath`"" 2>&1
+
+    if ($installOut -match "Success") {
+        Write-Log "✅ Cài đặt thành công!" $C_Succ
+
+        # ── BƯỚC 7: Tự động khởi động app ────────────────────────────────
+        # Lấy MainActivity hash từ APK đang cài (không hardcode)
+        $mainActivity = & $adb -s $targetDevice shell "pm dump $AppId" 2>&1 |
+            Select-String "android.intent.action.MAIN" -Context 0,3 |
+            ForEach-Object { $_.Context.PostContext } |
+            Select-String "$AppId/" |
+            ForEach-Object { ($_ -split "$AppId/")[1].Trim() -replace "\s.*", "" } |
+            Select-Object -First 1
+
+        if ($mainActivity) {
+            Write-Log "🚀 Khởi động: $AppId/$mainActivity" $C_Info
+            & $adb -s $targetDevice shell "am start -n $AppId/$mainActivity" 2>&1 | Out-Null
+        } else {
+            # Fallback: dùng monkey để launch app
+            Write-Log "🚀 Khởi động app (fallback)..." $C_Info
+            & $adb -s $targetDevice shell "monkey -p $AppId -c android.intent.category.LAUNCHER 1" 2>&1 | Out-Null
+        }
+    } else {
+        Write-Log "❌ Cài đặt thất bại!" $C_Err
+        Write-Log "$installOut" $C_Warn
+    }
+}
+
 function ProcessBuildAndShow {
     param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
 
@@ -308,37 +429,29 @@ function ProcessBuildAndShow {
     
     # Chuyển mọi đường dẫn về Safe Path (Khử khoảng trắng)
     $safeProj = Get-SafePath $Project
-    $safeOut = Get-SafePath $rawOut
+    $safeOut  = Get-SafePath $rawOut
 
     $dotnet = Resolve-DotnetExe
     if (-not $dotnet) { Write-Log "❌ Không tìm thấy SDK .NET!" $C_Err; exit 1 }
 
     # Lấy đường dẫn các SDK quan trọng
     $androidSdk = Get-AndroidSdkPath
-    $javaSdk = Get-JavaSdkPath
+    $javaSdk    = Get-JavaSdkPath
 
-    # Mảng tham số build chuẩn (Xử lý khoảng trắng tuyệt đối)
+    # Mảng tham số build chuẩn
     $params = @(
         "publish", $safeProj,
         "-f", $Tfm,
         "-c", "Release",
         "--output", $safeOut,
         "-p:UseMaui=true",
-        "-p:SingleProject=true",
-        "-p:EmbedAssembliesIntoApk=true",
-        "-p:AndroidUseSharedRuntime=false"
+        "-p:SingleProject=true"
     )
 
-    # Tự động gán Android SDK nếu tìm thấy
     if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
-    
-    # Tự động gán Java SDK nếu tìm thấy (Hỗ trợ build Android)
-    if ($javaSdk) { $params += "-p:JavaSdkDirectory=$javaSdk" }
-    
-    # Nối thêm các tham số tùy chỉnh khác (như định dạng apk/aab)
-    if ($BuildArgs) { $params += $BuildArgs }
+    if ($javaSdk)    { $params += "-p:JavaSdkDirectory=$javaSdk" }
+    if ($BuildArgs)  { $params += $BuildArgs }
 
-    # Hiển thị tiêu đề Build chuyên nghiệp
     Write-Host ("`n" + "┌" + ("─" * 58) + "┐") -ForegroundColor $C_Gray
     Write-Log " 🚀 ĐANG TIẾN HÀNH BUILD: $Tfm" $C_Info
     Write-Log " 📁 Output: $OutputSubDir" $C_Gray
@@ -346,8 +459,8 @@ function ProcessBuildAndShow {
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
-    # Thực thi lệnh build
-    & $dotnet $params -v diag
+    # Thực thi lệnh build (bỏ -v diag để tăng tốc)
+    & $dotnet $params
 
     if ($LASTEXITCODE -ne 0) {
         Write-Log "❌ BUILD THẤT BẠI (Mã lỗi: $LASTEXITCODE)" $C_Err
@@ -356,9 +469,32 @@ function ProcessBuildAndShow {
 
     $sw.Stop()
     Write-Log "✅ THÀNH CÔNG TRONG $($sw.Elapsed.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
-    
-    # Mở folder kết quả
-    if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
+
+    # ── AUTO DEPLOY (chỉ với APK, không deploy AAB) ───────────────────────
+    if ($Tfm -match "android" -and $OutputSubDir -eq "apk") {
+        $apkFile = Get-ChildItem $rawOut -Filter "*Signed*.apk" -Recurse |
+                   Select-Object -First 1
+        if (-not $apkFile) {
+            $apkFile = Get-ChildItem $rawOut -Filter "*.apk" -Recurse |
+                       Select-Object -First 1
+        }
+
+        if ($apkFile) {
+            # Lấy ApplicationId từ csproj
+            $csprojContent = Get-Content $safeProj -Raw -EA SilentlyContinue
+            $appIdMatch    = [regex]::Match($csprojContent, '<ApplicationId>([^<]+)</ApplicationId>')
+            $appId         = if ($appIdMatch.Success) { $appIdMatch.Groups[1].Value.Trim() } else { "com.companyname.app" }
+
+            Write-Host "`n" -NoNewline
+            Invoke-AutoDeploy -ApkPath $apkFile.FullName -AppId $appId
+        } else {
+            Write-Log "⚠️ Không tìm thấy APK để deploy." $C_Warn
+            if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
+        }
+    } else {
+        # AAB hoặc platform khác → Mở folder
+        if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
+    }
 }
 
 # ==================================================================================================

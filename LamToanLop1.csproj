@@ -30,7 +30,7 @@
 	<PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
 		<TargetAndroidVersion>34</TargetAndroidVersion>
-		<RuntimeIdentifiers>android-arm64;android-x64;android-arm;android-x86</RuntimeIdentifiers>
+		<RuntimeIdentifiers>android-arm64;android-x64;android-x86;android-arm</RuntimeIdentifiers>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
