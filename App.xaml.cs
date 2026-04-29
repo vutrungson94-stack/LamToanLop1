@@ -12,19 +12,19 @@ public partial class App : Microsoft.Maui.Controls.Application
 
     private readonly ITtsService _ttsService;
     private readonly ISoundService _soundService;
+    private readonly AppShell _appShell;
 
     public App(AppShell appShell, ITtsService ttsService, ISoundService soundService)
     {
         InitializeComponent();
         _ttsService = ttsService;
         _soundService = soundService;
-
-        this.MenuPage = appShell;
+        _appShell = appShell;
     }
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        return new Window(this.MenuPage!);
+        return new Window(this._appShell!);
     }
 
     protected override void OnSleep()

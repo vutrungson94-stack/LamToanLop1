@@ -70,17 +70,17 @@ public partial class SplashPage : ContentPage
             await Task.WhenAll(delayTask, Task.CompletedTask);
 
             // Chuyển sang AppShell (có MainPage bên trong)
-            await NavigateToAppShell();
+            await SplashPage.NavigateToAppShell();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"SplashPage Error: {ex.Message}");
             // Vẫn chuyển trang dù có lỗi
-            await NavigateToAppShell();
+            await SplashPage.NavigateToAppShell();
         }
     }
 
-    private async Task NavigateToAppShell()
+    private static async Task NavigateToAppShell()
     {
         try
         {
