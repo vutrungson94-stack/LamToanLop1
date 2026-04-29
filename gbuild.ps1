@@ -388,7 +388,7 @@ function Invoke-AutoDeploy {
 
     # ── BƯỚC 6: Cài APK mới ──────────────────────────────────────────────
     Write-Log "📦 Đang cài APK..." $C_Info
-    $installOut = & $adb -s $targetDevice install -r "`"$ApkPath`"" 2>&1
+    $installOut = & $adb -s $targetDevice install -r $ApkPath 2>&1
 
     if ($installOut -match "Success") {
         Write-Log "✅ Cài đặt thành công!" $C_Succ
