@@ -38,6 +38,42 @@ function Write-Log([string]$msg, [string]$color = "White") {
     Write-Host $msg -ForegroundColor $color
 }
 
+# ==================================================================================================
+# [SECTION 2.5] AUTO-CLEAN BUILD ARTIFACTS — CHỐNG CRASH UNSATISFIEDLINKERROR
+# ==================================================================================================
+function Invoke-AutoCleanArtifacts {
+    param([string]$ProjectDir)
+    
+    Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
+    
+    $foldersToClean = @(
+        (Join-Path $ProjectDir "bin"),
+        (Join-Path $ProjectDir "obj"),
+        (Join-Path $ProjectDir ".vs"),
+        (Join-Path $env:LOCALAPPDATA "Temp\Xamarin"),
+        (Join-Path $env:LOCALAPPDATA "Temp\MonoAndroid")
+    )
+    
+    foreach ($folder in $foldersToClean) {
+        if (Test-Path $folder) {
+            try {
+                Remove-Item -Path $folder -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Log "   ✅ Đã xóa: $folder" $C_Gray
+            } catch {
+                Write-Log "   ⚠️  Không xóa được: $folder" $C_Warn
+            }
+        }
+    }
+    
+    # Clean Android intermediate cache (quan trọng!)
+    $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
+    if (Test-Path $androidCache) {
+        Get-ChildItem $androidCache -Filter "*.stamp" -Recurse -ErrorAction SilentlyContinue | 
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        Write-Log "   ✅ Đã xóa Android stamp files" $C_Gray
+    }
+}
+
 # 2. Hàm Resolve đường dẫn tuyệt đối (Xử lý khoảng trắng)
 function Get-SafePath {
     param([string]$path)
@@ -416,8 +452,47 @@ function Invoke-AutoDeploy {
     }
 }
 
+# ════════════════════════════════════════════════════════════════
+# [NEW] AUTO-CLEAN BUILD ARTIFACTS — Chống crash UnsatisfiedLinkError
+# ════════════════════════════════════════════════════════════════
+function Invoke-CleanBuildArtifacts {
+    param([string]$ProjectDir)
+    
+    Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
+    
+    $foldersToClean = @(
+        (Join-Path $ProjectDir "bin"),
+        (Join-Path $ProjectDir "obj"),
+        (Join-Path $ProjectDir ".vs"),
+        (Join-Path $env:LOCALAPPDATA "Temp\Xamarin"),
+        (Join-Path $env:LOCALAPPDATA "Temp\MonoAndroid")
+    )
+    
+    foreach ($folder in $foldersToClean) {
+        if (Test-Path $folder) {
+            try {
+                Remove-Item -Path $folder -Recurse -Force -EA SilentlyContinue
+                Write-Log "   ✅ Đã xóa: $folder" $C_Gray
+            } catch {
+                Write-Log "   ⚠️  Không xóa được: $folder" $C_Warn
+            }
+        }
+    }
+    
+    # Clean Android intermediate cache (quan trọng!)
+    $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
+    if (Test-Path $androidCache) {
+        Get-ChildItem $androidCache -Filter "*.stamp" -Recurse -EA SilentlyContinue | 
+            Remove-Item -Force -EA SilentlyContinue
+    }
+}
+
 function ProcessBuildAndShow {
     param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
+
+    # 🔥 [QUAN TRỌNG] Clean artifacts TRƯỚC khi build để tránh UnsatisfiedLinkError
+    $projectDir = Split-Path $Project -Parent
+    Invoke-CleanBuildArtifacts -ProjectDir $projectDir
 
     # Làm sạch folder output
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
@@ -447,6 +522,16 @@ function ProcessBuildAndShow {
         "-p:UseMaui=true",
         "-p:SingleProject=true"
     )
+
+    # 🔥 Force rebuild native bindings để tránh UnsatisfiedLinkError
+    if ($Tfm -match "android") {
+        $params += @(
+            "-p:AndroidUseSharedRuntime=false",
+            "-p:EmbedAssembliesIntoApk=true",
+            "-p:AndroidFastDeploymentType=None"  # ← Force embed assemblies
+        )
+        Write-Log "🔧 Đã kích hoạt force native rebuild cho Android" $C_Info
+    }
 
     if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
     if ($javaSdk)    { $params += "-p:JavaSdkDirectory=$javaSdk" }
@@ -529,6 +614,29 @@ Write-Host @"
 ║      (Fixed: Space Paths, Runtime Host & Android SDK Errors)       ║
 ╚════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
+
+# 🔥 Tạo global.json với rollForward settings
+$globalJsonPath = Join-Path $PSScriptRoot "global.json"
+$dotnetExe = Resolve-DotnetExe
+if ($dotnetExe -and (Test-Path $dotnetExe)) {
+    try {
+        $sdks = & $dotnetExe --list-sdks 2>&1
+        if ($sdks) {
+            $latest = ($sdks[-1] -split ' ')[0]
+            $globalJson = @{
+                sdk = @{
+                    version = $latest
+                    rollForward = "latestMajor"
+                    allowPrerelease = $true
+                }
+            }
+            $globalJson | ConvertTo-Json -Depth 3 | Out-File $globalJsonPath -Encoding utf8 -Force
+            Write-Log "📝 Đã tạo global.json (SDK $latest, rollForward=latestMajor)" $C_Info
+        }
+    } catch {
+        Write-Log "⚠️  Không tạo được global.json: $($_.Exception.Message)" $C_Warn
+    }
+}
 
 # 1. Tìm Project
 $csproj = Get-MauiCsproj
