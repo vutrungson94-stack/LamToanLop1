@@ -21,6 +21,9 @@ public partial class MenuPage : ContentPage
         InitializeComponent();
         _tts = ttsService;
         _soundService = soundService;
+
+        // 🔥 ẨN NAV BAR
+        Shell.SetNavBarIsVisible(this, false);
     }
 
     // Xử lý nút Back vật lý để quay lại từng cấp Menu

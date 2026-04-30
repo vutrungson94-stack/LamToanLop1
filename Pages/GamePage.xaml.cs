@@ -89,6 +89,9 @@ public partial class GamePage : ContentPage
         _soundService = soundService;
         BindingContext = _vm;
 
+        // 🔥 ẨN NAV BAR
+        Shell.SetNavBarIsVisible(this, false);
+
         // Lưu handler để có thể remove khi page disappear
         _vmPropertyHandler = (s, e) =>
         {

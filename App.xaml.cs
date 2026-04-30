@@ -14,6 +14,9 @@ public partial class App : Microsoft.Maui.Controls.Application
     {
         InitializeComponent();
         _serviceProvider = serviceProvider;
+
+        // 🔥 ẨN NAVIGATION BAR TOÀN CỤC
+        Microsoft.Maui.Controls.Shell.SetNavBarIsVisible(this, false);
     }
 
     protected override Window CreateWindow(IActivationState? activationState)
