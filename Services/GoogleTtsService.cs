@@ -40,7 +40,12 @@ namespace LamToanLop1.Services
         public GoogleTtsService(IAudioManager audioManager)
         {
             _audioManager = audioManager;
-            Task.Delay(3000).ContinueWith(_ => CleanupOldCache());
+            // Chạy cleanup an toàn trên threadpool, không block UI thread
+            Task.Run(async () =>
+            {
+                await Task.Delay(3000);
+                try { CleanupOldCache(3); } catch { }
+            });
         }
 
         // Hàm dọn dẹp file rác quá hạn (mặc định 3 ngày)
