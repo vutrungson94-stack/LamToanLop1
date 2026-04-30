@@ -615,6 +615,13 @@ Write-Host @"
 ╚════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
 
+# 🔧 Resolve đường dẫn dotnet.exe TRƯỚC khi dùng nó cho global.json
+$dotnetExe = Resolve-DotnetExe
+if (-not $dotnetExe) {
+    Write-Log "❌ Không tìm thấy .NET SDK để khởi tạo cấu hình!" $C_Err
+    exit 1
+}
+
 # ==========================================
 # QUẢN LÝ global.json (SMART CHECK & CREATE)
 # ==========================================
@@ -627,27 +634,21 @@ if (-not $sdks) {
     exit 1
 }
 $latestSdk = ($sdks[-1] -split ' ')[0]
-
 $needsUpdate = $true # Mặc định là cần tạo mới
 
 # Kiểm tra nếu file đã tồn tại
 if (Test-Path $gJsonPath) {
     try {
-        # Đọc nội dung và parse JSON
         $content = Get-Content $gJsonPath -Raw -ErrorAction Stop
         $json = ConvertFrom-Json $content -ErrorAction Stop
-        
-        # Kiểm tra định dạng: phải có thuộc tính sdk.version và khớp với version hiện tại
         if ($json.sdk -and $json.sdk.version -eq $latestSdk) {
             $needsUpdate = $false
-            Write-Host "✅ global.json đã tồn tại và đúng phiên bản ($latestSdk) -> Bỏ qua tạo mới." -ForegroundColor Green
+            Write-Host "✅ global.json đã tồn tại và đúng phiên bản ($latestSdk) -> Bỏ qua." -ForegroundColor Green
         } else {
-            # Có file nhưng sai version hoặc thiếu key
             $currentVer = if ($json.sdk) { $json.sdk.version } else { "Unknown" }
-            Write-Host "⚠️ global.json có phiên bản cũ/sai ($currentVer) -> Sẽ cập nhật lên ($latestSdk)." -ForegroundColor Yellow
+            Write-Host "⚠️ global.json version cũ/sai ($currentVer) -> Sẽ cập nhật lên ($latestSdk)." -ForegroundColor Yellow
         }
     } catch {
-        # File bị lỗi format (không phải JSON hợp lệ)
         Write-Host "⚠️ File global.json bị lỗi định dạng -> Sẽ tạo lại." -ForegroundColor Yellow
     }
 }
