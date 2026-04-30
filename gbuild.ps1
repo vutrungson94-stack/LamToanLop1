@@ -331,10 +331,12 @@ function Show-BuildSummary([string]$dir) {
 # [SECTION 3] TIẾN TRÌNH BUILD CHÍNH (THE CORE ENGINE)
 # ==================================================================================================
 
+# ==================================================================================================
 # 11. Tự động tìm thiết bị + deploy APK (Ưu tiên máy thật)
+# ==================================================================================================
 function Invoke-AutoDeploy {
     param([string]$ApkPath, [string]$AppId)
-    
+
     $sdk = Get-AndroidSdkPath
     $adb = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
     if (-not (Test-Path $adb) -and $adb -ne "adb") {
@@ -342,7 +344,7 @@ function Invoke-AutoDeploy {
         return
     }
 
-    # ── BƯỚC 0: KIỂM TRA FILE APK ──────────────────────────────────────
+    # ── BƯỚC 1: KIỂM TRA FILE APK ──────────────────────────────────────
     if (-not (Test-Path $ApkPath)) {
         Write-Log "❌ File APK không tồn tại: $ApkPath" $C_Err
         return
@@ -354,7 +356,7 @@ function Invoke-AutoDeploy {
         Start-Sleep -Seconds 2
     }
 
-    # ── BƯỚC 1: Lấy thiết bị ───────────────────────────────────────────
+    # ── BƯỚC 2: Lấy danh sách thiết bị ─────────────────────────────────
     $rawList = @(& $adb devices 2>&1)
     $allDevices = @($rawList | Where-Object { $_ -match "\tdevice$" } | ForEach-Object { ($_ -split "\t")[0].Trim() })
     if ($allDevices.Count -eq 0) {
@@ -362,29 +364,28 @@ function Invoke-AutoDeploy {
         return
     }
 
-    # Ưu tiên máy thật → máy ảo
+    # ── BƯỚC 3: Phân loại & Chọn thiết bị ──────────────────────────────
+    # Ưu tiên máy thật → Máy ảo
     $realDevices = @($allDevices | Where-Object { $_ -notmatch "^emulator-" -and $_ -notmatch "^127\.0\.0\." })
     $emulators   = @($allDevices | Where-Object { $_ -match "^emulator-" -or $_ -match "^127\.0\.0\." })
     $targetDevice = if ($realDevices.Count -gt 0) { $realDevices[0] } else { $emulators[0] }
-    
     Write-Log "🎯 Deploy lên: $targetDevice" $C_Info
 
-    # ── BƯỚC 2: Uninstall cũ + Chờ hệ thống Android ─────────────────────
+    # ── BƯỚC 4: Gỡ app cũ + Chờ hệ thống Android ───────────────────────
     Write-Log "🗑️  Gỡ app cũ ($AppId)..." $C_Warn
-    $uninstallOut = & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-String
-    # Dù uninstall lỗi (app chưa có) cũng không sao, tiếp tục
-    Start-Sleep -Milliseconds 800 # Chờ Dalvik/PackageManager giải phóng
+    & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-Null
+    Start-Sleep -Milliseconds 800 # Chờ Dalvik/PackageManager giải phóng lock file
 
-    # ── BƯỚC 3: Cài đặt với chế độ tolerant ────────────────────────────
+    # ── BƯỚC 5: Cài đặt với chế độ tolerant ────────────────────────────
     Write-Log "📦 Đang cài APK (cho phép downgrade/replace)..." $C_Info
-    # -r: replace, -d: allow downgrade (fix signature mismatch), -t: allow test packages
+    # -r: replace existing, -d: allow version downgrade, -t: allow test packages
     $installOut = @(& $adb -s $targetDevice install -r -d -t $ApkPath 2>&1)
-    
     $fullLog = $installOut -join "`n"
+
     if ($fullLog -match "Success") {
         Write-Log "✅ Cài đặt thành công!" $C_Succ
         
-        # Tự động khởi động app
+        # ── BƯỚC 6 & 7: Tự động lấy MainActivity & Khởi động app ────────
         $mainActivity = $fullLog | Select-String "$AppId/" | Select-Object -First 1
         if ($mainActivity) {
             $act = ($mainActivity -split "$AppId/")[1].Trim() -replace "\s.*", ""
@@ -442,7 +443,7 @@ function Invoke-CleanBuildArtifacts {
 function ProcessBuildAndShow {
     param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
 
-    # 🔥 [QUAN TRỌNG] Clean artifacts TRƯỚC khi build để tránh UnsatisfiedLinkError
+    # 🔥 Clean artifacts TRƯỚC khi build để tránh UnsatisfiedLinkError
     $projectDir = Split-Path $Project -Parent
     Invoke-CleanBuildArtifacts -ProjectDir $projectDir
 

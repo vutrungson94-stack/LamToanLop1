@@ -21,8 +21,12 @@ public partial class App : Microsoft.Maui.Controls.Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        var window = new Window(_serviceProvider.GetRequiredService<AppShell>());
-        return window;
+        var _appShell = _serviceProvider.GetRequiredService<AppShell>();
+        var _window = new Window(_appShell);
+
+        Shell.SetNavBarIsVisible(_appShell, false); // Ẩn Navigation Bar cho toàn bộ ứng dụng
+        
+        return _window;
     }
 
     protected override void OnSleep()
