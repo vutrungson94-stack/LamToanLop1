@@ -10,6 +10,7 @@ public partial class AppShell : Shell
 
         // Ẩn Navigation Bar cho toàn bộ ứng dụng
         Shell.SetNavBarIsVisible(this, false);
+        Shell.SetTabBarIsVisible(this, false);
 
 		// SplashPage: trang đầu tiên, cần ITtsService → phải dùng DI factory
         Items.Add(new ShellContent
