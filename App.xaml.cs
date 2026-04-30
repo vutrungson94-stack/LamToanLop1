@@ -21,17 +21,8 @@ public partial class App : Microsoft.Maui.Controls.Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        try
-        {
-            var appShell = _serviceProvider.GetRequiredService<AppShell>();
-            return new Window(appShell);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"❌ CreateWindow Failed: {ex.Message}\n{ex.StackTrace}");
-            // Fallback: Trả về trang trống để app không văng, user có thể đọc log
-            return new Window(new ContentPage { Content = new Label { Text = $"Lỗi khởi động: {ex.Message}", TextColor = Colors.Red } });
-        }
+        var window = new Window(_serviceProvider.GetRequiredService<AppShell>());
+        return window;
     }
 
     protected override void OnSleep()
