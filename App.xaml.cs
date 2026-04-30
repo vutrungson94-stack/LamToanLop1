@@ -10,20 +10,17 @@ public partial class App : Microsoft.Maui.Controls.Application
     // Sự kiện báo App đã quay lại -> THÊM DÒNG NÀY
     public static event Action? AppResumed;
 
-    private readonly ITtsService _ttsService;
-    private readonly ISoundService _soundService;
-    private readonly AppShell _appShell;
+    private readonly IServiceProvider _serviceProvider;
 
-    public App(AppShell appShell, ITtsService ttsService, ISoundService soundService)
+    public App(IServiceProvider serviceProvider)
     {
         InitializeComponent();
-        _ttsService = ttsService;
-        _soundService = soundService;
-        _appShell = appShell;
+        _serviceProvider = serviceProvider;
     }
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
+        var _appShell = _serviceProvider.GetRequiredService<AppShell>();
         return new Window(_appShell);
     }
 
@@ -31,8 +28,8 @@ public partial class App : Microsoft.Maui.Controls.Application
 	{
         base.OnSleep();
         // Bắn tín hiệu cho GamePage biết để tạm dừng vòng lặp
-        _ttsService.Stop();
-        _soundService.StopAll();
+        _serviceProvider.GetService<ITtsService>()?.Stop();
+        _serviceProvider.GetService<ISoundService>()?.StopAll();
         AppHidden?.Invoke();
     }
 

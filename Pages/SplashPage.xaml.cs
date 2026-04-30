@@ -70,33 +70,31 @@ public partial class SplashPage : ContentPage
             await Task.WhenAll(delayTask, Task.CompletedTask);
 
             // Chuyển sang AppShell (có MainPage bên trong)
-            await SplashPage.NavigateToAppShell();
+            await NavigateToAppShell();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"SplashPage Error: {ex.Message}");
             // Vẫn chuyển trang dù có lỗi
-            await SplashPage.NavigateToAppShell();
+            await NavigateToAppShell();
         }
     }
 
-    [Obsolete]
     private static async Task NavigateToAppShell()
     {
         try
         {
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                await Shell.Current.GoToAsync("//MenuPage");
+                if (Shell.Current != null)
+                {
+                    await Shell.Current.GoToAsync("//MenuPage");
+                }
             });
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
-            MainThread.BeginInvokeOnMainThread(static () =>
-            {
-                Application.Current.MainPage = IPlatformApplication.Current.Services.GetRequiredService<MenuPage>();
-            });
         }
     }
 }

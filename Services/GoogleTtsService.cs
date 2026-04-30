@@ -76,7 +76,11 @@ namespace LamToanLop1.Services
             });
             if(CacheReady) { progress?.Report(100); return; }
 
-            if (Connectivity.Current.NetworkAccess != NetworkAccess.Internet) return;
+            try
+            {
+                if (Connectivity.Current.NetworkAccess != NetworkAccess.Internet) return;
+            }
+            catch { return; }
 
             var list = animalNames.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
             int completed = 0;

@@ -16,10 +16,10 @@ public partial class MenuPage : ContentPage
     // 1 = Cơ bản (PV 10), 2 = Nâng cao (PV 100)
     private int _selectedRange = 1;
 
-    public MenuPage(ITtsService tts, ISoundService soundService)
+    public MenuPage(ITtsService ttsService, ISoundService soundService)
     {
         InitializeComponent();
-        _tts = tts;
+        _tts = ttsService;
         _soundService = soundService;
     }
 
@@ -124,19 +124,10 @@ public partial class MenuPage : ContentPage
 
     private async Task StartGame(int level)
     {
-        // Prefer the current page's handler/maui context (when attached),
-        // fall back to the first application Window's handler if needed.
-        var services = this.Handler?.MauiContext?.Services;
-        if (services == null)
+        if (Shell.Current != null)
         {
-            var windows = Application.Current?.Windows;
-            var firstWindow = (windows != null && windows.Count > 0) ? windows[0] : null;
-            services = firstWindow?.Handler?.MauiContext?.Services;
+            await Shell.Current.GoToAsync($"{nameof(GamePage)}?range={_selectedRange}&level={level}");
         }
-
-        services = services ?? throw new InvalidOperationException("MAUI services (MauiContext) are not available. Ensure the page is attached to a Window before starting the game.");
-        
-        await Shell.Current.GoToAsync($"{nameof(GamePage)}?range={_selectedRange}&level={level}");
     }
 
     // --- CÁC NÚT QUAY LẠI ---
