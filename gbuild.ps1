@@ -615,27 +615,54 @@ Write-Host @"
 ╚════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
 
-# 🔥 Tạo global.json với rollForward settings
-$globalJsonPath = Join-Path $PSScriptRoot "global.json"
-$dotnetExe = Resolve-DotnetExe
-if ($dotnetExe -and (Test-Path $dotnetExe)) {
+# ==========================================
+# QUẢN LÝ global.json (SMART CHECK & CREATE)
+# ==========================================
+$gJsonPath = Join-Path $PSScriptRoot "global.json"
+
+# Lấy version SDK mới nhất đang được sử dụng
+$sdks = & $dotnetExe --list-sdks
+if (-not $sdks) {
+    Write-Host "❌ Không thể đọc danh sách SDK từ Dotnet!" -ForegroundColor Red
+    exit 1
+}
+$latestSdk = ($sdks[-1] -split ' ')[0]
+
+$needsUpdate = $true # Mặc định là cần tạo mới
+
+# Kiểm tra nếu file đã tồn tại
+if (Test-Path $gJsonPath) {
     try {
-        $sdks = & $dotnetExe --list-sdks 2>&1
-        if ($sdks) {
-            $latest = ($sdks[-1] -split ' ')[0]
-            $globalJson = @{
-                sdk = @{
-                    version = $latest
-                    rollForward = "latestMajor"
-                    allowPrerelease = $true
-                }
-            }
-            $globalJson | ConvertTo-Json -Depth 3 | Out-File $globalJsonPath -Encoding utf8 -Force
-            Write-Log "📝 Đã tạo global.json (SDK $latest, rollForward=latestMajor)" $C_Info
+        # Đọc nội dung và parse JSON
+        $content = Get-Content $gJsonPath -Raw -ErrorAction Stop
+        $json = ConvertFrom-Json $content -ErrorAction Stop
+        
+        # Kiểm tra định dạng: phải có thuộc tính sdk.version và khớp với version hiện tại
+        if ($json.sdk -and $json.sdk.version -eq $latestSdk) {
+            $needsUpdate = $false
+            Write-Host "✅ global.json đã tồn tại và đúng phiên bản ($latestSdk) -> Bỏ qua tạo mới." -ForegroundColor Green
+        } else {
+            # Có file nhưng sai version hoặc thiếu key
+            $currentVer = if ($json.sdk) { $json.sdk.version } else { "Unknown" }
+            Write-Host "⚠️ global.json có phiên bản cũ/sai ($currentVer) -> Sẽ cập nhật lên ($latestSdk)." -ForegroundColor Yellow
         }
     } catch {
-        Write-Log "⚠️  Không tạo được global.json: $($_.Exception.Message)" $C_Warn
+        # File bị lỗi format (không phải JSON hợp lệ)
+        Write-Host "⚠️ File global.json bị lỗi định dạng -> Sẽ tạo lại." -ForegroundColor Yellow
     }
+}
+
+# Chỉ ghi đè khi cần thiết
+if ($needsUpdate) {
+    $config = @{
+        sdk = @{
+            version = $latestSdk
+            rollForward = "latestMajor"
+            allowPrerelease = $true
+        }
+    }
+    $config | ConvertTo-Json -Depth 3 | Out-File $gJsonPath -Encoding utf8 -Force
+    Write-Host "🧾 Đã tạo/cập nhật global.json ($latestSdk)" -ForegroundColor Cyan
 }
 
 # 1. Tìm Project
