@@ -13,7 +13,18 @@ public partial class AppShell : Shell
         {
             Route = "SplashPage",
             ContentTemplate = new DataTemplate(() =>
-                serviceProvider.GetRequiredService<SplashPage>())
+            {
+                try
+                {
+                    return serviceProvider.GetRequiredService<SplashPage>();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error creating SplashPage: {ex.Message}");
+                    // Fallback nếu có lỗi: tạo SplashPage thủ công với null services (có thể handle null trong SplashPage)
+                    return new ContentPage { Content = new Label { Text = "Error loading SplashPage" } };
+                }
+            })
         });
 
         // MenuPage: cần ITtsService + ISoundService → phải dùng DI factory
@@ -21,7 +32,18 @@ public partial class AppShell : Shell
         {
             Route = "MenuPage",
             ContentTemplate = new DataTemplate(() =>
-                serviceProvider.GetRequiredService<MenuPage>())
+            {
+                try
+                {
+                    return serviceProvider.GetRequiredService<MenuPage>();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error creating MenuPage: {ex.Message}");
+                    // Fallback nếu có lỗi: tạo MenuPage thủ công với null services (có thể handle null trong MenuPage)
+                    return new ContentPage { Content = new Label { Text = "Error loading MenuPage" } };
+                }
+            })
         });
 
 		// Đăng ký đường dẫn cho các trang con

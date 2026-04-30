@@ -21,7 +21,17 @@ public static class MauiProgram
 
         // Đăng ký AudioManager thật (không dùng factory throw)
         // Android luôn có AudioManager, sẽ không null
-        builder.Services.AddSingleton<IAudioManager>(AudioManager.Current);
+        builder.Services.AddSingleton<IAudioManager>(_ =>
+        {
+            try
+            {
+                return AudioManager.Current;
+            }
+            catch
+            {
+                return AudioManager.Current; // Fallback: vẫn trả về AudioManager.Current, có thể handle null trong SoundService nếu thực sự không có
+            }
+        });
 
         // Đăng ký các service thật (nếu bạn đã sửa các lỗi trước đó, chúng sẽ hoạt động)
         builder.Services.AddSingleton<ITtsService, GoogleTtsService>();
