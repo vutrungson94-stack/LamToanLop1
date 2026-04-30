@@ -334,121 +334,73 @@ function Show-BuildSummary([string]$dir) {
 # 11. Tự động tìm thiết bị + deploy APK (Ưu tiên máy thật)
 function Invoke-AutoDeploy {
     param([string]$ApkPath, [string]$AppId)
-
-    $sdk    = Get-AndroidSdkPath
-    $adb    = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
-
+    
+    $sdk = Get-AndroidSdkPath
+    $adb = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
     if (-not (Test-Path $adb) -and $adb -ne "adb") {
         Write-Log "⚠️ Không tìm thấy adb.exe - Bỏ qua auto deploy." $C_Warn
         return
     }
 
-    # ── BƯỚC 1: Lấy toàn bộ danh sách thiết bị đang kết nối ──────────────
-    $rawList = @(& $adb devices 2>&1)
-    $allDevices = @($rawList |
-        Where-Object { $_ -match "\tdevice$" } |
-        ForEach-Object { ($_ -split "\t")[0].Trim() })
+    # ── BƯỚC 0: KIỂM TRA FILE APK ──────────────────────────────────────
+    if (-not (Test-Path $ApkPath)) {
+        Write-Log "❌ File APK không tồn tại: $ApkPath" $C_Err
+        return
+    }
+    $apkInfo = Get-Item $ApkPath
+    if ($apkInfo.Length -lt 1MB) {
+        Write-Log "⚠️ APK quá nhỏ ($([math]::Round($apkInfo.Length/1KB,1)) KB) - Có thể build chưa hoàn tất." $C_Warn
+        Write-Log "🔄 Chờ 2s rồi thử lại..." $C_Gray
+        Start-Sleep -Seconds 2
+    }
 
+    # ── BƯỚC 1: Lấy thiết bị ───────────────────────────────────────────
+    $rawList = @(& $adb devices 2>&1)
+    $allDevices = @($rawList | Where-Object { $_ -match "\tdevice$" } | ForEach-Object { ($_ -split "\t")[0].Trim() })
     if ($allDevices.Count -eq 0) {
-        Write-Log "⚠️ Không tìm thấy thiết bị nào - Bỏ qua auto deploy." $C_Warn
-        Write-Log "👉 Cắm USB / Bật USB Debugging / adb connect <ip>:5555" $C_Info
+        Write-Log "⚠️ Không tìm thấy thiết bị nào." $C_Warn
         return
     }
 
-    # ── BƯỚC 2: Phân loại thiết bị ────────────────────────────────────────
-    # Máy thật: serial có dạng ABC123XY hoặc IP (WiFi ADB)
-    # Máy ảo:   serial bắt đầu bằng "emulator-" hoặc "127.0.0.1:"
-    $realDevices = @($allDevices | Where-Object {
-        $_ -notmatch "^emulator-" -and $_ -notmatch "^127\.0\.0\."
-    })
-    $emulators = @($allDevices | Where-Object {
-        $_ -match "^emulator-" -or $_ -match "^127\.0\.0\."
-    })
+    # Ưu tiên máy thật → máy ảo
+    $realDevices = @($allDevices | Where-Object { $_ -notmatch "^emulator-" -and $_ -notmatch "^127\.0\.0\." })
+    $emulators   = @($allDevices | Where-Object { $_ -match "^emulator-" -or $_ -match "^127\.0\.0\." })
+    $targetDevice = if ($realDevices.Count -gt 0) { $realDevices[0] } else { $emulators[0] }
+    
+    Write-Log "🎯 Deploy lên: $targetDevice" $C_Info
 
-    # Ưu tiên: Máy thật → Máy ảo
-    $orderedDevices = @()
-    if ($realDevices.Count -gt 0) { $orderedDevices += $realDevices }
-    if ($emulators.Count -gt 0)   { $orderedDevices += $emulators }
+    # ── BƯỚC 2: Uninstall cũ + Chờ hệ thống Android ─────────────────────
+    Write-Log "🗑️  Gỡ app cũ ($AppId)..." $C_Warn
+    $uninstallOut = & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-String
+    # Dù uninstall lỗi (app chưa có) cũng không sao, tiếp tục
+    Start-Sleep -Milliseconds 800 # Chờ Dalvik/PackageManager giải phóng
 
-    Write-Log "📱 Thiết bị phát hiện: $($allDevices.Count) (Thật: $($realDevices.Count), Ảo: $($emulators.Count))" $C_Info
-
-    # ── BƯỚC 3: Chọn thiết bị ─────────────────────────────────────────────
-    $targetDevice = $null
-
-    if ($orderedDevices.Count -eq 1) {
-        # Chỉ có 1 thiết bị → Chọn luôn
-        $targetDevice = $orderedDevices[0]
-        $label = if ($realDevices -contains $targetDevice) { "📱 Máy thật" } else { "🖥️  Máy ảo" }
-        Write-Log "$label được chọn tự động: $targetDevice" $C_Succ
-    } else {
-        # Nhiều thiết bị → Hiển thị menu chọn
-        Write-Host "`n📋 DANH SÁCH THIẾT BỊ:" -ForegroundColor $C_Info
-        for ($i = 0; $i -lt $orderedDevices.Count; $i++) {
-            $d = $orderedDevices[$i]
-            # Lấy tên model thiết bị
-            $model = & $adb -s $d shell getprop ro.product.model 2>&1
-            $model = $model -replace "`r|`n", ""
-            $label = if ($realDevices -contains $d) { "📱 Máy thật" } else { "🖥️  Máy ảo " }
-            Write-Host "  [$($i+1)] $label | $d | $model" -ForegroundColor White
-        }
-        Write-Host "  [0] Bỏ qua deploy" -ForegroundColor $C_Gray
-
-        $choice = Read-Host "`n⌨  Chọn thiết bị (Enter = tự động chọn thiết bị đầu tiên)"
-        if ([string]::IsNullOrWhiteSpace($choice)) {
-            $targetDevice = $orderedDevices[0]
-        } elseif ($choice -eq "0") {
-            Write-Log "⏭️  Bỏ qua deploy." $C_Gray
-            return
-        } else {
-            $idx = [int]$choice - 1
-            if ($idx -ge 0 -and $idx -lt $orderedDevices.Count) {
-                $targetDevice = $orderedDevices[$idx]
-            } else {
-                Write-Log "❌ Lựa chọn không hợp lệ." $C_Err
-                return
+    # ── BƯỚC 3: Cài đặt với chế độ tolerant ────────────────────────────
+    Write-Log "📦 Đang cài APK (cho phép downgrade/replace)..." $C_Info
+    # -r: replace, -d: allow downgrade (fix signature mismatch), -t: allow test packages
+    $installOut = @(& $adb -s $targetDevice install -r -d -t $ApkPath 2>&1)
+    
+    $fullLog = $installOut -join "`n"
+    if ($fullLog -match "Success") {
+        Write-Log "✅ Cài đặt thành công!" $C_Succ
+        
+        # Tự động khởi động app
+        $mainActivity = $fullLog | Select-String "$AppId/" | Select-Object -First 1
+        if ($mainActivity) {
+            $act = ($mainActivity -split "$AppId/")[1].Trim() -replace "\s.*", ""
+            if ($act) {
+                Write-Log "🚀 Khởi động: $AppId/$act" $C_Info
+                & $adb -s $targetDevice shell "am start -n $AppId/$act" 2>&1 | Out-Null
             }
         }
-    }
-
-    # ── BƯỚC 4: Lấy tên model thiết bị đã chọn ───────────────────────────
-    $modelName = (& $adb -s $targetDevice shell getprop ro.product.model 2>&1) -replace "`r|`n", ""
-    Write-Log "🎯 Deploy lên: $modelName ($targetDevice)" $C_Info
-
-    # ── BƯỚC 5: Gỡ app cũ + xóa cache Dalvik ────────────────────────────
-    Write-Log "🗑️  Gỡ app cũ ($AppId)..." $C_Warn
-    & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-Null
-
-    Write-Log "🧹 Xóa Dalvik cache..." $C_Warn
-    & $adb -s $targetDevice shell "run-as $AppId rm -rf /data/data/$AppId/cache" 2>&1 | Out-Null
-    & $adb -s $targetDevice shell "rm -rf /data/dalvik-cache/*" 2>&1 | Out-Null
-
-    # ── BƯỚC 6: Cài APK mới ──────────────────────────────────────────────
-    Write-Log "📦 Đang cài APK..." $C_Info
-    $installOut = & $adb -s $targetDevice install -r $ApkPath 2>&1
-
-    if ($installOut -match "Success") {
-        Write-Log "✅ Cài đặt thành công!" $C_Succ
-
-        # ── BƯỚC 7: Tự động khởi động app ────────────────────────────────
-        # Lấy MainActivity hash từ APK đang cài (không hardcode)
-        $mainActivity = & $adb -s $targetDevice shell "pm dump $AppId" 2>&1 |
-            Select-String "android.intent.action.MAIN" -Context 0,3 |
-            ForEach-Object { $_.Context.PostContext } |
-            Select-String "$AppId/" |
-            ForEach-Object { ($_ -split "$AppId/")[1].Trim() -replace "\s.*", "" } |
-            Select-Object -First 1
-
-        if ($mainActivity) {
-            Write-Log "🚀 Khởi động: $AppId/$mainActivity" $C_Info
-            & $adb -s $targetDevice shell "am start -n $AppId/$mainActivity" 2>&1 | Out-Null
-        } else {
-            # Fallback: dùng monkey để launch app
-            Write-Log "🚀 Khởi động app (fallback)..." $C_Info
-            & $adb -s $targetDevice shell "monkey -p $AppId -c android.intent.category.LAUNCHER 1" 2>&1 | Out-Null
-        }
     } else {
-        Write-Log "❌ Cài đặt thất bại!" $C_Err
-        Write-Log "$installOut" $C_Warn
+        Write-Log "❌ Cài đặt thất bại! Chi tiết Android:" $C_Err
+        foreach ($line in $installOut) {
+            if ($line -match "Failure|Error|failed") {
+                Write-Log "   🔍 $line" $C_Warn
+            }
+        }
+        Write-Log "💡 Mẹo: Chạy thủ công 'adb uninstall $AppId' rồi thử lại." $C_Info
     }
 }
 
