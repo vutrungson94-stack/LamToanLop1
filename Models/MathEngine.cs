@@ -368,33 +368,45 @@
                     Data = new Tuple<List<GameItem>, List<GameItem>>(GenerateRandomAnimals(left), GenerateRandomAnimals(right));
                     break;
 
-                case 6: // PHÉP TÍNH HÌNH ẢNH
+                case 6: // PHÉP TÍNH HÌNH ẢNH (THÊM/BỚT)
                     VisualType = "FarmMath";
                     int limit = level == 1 ? 6 : (level == 2 ? 12 : 18);
                     bool isAdd = _rnd.Next(2) == 0;
-                    int a, b;
+                    int a, b, result;
+                    
                     if (isAdd)
                     {
+                        // PHÉP CỘNG: Có a bạn, thêm b bạn → Tổng = a + b
                         a = _rnd.Next(1, limit);
                         b = _rnd.Next(1, limit - a + 1);
+                        result = a + b;
                     }
                     else
                     {
-                        a = _rnd.Next(2, limit + 1);
-                        b = _rnd.Next(1, a);
+                        // PHÉP TRỪ: Có a bạn, bớt b bạn → Còn = a - b
+                        a = _rnd.Next(2, limit + 1);  // Tổng ban đầu
+                        b = _rnd.Next(1, a);           // Số cần bớt (nhỏ hơn a)
+                        result = a - b;
                     }
 
                     Title = $"Có {a} bạn nhỏ, nếu {(isAdd ? "thêm" : "bớt")} {b} bạn thì có tất cả bao nhiêu bạn?";
-                    CorrectAnswer = (isAdd ? a + b : a - b).ToString();
+                    CorrectAnswer = result.ToString();
 
-                    // Tạo danh sách gộp: nhóm A (được highlight) + nhóm B
+                    // TẠO DANH SÁCH ĐỘNG VẬT:
+                    // - Luôn hiển thị ĐỦ a con ban đầu
+                    // - Highlight b con để thể hiện "thêm" hoặc "bớt"
                     var groupA = GenerateRandomAnimals(a);
-                    var groupB = GenerateRandomAnimals(b);
-                    var allAnimals = new List<GameItem>(groupA);
-                    allAnimals.AddRange(groupB);
+                    
+                    // Đánh dấu b con đầu tiên là IsTarget (để highlight)
+                    for (int i = 0; i < b && i < groupA.Count; i++)
+                    {
+                        groupA[i].IsTarget = true;
+                    }
 
-                    // Item2 = số lượng nhóm A (để GamePage biết cần highlight bao nhiêu con)
-                    Data = new Tuple<List<GameItem>, int>(allAnimals, a);
+                    // Data = (danh sách a con, số lượng con được highlight = b)
+                    Data = new Tuple<List<GameItem>, int>(groupA, b);
+                    
+                    // Tạo options cho đáp án
                     Options = CreateOptions(CorrectAnswer, 0, limit + 5);
                     break;
             }
@@ -554,7 +566,7 @@
             bool isComparison = _rnd.Next(0, 2) == 0;
             if (isComparison)
             {
-                Title = "Điền dấu thích hợp (>, <, =)";
+                Title = "Điền dấu thích hợp ( >, <, = )";
                 Options = [">", "<", "="];
                 int leftComplexity = (level == 1) ? _rnd.Next(0, 2) : (level == 2 ? 1 : _rnd.Next(1, 3));
                 int rightComplexity = (level == 1) ? 0 : (level == 2 ? _rnd.Next(0, 2) : _rnd.Next(1, 3));

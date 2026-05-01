@@ -2,44 +2,92 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" 
-    xmlns:local="clr-namespace:LamToanLop1.Pages"
     x:Class="LamToanLop1.Pages.AnimalPage"
     Title="Khám phá động vật"
-	BackgroundColor="#E0F7FA"
-	Shell.NavBarIsVisible="False">
+    BackgroundColor="#E0F7FA"
+    Shell.NavBarIsVisible="False">
 
-	<VerticalStackLayout 
-		Padding="20" 
-		Spacing="20" 
-		VerticalOptions="Center">
+    <!-- Grid Root - 4 HÀNG: Home, Ảnh, Tên+Loa, Nút điều hướng -->
+    <Grid RowDefinitions="Auto, *, Auto, Auto" 
+          ColumnDefinitions="*" 
+          Padding="15" 
+          RowSpacing="15">
+        
+        <!-- Nút Home góc trên TRÁI -->
+        <Button 
+			Grid.Row="0" Grid.Column="0"
+			Text="🏠"
+			FontSize="22"
+			FontAttributes="Bold"
+			HeightRequest="44" 
+			WidthRequest="44"
+			HorizontalOptions="Start"
+			VerticalOptions="Start"
+			Clicked="OnHomeClicked"
+			BackgroundColor="White"
+			CornerRadius="22"
+			Padding="0"
+			BorderColor="#4CAF50"
+			BorderWidth="2"
+			TextColor="#2E7D32">
+			
+			<Button.Shadow>
+				<Shadow Brush="Black" Offset="1,1" Opacity="0.3"/>
+			</Button.Shadow>
+			
+			<Button.VisualStateManager.VisualStateGroups>
+				<VisualStateGroupList>
+					<VisualStateGroup x:Name="CommonStates">
+						<VisualState x:Name="Normal"/>
+						<VisualState x:Name="Pressed">
+							<VisualState.Setters>
+								<Setter Property="BackgroundColor" Value="#E8F5E9"/>
+								<Setter Property="Scale" Value="0.95"/>
+							</VisualState.Setters>
+						</VisualState>
+					</VisualStateGroup>
+				</VisualStateGroupList>
+			</Button.VisualStateManager.VisualStateGroups>
+		</Button>
 
-		<Border 
-			StrokeShape="RoundRectangle 20" 
-			Padding="20" 
-			Stroke="#4CAF50" 
-			StrokeThickness="3"
-			BackgroundColor="#FFFFFF" 
-			HorizontalOptions="Center" 
-			HeightRequest="365" 
-			WidthRequest="365">
+        <!-- Khung hình con vật -->
+        <Border 
+            Grid.Row="1" Grid.Column="0"
+            StrokeShape="RoundRectangle 20" 
+            Padding="15" 
+            Stroke="#4CAF50" 
+            StrokeThickness="3"
+            BackgroundColor="#FFFFFF" 
+            HorizontalOptions="Fill"
+            VerticalOptions="Center"
+            Margin="20, 0"
+            HeightRequest="300">
+            
             <Border.GestureRecognizers>
-                <TapGestureRecognizer 
-					Tapped="OnAnimalImageTapped"  />
+                <TapGestureRecognizer Tapped="OnAnimalImageTapped" />
             </Border.GestureRecognizers>
             
-            <Image
-				x:Name="AnimalImage">
-			</Image>
+            <Image 
+                x:Name="AnimalImage" 
+                Aspect="AspectFit"
+                HorizontalOptions="Center"
+                VerticalOptions="Center"/>
+        </Border>
 
-		</Border>
-
-        <HorizontalStackLayout HorizontalOptions="Center" Spacing="15" VerticalOptions="Center">
+        <!-- Tên con vật + Loa -->
+        <HorizontalStackLayout 
+            Grid.Row="2" Grid.Column="0"
+            HorizontalOptions="Center" 
+            Spacing="15" 
+            VerticalOptions="Center"
+            Margin="0,0,0,10">
+            
             <ImageButton
                 Source="bieutuong_loa.png"
                 BackgroundColor="#FFE0B2"
                 CornerRadius="22"
-                HeightRequest="44"
-                WidthRequest="44"
+                HeightRequest="48"
+                WidthRequest="48"
                 Aspect="AspectFit"
                 BorderColor="#FF9800"
                 BorderWidth="2"
@@ -51,46 +99,49 @@
             </ImageButton>
             
             <Label 
-				x:Name="AnimalName" 
-				FontFamily="BalooTammudu2ExtraBold"
-				FontSize="34" 
-				FontAttributes="Bold" 
-				TextColor="#2E7D32" 
-				HorizontalOptions="Center" 
-				HorizontalTextAlignment="Center">
+                x:Name="AnimalName" 
+                FontFamily="BalooTammudu2ExtraBold"
+                FontSize="32" 
+                FontAttributes="Bold" 
+                TextColor="#2E7D32" 
+                HorizontalOptions="Center" 
+                HorizontalTextAlignment="Center"
+                LineBreakMode="WordWrap"
+                MaxLines="2">
                 <Label.Shadow>
-                    <Shadow 
-						Brush="Black" 
-						Offset="2,2" 
-						Opacity="0.3"/>
+                    <Shadow Brush="Black" Offset="2,2" Opacity="0.3"/>
                 </Label.Shadow>
             </Label>
         </HorizontalStackLayout>
-        <Grid 
-			ColumnDefinitions="*,*" 
-			ColumnSpacing="20" 
-			Margin="0,20,0,0">
-			<Button 
-				x:Name="BtnBack" 
-                FontFamily="NunitoExtraBold"
-				Text="⬅️ Xem lại" 
-				Clicked="OnBack"
-                BackgroundColor="#90A4AE" 
-				CornerRadius="25" 
-				HeightRequest="60"
-				FontAttributes="Bold" 
-				TextColor="White"/>
 
-			<Button 
-				Grid.Column="1" 
-				Text="Tiếp theo ➡️" 
+        <!-- NÚT ĐIỀU HƯỚNG - Hàng 3 -->
+        <Grid 
+            Grid.Row="3" Grid.Column="0"
+            ColumnDefinitions="*,*" 
+            ColumnSpacing="15" 
+            Margin="0, 10, 0, 0">
+            
+            <Button 
+                x:Name="BtnBack" 
                 FontFamily="NunitoExtraBold"
-				Clicked="OnNext"
+                Text="⬅️ Xem lại" 
+                Clicked="OnBack"
+                BackgroundColor="#90A4AE" 
+                CornerRadius="25" 
+                HeightRequest="55"
+                FontAttributes="Bold" 
+                TextColor="White"/>
+
+            <Button 
+                Grid.Column="1" 
+                Text="Tiếp theo ➡️" 
+                FontFamily="NunitoExtraBold"
+                Clicked="OnNext"
                 BackgroundColor="#FF9800" 
-				CornerRadius="25" 
-				HeightRequest="60"
-				FontAttributes="Bold" 
-				TextColor="White"/>
-		</Grid>
-	</VerticalStackLayout>
+                CornerRadius="25" 
+                HeightRequest="55"
+                FontAttributes="Bold" 
+                TextColor="White"/>
+        </Grid>
+    </Grid>
 </ContentPage>

@@ -940,37 +940,47 @@ public partial class GamePage : ContentPage
     // --- HÀM TÍNH TOÁN VỊ TRÍ (ComputeScatterLayoutAsync) ---
     private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameItem> items, CancellationToken token, bool useFarmDepth = false, Rect limitZone = default, List<Rect>? forbiddenZones = null, bool enforceExactScale = false)
     {
+        // Giữ mọi tính toán nặng ở đây (khoảng cách, tránh chồng lấp, scale)
+        // Trả về danh sách bounds (Rect) và depth/scale để render
         var result = new List<PrecomputedItem>(items.Count);
         var rand = System.Random.Shared;
 
+        // Lấy kích thước container một lần trên UI thread
         Rect container = Rect.Zero;
+
         await MainThread.InvokeOnMainThreadAsync(() =>
         {
             if (FarmContainer.Width > 0 && FarmContainer.Height > 0)
+            {
                 container = new Rect(0, 0, FarmContainer.Width, FarmContainer.Height);
+            }
         });
 
         if (container.Width <= 0)
         {
             var density = DeviceDisplay.MainDisplayInfo.Density;
-            container = new Rect(0, 0, DeviceDisplay.MainDisplayInfo.Width / density, DeviceDisplay.MainDisplayInfo.Height / density);
+            container = new Rect(0, 0, DeviceDisplay.MainDisplayInfo.Width / density, DeviceDisplay.MainDisplayInfo.Height / density); // Fallback kích thước mặc định (360x640 dp)
         }
 
         double cw = container.Width; double ch = container.Height;
+
+        // Vùng hợp lệ để rải (có thể bị giới hạn bởi limitZone)
         double zoneX = limitZone == default ? 0 : limitZone.X;
         double zoneY = limitZone == default ? 0 : limitZone.Y;
         double zoneWidth = limitZone == default ? cw : limitZone.Width;
         double zoneHeight = limitZone == default ? ch : limitZone.Height;
 
-        // Vùng đất farm
+        // Vùng đất farm (Y tuyệt đối trên container)
         double horizonY = ch * FARM_HORIZON_RATIO;
         double bottomY = ch * FARM_BOTTOM_RATIO;
         double depthRange = bottomY - horizonY;
 
-        // [FIX] BaseSize động: Càng nhiều vật thể thì BaseSize càng nhỏ để không bị chồng
-        double baseSize = Math.Clamp(Math.Min(cw, ch) * (items.Count <= 5 ? 0.18 : items.Count <= 10 ? 0.13 : 0.09), 30, 130);
+        // Kích thước cơ sở: dựa vào số lượng item (càng nhiều thì càng nhỏ)
+        double baseSize = Math.Clamp(Math.Min(cw, ch) * (items.Count <= 5 ? 0.14 : items.Count <= 10 ? 0.11 : 0.09), 28, 110);
 
         var placed = new List<Rect>(items.Count);
+
+        // Sắp xếp item to trước (ưu tiên đặt item lớn khi còn nhiều chỗ trống)
         var sorted = items.OrderByDescending(x => x.Scale).ToList();
 
         foreach (var it in sorted)
@@ -978,30 +988,29 @@ public partial class GamePage : ContentPage
             if (token.IsCancellationRequested) break;
 
             Rect r = Rect.Zero;
-            double depthRatio = 0.5;
+            double depthRatio = 0.5; // mặc định giữa
 
             if (useFarmDepth)
             {
+                // --- FARM DEPTH MODEL ---
+                // Cố gắng đặt với depth ngẫu nhiên, scale tương ứng
                 bool placed_ok = false;
                 double globalShrink = 1.0;
 
-                for (int attempt = 0; attempt < 80 && !placed_ok; attempt++) 
+                for (int attempt = 0; attempt < 60 && !placed_ok; attempt++)
                 {
+                    // Depth ngẫu nhiên trong vùng farm (giới hạn thêm bởi limitZone nếu có)
                     double yMin = limitZone == default ? horizonY : Math.Max(horizonY, zoneY);
                     double yMax = limitZone == default ? bottomY : Math.Min(bottomY, zoneY + zoneHeight);
                     if (yMax <= yMin) { yMin = horizonY; yMax = bottomY; }
 
-                    // [FIX] DepthRatio ngẫu nhiên: 0 = Xa nhất, 1 = Gần nhất
-                    depthRatio = rand.NextDouble(); 
+                    depthRatio = rand.NextDouble(); // 0 = xa (nhỏ), 1 = gần (to)
                     double yPos = yMin + depthRatio * (yMax - yMin);
 
-                    // [FIX] Công thức Scale cuối cùng: BaseSize * ScaleLoaiVat * ScaleDoSau
-                    // FARM_DEPTH_MIN = 0.6 (đảm bảo con xa nhất vẫn nhìn thấy)
-                    // FARM_DEPTH_MAX = 1.3 (con gần nhất sẽ to hơn thật)
+                    // Kích thước = baseSize * scale_con_vat * depth_scale
                     double depthScale = FARM_DEPTH_MIN + depthRatio * (FARM_DEPTH_MAX - FARM_DEPTH_MIN);
-                    
                     double sz = baseSize * it.Scale * depthScale * globalShrink;
-                    sz = Math.Clamp(sz, 25, cw * 0.45);
+                    sz = Math.Clamp(sz, 28, cw * 0.40);
 
                     double xMin = limitZone == default ? 0 : zoneX;
                     double xMax = limitZone == default ? cw : zoneX + zoneWidth;
@@ -1009,18 +1018,23 @@ public partial class GamePage : ContentPage
 
                     r = new Rect(x, yPos, sz, sz);
 
-                    double pad = sz * 0.12; 
+                    // Padding tỷ lệ với kích thước (item to cần khoảng cách lớn hơn)
+                    double pad = sz * 0.15;
                     Rect padded = new(r.X - pad, r.Y - pad, r.Width + pad * 2, r.Height + pad * 2);
 
                     bool isColliding = placed.Any(p => p.IntersectsWith(padded)) || (forbiddenZones?.Any(fz => fz.IntersectsWith(padded)) ?? false);
 
-                    if (!isColliding) placed_ok = true;
-                    if (!placed_ok && attempt % 25 == 24) globalShrink = Math.Max(0.4, globalShrink - 0.05);
+                    if (!isColliding)
+                        placed_ok = true;
+
+                    // Sau 20 lần thất bại, thu nhỏ toàn cục 5%
+                    if (!placed_ok && attempt % 20 == 19)
+                        globalShrink = Math.Max(0.4, globalShrink - 0.05);
                 }
 
-                if (r == Rect.Zero) 
+                if (r == Rect.Zero) // fallback: ép vào vị trí bất kỳ
                 {
-                    double sz = baseSize * it.Scale * 0.7;
+                    double sz = baseSize * it.Scale * 0.6;
                     double yPos = horizonY + rand.NextDouble() * depthRange;
                     depthRatio = (yPos - horizonY) / (depthRange > 0 ? depthRange : 1);
                     r = new Rect(rand.NextDouble() * Math.Max(0, cw - sz), yPos, sz, sz);
@@ -1028,21 +1042,24 @@ public partial class GamePage : ContentPage
             }
             else
             {
-                // Chế độ phẳng (hình học) - Giữ nguyên logic cũ nhưng tăng số lần thử
-                double randomScale = enforceExactScale ? 1.0 : 0.85 + rand.NextDouble() * 0.3;
+                // --- FLAT MODEL (hình học) ---
+                double randomScale = enforceExactScale ? 1.0 : 0.8 + rand.NextDouble() * 0.4; // Nếu cần exact scale thì giữ nguyên tỷ lệ thật
                 double sz = baseSize * it.Scale * randomScale;
-                sz = Math.Clamp(sz, 35, cw * 0.30);
+                sz = Math.Clamp(sz, 35, cw * 0.25);
 
                 bool placed_ok = false;
-                for (int attempt = 0; attempt < 60 && !placed_ok; attempt++)
+                for (int attempt = 0; attempt < 50 && !placed_ok; attempt++)
                 {
                     double x = zoneX + rand.NextDouble() * Math.Max(0, zoneWidth - sz);
                     double y = zoneY + rand.NextDouble() * Math.Max(0, zoneHeight - sz);
                     r = new Rect(x, y, sz, sz);
+
                     bool isColliding = placed.Any(p => p.IntersectsWith(r)) || (forbiddenZones?.Any(fz => fz.IntersectsWith(r)) ?? false);
+
                     if (!isColliding) placed_ok = true;
                 }
-                if (r == Rect.Zero) r = new Rect(zoneX, zoneY, sz, sz);
+                if (r == Rect.Zero)
+                    r = new Rect(zoneX, zoneY, sz, sz); // fallback
                 depthRatio = 0.5;
             }
 
@@ -1200,13 +1217,11 @@ public partial class GamePage : ContentPage
 
     private void RenderFarmMath(List<GameItem> items, int highlightCount)
     {
-        // Placeholder: reuse scatter render then highlight first highlightCount items
         var renderToken = _renderCts.Token;
         _ = Task.Run(async () =>
         {
             try
             {
-                // Lấy kích thước container
                 Rect container = Rect.Zero;
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
@@ -1221,43 +1236,34 @@ public partial class GamePage : ContentPage
                 double horizonY = ch * FARM_HORIZON_RATIO;
                 double bottomY = ch * FARM_BOTTOM_RATIO;
 
-                // Chia màn hình: nhóm highlight (thêm/bớt) bên phải, nhóm còn lại bên trái
-                int total = items.Count;
-                double splitRatio = total > 0 ? Math.Clamp((double)highlightCount / total, 0.30, 0.70) : 0.5;
+                // Rải đều tất cả items (a con) trong vùng farm
+                Rect scatterZone = new(10, horizonY, cw - 20, bottomY - horizonY);
 
-                double rightW = cw * splitRatio;
-                double leftW = cw - rightW;
-
-                var groupHighlight = items.Take(highlightCount).ToList();
-                var groupOther = items.Skip(highlightCount).ToList();
-
-                Rect rightZone = new(leftW, horizonY, rightW - 10, bottomY - horizonY);
-                Rect leftZone = new(10, horizonY, leftW - 20, bottomY - horizonY);
-
-                var preRight = await ComputeScatterLayoutAsync(groupHighlight, renderToken, useFarmDepth: true, limitZone: rightZone);
+                var pre = await ComputeScatterLayoutAsync(
+                    items, 
+                    renderToken, 
+                    useFarmDepth: true, 
+                    limitZone: scatterZone
+                );
+                
                 if (renderToken.IsCancellationRequested) return;
-                var preLeft = await ComputeScatterLayoutAsync(groupOther, renderToken, useFarmDepth: true, limitZone: leftZone);
+                
+                await RenderItemsScatterFromPrecomputedAsync(pre, renderToken, isInteractive: false);
+                
                 if (renderToken.IsCancellationRequested) return;
 
-                // Render tất cả cùng lúc
-                var combined = preLeft.Concat(preRight).ToList();
-                await RenderItemsScatterFromPrecomputedAsync(combined, renderToken, isInteractive: false);
-                if (renderToken.IsCancellationRequested) return;
-
-                // Vẽ khung viền xung quanh nhóm highlight trên UI thread
-                if (preRight.Count > 0)
+                // Vẽ khung highlight xung quanh b con được đánh dấu
+                await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    var highlightedItems = pre.Where(p => p.Item.IsTarget).ToList();
+                    
+                    if (highlightedItems.Count > 0)
                     {
-                        Func<PrecomputedItem, double> selector;
-                        selector = p => p.Bounds.X;
-                        double minX = preRight.Min(selector);
-                        selector = p => p.Bounds.Y;
-                        double minY = preRight.Min(selector);
-                        selector = p => p.Bounds.Right;
-                        double maxX = preRight.Max(selector);
-                        selector = p => p.Bounds.Bottom;
-                        double maxY = preRight.Max(selector);
+                        double minX = highlightedItems.Min(p => p.Bounds.X);
+                        double minY = highlightedItems.Min(p => p.Bounds.Y);
+                        double maxX = highlightedItems.Max(p => p.Bounds.Right);
+                        double maxY = highlightedItems.Max(p => p.Bounds.Bottom);
+                        
                         double pad = 14;
                         var frame = new Border
                         {
@@ -1268,14 +1274,15 @@ public partial class GamePage : ContentPage
                             StrokeShape = new RoundRectangle { CornerRadius = 15 },
                             InputTransparent = true
                         };
+                        
                         Rect frameRect = new(minX - pad, minY - pad,
                                             maxX - minX + pad * 2, maxY - minY + pad * 2);
+                        
                         AbsoluteLayout.SetLayoutBounds(frame, frameRect);
                         AbsoluteLayout.SetLayoutFlags(frame, AbsoluteLayoutFlags.None);
-                        // Chèn trước các con vật để khung nằm sau
                         FarmContainer?.Children.Insert(0, frame);
-                    });
-                }
+                    }
+                });
             }
             catch (Exception ex) { Debug.WriteLine($"RenderFarmMath error: {ex}"); }
         });
@@ -1685,28 +1692,24 @@ public partial class GamePage : ContentPage
 
     private void RenderInteractiveGame(List<GameItem> items)
     {
-        //setup trạng thái truoc khi render
         _currentFoundCount = 0;
         _totalTargetCount = items.Count(i => i.IsTarget);
 
-        // Xác định loại game: hình khối (key rỗng) hay con vật
         bool isShapeGame = items.Any(x => string.IsNullOrEmpty(x.Key));
 
-        // Xac dinh vung cam (gio hang) truoc khi rai hinh
+        // Tính vùng cấm (giỏ hàng)
         Rect forbiddenZone = Rect.Zero;
 
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            // Bật đúng background
             FarmBackground.IsVisible = !isShapeGame;
             MathBackground.IsVisible = isShapeGame;
             FarmContainer.IsVisible = true;
             CollectionBin.IsVisible = true;
             CounterLabel.Text = $"0/{_totalTargetCount}";
 
-            // Uoc tinh vung cam cua gio hang (CollectionBin)
-            // Gia su no nam o duoi cung va cao khoang 80-100dp
-            double binHeight = 100;
+            // Tính vùng cấm chính xác - giỏ hàng cao 120dp ở đáy
+            double binHeight = 120;
             if (FarmContainer.Height > 0)
             {
                 forbiddenZone = new Rect(0, FarmContainer.Height - binHeight, FarmContainer.Width, binHeight);
@@ -1717,29 +1720,39 @@ public partial class GamePage : ContentPage
             {
                 if (TargetIconContainer.Content is Image oldImg) oldImg.Source = null;
                 TargetIconContainer.Content = !string.IsNullOrEmpty(sample.Key)
-                ? new Image { Source = $"{sample.Key}.webp", Aspect = Aspect.AspectFit }
-                : (View)CreateShapeView(sample.Value, "#4CAF50", 30);
-                }
+                    ? new Image { Source = $"{sample.Key}.webp", Aspect = Aspect.AspectFit }
+                    : (View)CreateShapeView(sample.Value, "#4CAF50", 30);
+            }
         });
 
-        // Dùng _renderCts.Token đã được renew ở đầu RenderQuestion
         var renderToken = _renderCts.Token;
         _ = Task.Run(async () =>
         {
             try
             {
-                // Dam bao forbiddenZone da duoc tinh toan
+                // Đảm bảo forbiddenZone đã được tính
                 if (forbiddenZone == Rect.Zero && FarmContainer.Height > 0)
                 {
-                    double binHeight = 100;
+                    double binHeight = 120;
                     forbiddenZone = new Rect(0, FarmContainer.Height - binHeight, FarmContainer.Width, binHeight);
                 }
 
-                var pre = await ComputeScatterLayoutAsync(items, renderToken, useFarmDepth: !isShapeGame);
+                // TRUYỀN forbiddenZones vào ComputeScatterLayoutAsync
+                var pre = await ComputeScatterLayoutAsync(
+                    items, 
+                    renderToken, 
+                    useFarmDepth: !isShapeGame,
+                    forbiddenZones: new List<Rect> { forbiddenZone }  // ← THÊM DÒNG NÀY
+                );
+                
                 if (renderToken.IsCancellationRequested) return;
+                
                 await RenderItemsScatterFromPrecomputedAsync(pre, renderToken, isInteractive: true);
             }
-            catch (Exception ex) { Debug.WriteLine($"RenderInteractiveGame error: {ex}"); }
+            catch (Exception ex) 
+            { 
+                Debug.WriteLine($"RenderInteractiveGame error: {ex}"); 
+            }
         });
     }
 
@@ -1801,18 +1814,16 @@ public partial class GamePage : ContentPage
     {
         _orderingResult.Clear();
         _orderingTarget.Clear();
-        // Lấy đáp án đúng để xác định chính xác số lượng ô cần vẽ
+        // 🔥 Parse đáp án để biết CHÍNH XÁC cần bao nhiêu ô & bong bóng
         _orderingTarget.AddRange(correctAnswer.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse));
 
         _isProcessing = false;
         string[] colors = ["#F44336", "#4CAF50", "#2196F3", "#FF9800", "#9C27B0", "#00BCD4"];
         var rand = System.Random.Shared;
 
-        // 1. Vẽ các ô trống
+        // 1. Vẽ ô trống (Dùng _orderingTarget.Count thay vì numbers.Count)
         OrderingSlots.Children.Clear();
         OrderingSlots.ColumnDefinitions.Clear();
-        
-        // [FIX] Dùng _orderingTarget.Count thay vì numbers.Count để đảm bảo khớp bong bóng
         int targetCount = _orderingTarget.Count;
         for (int i = 0; i < targetCount; i++)
             OrderingSlots.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Star });
@@ -1824,22 +1835,17 @@ public partial class GamePage : ContentPage
         {
             var slot = new Border
             {
-                Stroke = Colors.Black,
-                StrokeThickness = 2,
-                StrokeDashArray = [5.0f, 3.0f],
-                HeightRequest = slotH,
-                HorizontalOptions = LayoutOptions.Fill,
-                BackgroundColor = Color.FromArgb("#10000000"),
-                StrokeShape = new RoundRectangle { CornerRadius = 15 },
-                Margin = 2
+                Stroke = Colors.Black, StrokeThickness = 2, StrokeDashArray = [5.0f, 3.0f],
+                HeightRequest = slotH, HorizontalOptions = LayoutOptions.Fill,
+                BackgroundColor = Color.FromArgb("#10000000"), StrokeShape = new RoundRectangle { CornerRadius = 15 }, Margin = 2
             };
             OrderingSlots.Children.Add(slot);
-            Grid.SetColumn(slot, i);
+            Grid.SetColumn(slot, i); 
         }
 
         _ = DelayOnMainThread(1);
 
-        // 2. Rải số nguồn vào SourceNumberContainer
+        // 2. Rải số nguồn (Chỉ lấy đúng số lượng cần thiết)
         RecycleViewsInLayout(SourceNumberContainer);
         double cw = SourceNumberContainer.Width;
         double ch = SourceNumberContainer.Height;
@@ -1851,51 +1857,49 @@ public partial class GamePage : ContentPage
         }
 
         double answerH = AnswerLayout.IsVisible ? AnswerLayout.Height : 0;
-        ch = Math.Max(ch - answerH - 10, 180);
+        double slotsHeight = OrderingSlots.HeightRequest + 40;
+        ch = Math.Max(ch - answerH - slotsHeight - 30, 150); 
 
-        Rect scatterZone = new(10, 10, cw - 20, ch - 20);
+        // Chia vùng trên & dưới ô đáp án
+        Rect scatterZoneTop = new(10, 10, cw - 20, ch / 2 - 20);
+        Rect scatterZoneBottom = new(10, ch / 2 + slotsHeight + 10, cw - 20, ch / 2 - 20);
+
         var occupied = new List<Rect>();
+        // 🔥 Shuffle đúng số lượng số có trong đề
         var shuffled = numbers.OrderBy(_ => rand.Next()).ToList();
 
-        // [FIX] Loop đúng số lượng shuffled
         for (int i = 0; i < shuffled.Count; i++)
         {
             int num = shuffled[i];
             double size = rand.Next(55, 85);
 
             Rect pos = Rect.Zero;
-            for (int attempt = 0; attempt < 150; attempt++)
+            Rect[] zones = { scatterZoneTop, scatterZoneBottom };
+            
+            foreach (var zone in zones)
             {
-                double x = scatterZone.X + rand.NextDouble() * Math.Max(0, scatterZone.Width - size);
-                double y = scatterZone.Y + rand.NextDouble() * Math.Max(0, scatterZone.Height - size);
-                Rect candidate = new(x, y, size, size);
-                if (!occupied.Any(r => r.IntersectsWith(candidate)))
+                for (int attempt = 0; attempt < 100; attempt++)
                 {
-                    pos = candidate;
-                    break;
+                    double x = zone.X + rand.NextDouble() * Math.Max(0, zone.Width - size);
+                    double y = zone.Y + rand.NextDouble() * Math.Max(0, zone.Height - size);
+                    Rect candidate = new(x, y, size, size);
+                    if (!occupied.Any(r => r.IntersectsWith(candidate)))
+                    {
+                        pos = candidate; break;
+                    }
                 }
+                if (pos != Rect.Zero) break;
             }
-            if (pos == Rect.Zero) pos = new Rect(scatterZone.X, scatterZone.Y, size, size);
+
+            if (pos == Rect.Zero) pos = new Rect(scatterZoneTop.X, scatterZoneTop.Y + (i * 90), size, size);
             occupied.Add(pos);
 
             var border = new Border
             {
-                Stroke = Colors.White,
-                StrokeThickness = 3,
-                BackgroundColor = Color.FromArgb(colors[i % colors.Length]),
-                HeightRequest = size,
-                WidthRequest = size,
-                StrokeShape = new RoundRectangle { CornerRadius = (float)(size / 2.5) },
+                Stroke = Colors.White, StrokeThickness = 3, BackgroundColor = Color.FromArgb(colors[i % colors.Length]),
+                HeightRequest = size, WidthRequest = size, StrokeShape = new RoundRectangle { CornerRadius = (float)(size / 2.5) },
                 Rotation = rand.Next(-25, 26),
-                Content = new Label
-                {
-                    Text = num.ToString(),
-                    FontSize = size * 0.42,
-                    FontAttributes = FontAttributes.Bold,
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center,
-                    TextColor = Colors.White
-                }
+                Content = new Label { Text = num.ToString(), FontSize = size * 0.42, FontAttributes = FontAttributes.Bold, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, TextColor = Colors.White }
             };
 
             AbsoluteLayout.SetLayoutBounds(border, pos);
