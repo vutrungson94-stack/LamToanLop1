@@ -937,49 +937,40 @@ public partial class GamePage : ContentPage
     private const double FARM_DEPTH_MIN = 0.55; // Tỷ lệ scale nhỏ nhất (cho item ở "xa")
     private const double FARM_DEPTH_MAX = 1.25; // Tỷ lệ scale lớn nhất (cho item ở "gần")
 
+    // --- HÀM TÍNH TOÁN VỊ TRÍ (ComputeScatterLayoutAsync) ---
     private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameItem> items, CancellationToken token, bool useFarmDepth = false, Rect limitZone = default, List<Rect>? forbiddenZones = null, bool enforceExactScale = false)
     {
-        // Giữ mọi tính toán nặng ở đây (khoảng cách, tránh chồng lấp, scale)
-        // Trả về danh sách bounds (Rect) và depth/scale để render
         var result = new List<PrecomputedItem>(items.Count);
         var rand = System.Random.Shared;
 
-        // Lấy kích thước container một lần trên UI thread
         Rect container = Rect.Zero;
-
         await MainThread.InvokeOnMainThreadAsync(() =>
         {
             if (FarmContainer.Width > 0 && FarmContainer.Height > 0)
-            {
                 container = new Rect(0, 0, FarmContainer.Width, FarmContainer.Height);
-            }
         });
 
         if (container.Width <= 0)
         {
             var density = DeviceDisplay.MainDisplayInfo.Density;
-            container = new Rect(0, 0, DeviceDisplay.MainDisplayInfo.Width / density, DeviceDisplay.MainDisplayInfo.Height / density); // Fallback kích thước mặc định (360x640 dp)
+            container = new Rect(0, 0, DeviceDisplay.MainDisplayInfo.Width / density, DeviceDisplay.MainDisplayInfo.Height / density);
         }
 
         double cw = container.Width; double ch = container.Height;
-
-        // Vùng hợp lệ để rải (có thể bị giới hạn bởi limitZone)
         double zoneX = limitZone == default ? 0 : limitZone.X;
         double zoneY = limitZone == default ? 0 : limitZone.Y;
         double zoneWidth = limitZone == default ? cw : limitZone.Width;
         double zoneHeight = limitZone == default ? ch : limitZone.Height;
 
-        // Vùng đất farm (Y tuyệt đối trên container)
+        // Vùng đất farm
         double horizonY = ch * FARM_HORIZON_RATIO;
         double bottomY = ch * FARM_BOTTOM_RATIO;
         double depthRange = bottomY - horizonY;
 
-        // Kích thước cơ sở: dựa vào số lượng item (càng nhiều thì càng nhỏ)
-        double baseSize = Math.Clamp(Math.Min(cw, ch) * (items.Count <= 5 ? 0.14 : items.Count <= 10 ? 0.11 : 0.09), 28, 110);
+        // [FIX] BaseSize động: Càng nhiều vật thể thì BaseSize càng nhỏ để không bị chồng
+        double baseSize = Math.Clamp(Math.Min(cw, ch) * (items.Count <= 5 ? 0.18 : items.Count <= 10 ? 0.13 : 0.09), 30, 130);
 
         var placed = new List<Rect>(items.Count);
-
-        // Sắp xếp item to trước (ưu tiên đặt item lớn khi còn nhiều chỗ trống)
         var sorted = items.OrderByDescending(x => x.Scale).ToList();
 
         foreach (var it in sorted)
@@ -987,53 +978,49 @@ public partial class GamePage : ContentPage
             if (token.IsCancellationRequested) break;
 
             Rect r = Rect.Zero;
-            double depthRatio = 0.5; // mặc định giữa
+            double depthRatio = 0.5;
 
             if (useFarmDepth)
             {
-                // --- FARM DEPTH MODEL ---
-                // Cố gắng đặt với depth ngẫu nhiên, scale tương ứng
                 bool placed_ok = false;
                 double globalShrink = 1.0;
 
-                for (int attempt = 0; attempt < 60 && !placed_ok; attempt++)
+                for (int attempt = 0; attempt < 80 && !placed_ok; attempt++) 
                 {
-                    // Depth ngẫu nhiên trong vùng farm (giới hạn thêm bởi limitZone nếu có)
                     double yMin = limitZone == default ? horizonY : Math.Max(horizonY, zoneY);
                     double yMax = limitZone == default ? bottomY : Math.Min(bottomY, zoneY + zoneHeight);
                     if (yMax <= yMin) { yMin = horizonY; yMax = bottomY; }
 
-                    depthRatio = rand.NextDouble(); // 0 = xa (nhỏ), 1 = gần (to)
+                    // [FIX] DepthRatio ngẫu nhiên: 0 = Xa nhất, 1 = Gần nhất
+                    depthRatio = rand.NextDouble(); 
                     double yPos = yMin + depthRatio * (yMax - yMin);
 
-                    // Kích thước = baseSize * scale_con_vat * depth_scale
+                    // [FIX] Công thức Scale cuối cùng: BaseSize * ScaleLoaiVat * ScaleDoSau
+                    // FARM_DEPTH_MIN = 0.6 (đảm bảo con xa nhất vẫn nhìn thấy)
+                    // FARM_DEPTH_MAX = 1.3 (con gần nhất sẽ to hơn thật)
                     double depthScale = FARM_DEPTH_MIN + depthRatio * (FARM_DEPTH_MAX - FARM_DEPTH_MIN);
+                    
                     double sz = baseSize * it.Scale * depthScale * globalShrink;
-                    sz = Math.Clamp(sz, 28, cw * 0.40);
+                    sz = Math.Clamp(sz, 25, cw * 0.45);
 
                     double xMin = limitZone == default ? 0 : zoneX;
                     double xMax = limitZone == default ? cw : zoneX + zoneWidth;
-                    double x = xMin + rand.NextDouble() * Math.Max(0, (xMax - xMin) - sz);
+                    double x = xMin + rand.NextDouble() * Math.Max(0, (xMax - xMin) - sz); 
 
                     r = new Rect(x, yPos, sz, sz);
 
-                    // Padding tỷ lệ với kích thước (item to cần khoảng cách lớn hơn)
-                    double pad = sz * 0.15;
+                    double pad = sz * 0.12; 
                     Rect padded = new(r.X - pad, r.Y - pad, r.Width + pad * 2, r.Height + pad * 2);
 
                     bool isColliding = placed.Any(p => p.IntersectsWith(padded)) || (forbiddenZones?.Any(fz => fz.IntersectsWith(padded)) ?? false);
 
-                    if (!isColliding)
-                        placed_ok = true;
-
-                    // Sau 20 lần thất bại, thu nhỏ toàn cục 5%
-                    if (!placed_ok && attempt % 20 == 19)
-                        globalShrink = Math.Max(0.4, globalShrink - 0.05);
+                    if (!isColliding) placed_ok = true;
+                    if (!placed_ok && attempt % 25 == 24) globalShrink = Math.Max(0.4, globalShrink - 0.05);
                 }
 
-                if (r == Rect.Zero) // fallback: ép vào vị trí bất kỳ
+                if (r == Rect.Zero) 
                 {
-                    double sz = baseSize * it.Scale * 0.6;
+                    double sz = baseSize * it.Scale * 0.7;
                     double yPos = horizonY + rand.NextDouble() * depthRange;
                     depthRatio = (yPos - horizonY) / (depthRange > 0 ? depthRange : 1);
                     r = new Rect(rand.NextDouble() * Math.Max(0, cw - sz), yPos, sz, sz);
@@ -1041,24 +1028,21 @@ public partial class GamePage : ContentPage
             }
             else
             {
-                // --- FLAT MODEL (hình học) ---
-                double randomScale = enforceExactScale ? 1.0 : 0.8 + rand.NextDouble() * 0.4; // Nếu cần exact scale thì giữ nguyên tỷ lệ thật
+                // Chế độ phẳng (hình học) - Giữ nguyên logic cũ nhưng tăng số lần thử
+                double randomScale = enforceExactScale ? 1.0 : 0.85 + rand.NextDouble() * 0.3;
                 double sz = baseSize * it.Scale * randomScale;
-                sz = Math.Clamp(sz, 35, cw * 0.25);
+                sz = Math.Clamp(sz, 35, cw * 0.30);
 
                 bool placed_ok = false;
-                for (int attempt = 0; attempt < 50 && !placed_ok; attempt++)
+                for (int attempt = 0; attempt < 60 && !placed_ok; attempt++)
                 {
                     double x = zoneX + rand.NextDouble() * Math.Max(0, zoneWidth - sz);
                     double y = zoneY + rand.NextDouble() * Math.Max(0, zoneHeight - sz);
                     r = new Rect(x, y, sz, sz);
-
                     bool isColliding = placed.Any(p => p.IntersectsWith(r)) || (forbiddenZones?.Any(fz => fz.IntersectsWith(r)) ?? false);
-
                     if (!isColliding) placed_ok = true;
                 }
-                if (r == Rect.Zero)
-                    r = new Rect(zoneX, zoneY, sz, sz); // fallback
+                if (r == Rect.Zero) r = new Rect(zoneX, zoneY, sz, sz);
                 depthRatio = 0.5;
             }
 
@@ -1812,27 +1796,31 @@ public partial class GamePage : ContentPage
         ShapeContainer.Children.Add(s);
     }
 
+    // --- HÀM RENDER SẮP XẾP SỐ (RenderOrderingGame) ---
     private void RenderOrderingGame(List<int> numbers, string correctAnswer)
     {
         _orderingResult.Clear();
         _orderingTarget.Clear();
+        // Lấy đáp án đúng để xác định chính xác số lượng ô cần vẽ
         _orderingTarget.AddRange(correctAnswer.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse));
 
         _isProcessing = false;
-
         string[] colors = ["#F44336", "#4CAF50", "#2196F3", "#FF9800", "#9C27B0", "#00BCD4"];
         var rand = System.Random.Shared;
 
         // 1. Vẽ các ô trống
         OrderingSlots.Children.Clear();
         OrderingSlots.ColumnDefinitions.Clear();
-        for (int i = 0; i < numbers.Count; i++)
+        
+        // [FIX] Dùng _orderingTarget.Count thay vì numbers.Count để đảm bảo khớp bong bóng
+        int targetCount = _orderingTarget.Count;
+        for (int i = 0; i < targetCount; i++)
             OrderingSlots.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Star });
 
-        double slotH = numbers.Count > 4 ? 60 : 75;
+        double slotH = targetCount > 5 ? 55 : 70;
         OrderingSlots.HeightRequest = slotH + 10;
 
-        for (int i = 0; i < numbers.Count; i++)
+        for (int i = 0; i < targetCount; i++)
         {
             var slot = new Border
             {
@@ -1863,21 +1851,19 @@ public partial class GamePage : ContentPage
         }
 
         double answerH = AnswerLayout.IsVisible ? AnswerLayout.Height : 0;
-        ch = Math.Max(ch - answerH - 10, 180); // Trừ đi khoảng trống cho answer và slot, đảm bảo còn đủ chỗ rải số (ít nhất 150px)
+        ch = Math.Max(ch - answerH - 10, 180);
 
         Rect scatterZone = new(10, 10, cw - 20, ch - 20);
-
         var occupied = new List<Rect>();
         var shuffled = numbers.OrderBy(_ => rand.Next()).ToList();
 
+        // [FIX] Loop đúng số lượng shuffled
         for (int i = 0; i < shuffled.Count; i++)
         {
             int num = shuffled[i];
             double size = rand.Next(55, 85);
 
-            // Tìm vị trí không chồng
             Rect pos = Rect.Zero;
-            // Tang so lan thu de tranh co cum
             for (int attempt = 0; attempt < 150; attempt++)
             {
                 double x = scatterZone.X + rand.NextDouble() * Math.Max(0, scatterZone.Width - size);
@@ -1889,11 +1875,7 @@ public partial class GamePage : ContentPage
                     break;
                 }
             }
-
-            // Neu van that bai, dat o vi tri ngau nhien thay vi xep hang
-            if (pos == Rect.Zero) // fallback
-                pos = new Rect(scatterZone.X, scatterZone.Y, size, size);
-
+            if (pos == Rect.Zero) pos = new Rect(scatterZone.X, scatterZone.Y, size, size);
             occupied.Add(pos);
 
             var border = new Border

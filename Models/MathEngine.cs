@@ -233,15 +233,6 @@
             // [TỐI ƯU] Sử dụng switch-case để chọn chế độ nhanh hơn
             switch (mode)
             {
-                case 3: // ĐẾM TỔNG SỐ
-                    VisualType = "TotalCount";
-                    Title = "Có tất cả bao nhiêu bạn nhỏ?";
-                    int maxCount = level == 1 ? 8 : (level == 2 ? 12 : 20);
-                    int total = _rnd.Next(3, maxCount + 1);
-                    CorrectAnswer = total.ToString();
-                    Data = GenerateRandomAnimals(total);
-                    Options = CreateOptions(CorrectAnswer, 1, maxCount + 3);
-                    break;
 
                 case 0: // TÌM CON VẬT
                 case 1: // TÌM HÌNH KHỐI
@@ -261,50 +252,79 @@
                     string tName = targetPair.Value.StartsWith("Con ") ? targetPair.Value[4..] : targetPair.Value;
                     Title = isAnimal ? $"Tìm xem có bao nhiêu bạn {tName}?" : $"Bé hãy tìm tất cả hình {tName} nhé!";
 
+                    // [FIX] Scale thật của loài vật (Voi=1.8, Chuột=0.46...)
                     double tScale = (isAnimal && GameData.AnimalScales.TryGetValue(targetPair.Key, out double s)) ? s : 1.0;
-                    bool isBig = tScale > 1.1;
-
-                    int tCount = (level == 1) ? (isBig ? 2 : 3) : (level == 2 ? (isBig ? 3 : 5) : (isBig ? 5 : 8));
+                    
+                    // Số lượng mục tiêu
+                    int tCount = (level == 1) ? 3 : (level == 2 ? 5 : 8);
+                    // Tổng số vật thể trên màn hình
                     int totalCount = (level == 1) ? 7 : (level == 2 ? 12 : 20);
 
-                    // Scale hình học phụ thuộc tổng số hình đang hiển thị
+                    // [FIX] Logic scale cho Hình Học: Ít hình thì to hơn, nhiều hình thì bé hơn
                     double shapeScale = 1.0;
                     if (!isAnimal)
                     {
-                        shapeScale = Math.Clamp(1.0 - (totalCount - 7) * 0.02, 0.70, 1.0);
+                        // Nếu total > 15 thì shapeScale giảm xuống 0.6, nếu < 10 thì giữ nguyên 1.0
+                        shapeScale = Math.Clamp(1.0 - (totalCount - 10) * 0.03, 0.60, 1.2);
                     }
 
                     var items = new List<GameItem>();
+                    // Thêm các mục tiêu
                     for (int i = 0; i < tCount; i++) 
-                        items.Add(new GameItem { Key = targetPair.Key, Value = targetPair.Value, Scale = isAnimal ? tScale : shapeScale, IsTarget = true, ColorHex = isAnimal ? "" : RandomColor() });
+                        items.Add(new GameItem { 
+                            Key = targetPair.Key, 
+                            Value = targetPair.Value, 
+                            Scale = isAnimal ? tScale : shapeScale, 
+                            IsTarget = true, 
+                            ColorHex = isAnimal ? "" : RandomColor() 
+                        });
+
+                    // Thêm các vật thể nhiễu
                     for (int i = 0; i < Math.Max(3, totalCount - tCount); i++)
                     {
                         var o = source[_rnd.Next(source.Count)];
                         while ((isAnimal && o.Key == targetPair.Key) || (!isAnimal && o.Value == targetPair.Value)) 
                             o = source[_rnd.Next(source.Count)];
+                        
                         double os = (isAnimal && GameData.AnimalScales.TryGetValue(o.Key, out double _s)) ? _s : 1.0;
-                        items.Add(new GameItem { Key = o.Key, Value = o.Value, Scale = isAnimal ? os : shapeScale, IsTarget = false, ColorHex = isAnimal ? "" : RandomColor() });
+                        items.Add(new GameItem { 
+                            Key = o.Key, 
+                            Value = o.Value, 
+                            Scale = isAnimal ? os : shapeScale, 
+                            IsTarget = false, 
+                            ColorHex = isAnimal ? "" : RandomColor() 
+                        });
                     }
                     Data = items.OrderBy(static _ => _rnd.Next()).ToList();
                     break;
 
+                // --- CASE 2: SẮP XẾP SỐ ---
                 case 2: // SẮP XẾP SỐ
                     VisualType = "Ordering";
                     bool asc = _rnd.Next(0, 2) == 0;
+                    // [FIX] Đảm bảo số lượng số tạo ra khớp với level (3, 4 hoặc 5 số)
                     int count = level == 1 ? 3 : (level == 2 ? 4 : 5);
                     var nums = new HashSet<int>();
                     while (nums.Count < count) 
                         nums.Add(_rnd.Next(1, maxRange));
 
-                    // Sắp xếp
                     var sortedList = asc ? nums.OrderBy(x => x).ToList() : [.. nums.OrderByDescending(x => x)];
-                    CorrectAnswer = string.Join(",", sortedList);
+                    CorrectAnswer = string.Join(", ", sortedList);
                     Title = asc ? "Sắp xếp các số từ BÉ đến LỚN" : "Sắp xếp các số từ LỚN đến BÉ";
 
                     var numItems = new List<GameItem>();
                     foreach (var n in nums)
                         numItems.Add(new GameItem { NumberValue = n, Value = n.ToString(), ColorHex = colors[n % colors.Length], Scale = 1.0 });
                     Data = numItems;
+                    break;
+                case 3: // ĐẾM TỔNG SỐ
+                    VisualType = "TotalCount";
+                    Title = "Có tất cả bao nhiêu bạn nhỏ?";
+                    int maxCount = level == 1 ? 8 : (level == 2 ? 12 : 20);
+                    int total = _rnd.Next(3, maxCount + 1);
+                    CorrectAnswer = total.ToString();
+                    Data = GenerateRandomAnimals(total);
+                    Options = CreateOptions(CorrectAnswer, 1, maxCount + 3);
                     break;
 
                 case 4: // SO SÁNH KÍCH THƯỚC
