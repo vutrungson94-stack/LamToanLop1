@@ -24,54 +24,64 @@ public partial class SplashPage : ContentPage
 
         try
         {
-            var progress = new Progress<int>(p =>
-            {
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    PreloadProgressBar.Progress = p / 100.0;
-                    ProgressLabel.Text = p < 100 ? $"Đang tải giọng đọc... {p}%" : "Hoàn tất!";
-                });
-            });
-
-            // Chạy preload trên background, giới hạn timeout 8s
-            var preloadTask = Task.Run(async () =>
-            {
-                try
-                {
-                    var animalNames = GameData.AnimalList.Select(x => x.Value).ToList();
-                    await _ttsService.PreCacheAnimalVoicesAsync(animalNames, progress);
-                }
-                catch (Exception ex) { Debug.WriteLine($"Preload Error: {ex.Message}"); }
-            });
-
-            // Đảm bảo splash hiển thị tối thiểu 1.5s cho mượt
-            await Task.WhenAny(preloadTask, Task.Delay(8000));
-            await Task.Delay(1500);
-
-            await NavigateToAppShell();
+            await InitializeSplashAsync();
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Splash Crash Handled: {ex.Message}");
-            await NavigateToAppShell();
+            await SplashPage.NavigateToMenu();
         }
     }
 
-    private static async Task NavigateToAppShell()
+    private async Task InitializeSplashAsync()
+    {
+        var progress = new Progress<int>(p =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                PreloadProgressBar.Progress = p / 100.0;
+                ProgressLabel.Text = p < 100 ? $"Đang tải... {p}%" : "OK!";
+            });
+        });
+
+        // Preload TTS với timeout 8s
+        var preloadTask = Task.Run(async () =>
+        {
+            try
+            {
+                var animals = GameData.AnimalList.Select(x => x.Value).ToList();
+                await _ttsService.PreCacheAnimalVoicesAsync(animals, progress);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PreCache Error] {ex.Message}");
+            }
+        });
+
+        // Chờ preload hoặc timeout
+        await Task.WhenAny(preloadTask, Task.Delay(8000));
+        
+        // Đảm bảo splash hiển thị ít nhất 1s
+        await Task.Delay(1000);
+        
+        await SplashPage.NavigateToMenu();
+    }
+
+    private static async Task NavigateToMenu()
     {
         try
         {
-            await MainThread.InvokeOnMainThreadAsync(async () =>
+            await MainThread.InvokeOnMainThreadAsync(static async () =>
             {
-                if (Shell.Current != null)
+                if (Shell.Current?.CurrentPage?.GetType() != typeof(MenuPage))
+                {
                     await Shell.Current.GoToAsync("//MenuPage");
-                else
-                    Debug.WriteLine("Shell.Current is null. Navigation aborted.");
+                }
             });
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Navigation Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[Nav Error] {ex.Message}");
         }
     }
 }

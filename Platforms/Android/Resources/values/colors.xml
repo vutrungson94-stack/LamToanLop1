@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#512BD4</color>
-    <color name="colorPrimaryDark">#2B0B98</color>
-    <color name="colorAccent">#2B0B98</color>
-    <color name="maui_splash_color">#E9581E</color>
-
+  <!-- Màu bắt buộc cho Material Components -->
+  <color name="colorPrimary">#FFFFFF</color>
+  <color name="colorPrimaryDark">#000000</color>
+  <color name="colorAccent">#2196F3</color>
+  
+  <!-- Màu bổ sung (tuỳ chọn) -->
+  <color name="colorSurface">#FFFFFF</color>
+  <color name="colorError">#B00020</color>
 </resources>

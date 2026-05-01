@@ -14,9 +14,6 @@ public partial class App : Microsoft.Maui.Controls.Application
     {
         InitializeComponent();
         _serviceProvider = serviceProvider;
-
-        // 🔥 ẨN NAVIGATION BAR TOÀN CỤC
-        Microsoft.Maui.Controls.Shell.SetNavBarIsVisible(this, false);
     }
 
     protected override Window CreateWindow(IActivationState? activationState)
@@ -24,7 +21,8 @@ public partial class App : Microsoft.Maui.Controls.Application
         var _appShell = _serviceProvider.GetRequiredService<AppShell>();
         var _window = new Window(_appShell);
 
-        Shell.SetNavBarIsVisible(_appShell, false); // Ẩn Navigation Bar cho toàn bộ ứng dụng
+        // Ẩn Navigation Bar cho toàn bộ ứng dụng
+        Shell.SetNavBarIsVisible(_appShell, false);
         
         return _window;
     }

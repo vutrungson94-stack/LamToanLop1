@@ -53,7 +53,12 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<MauiIcon Include="Resources\AppIcon\icon_lam_toan_lop_1.png" ForegroundScale="0.65" Color="#FFFFFF" />
+		<MauiIcon 
+			Include="Resources\AppIcon\icon_lam_toan_lop_1.png" 
+			ForegroundScale="0.65" 
+			Color="#FFFFFF"
+			Resize="false"
+			Condition="$(TargetFramework.Contains('-android'))" />
 		<MauiImage Include="Resources\Images\*" />
 		<MauiFont Include="Resources\Fonts\*" />
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />

@@ -1,12 +1,10 @@
 #!/usr/bin/env pwsh
 # ==================================================================================================
 #  FILE NAME: gbuild.ps1
-#  VERSION: 3.0.0 (ULTIMATE EDITION)
-#  AUTHOR: AI ASSISTANT FOR MAUI DEVELOPERS
-#  DESCRIPTION: Build MAUI locally with System/Local SDK support and GitHub Actions integration.
-#  SPECIALTY: Fixed space-path issue (G:\TRUNG SON), Runtime Host Error, and Android SDK lookup.
+#  VERSION: 4.0.1 (FIXED: File Lock & Aggressive Clean)
+#  DESCRIPTION: Build MAUI locally + Deploy + GitHub Actions.
+#  FIX: Added Aggressive Clean to prevent XARLP7024 error.
 # ==================================================================================================
-
 # --------------------------------------------------------------------------------------------------
 # [SECTION 0] KHAI BÁO THAM SỐ
 # --------------------------------------------------------------------------------------------------
@@ -24,54 +22,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $Global:StartTime = Get-Date
 
-# Bảng màu log chuyên nghiệp
+# Bảng màu log
 $C_Header = "Magenta"; $C_Info = "Cyan"; $C_Warn = "Yellow"; $C_Err = "Red"; $C_Succ = "Green"; $C_Gray = "DarkGray"
 
 # ==================================================================================================
 # [SECTION 2] HÀM BỔ TRỢ (HELPERS)
 # ==================================================================================================
-
-# 1. Hàm ghi log có định dạng
+# 1. Hàm ghi log
 function Write-Log([string]$msg, [string]$color = "White") {
     $time = Get-Date -Format "HH:mm:ss"
     Write-Host "[$time] " -NoNewline -ForegroundColor $C_Gray
     Write-Host $msg -ForegroundColor $color
-}
-
-# ==================================================================================================
-# [SECTION 2.5] AUTO-CLEAN BUILD ARTIFACTS — CHỐNG CRASH UNSATISFIEDLINKERROR
-# ==================================================================================================
-function Invoke-AutoCleanArtifacts {
-    param([string]$ProjectDir)
-    
-    Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
-    
-    $foldersToClean = @(
-        (Join-Path $ProjectDir "bin"),
-        (Join-Path $ProjectDir "obj"),
-        (Join-Path $ProjectDir ".vs"),
-        (Join-Path $env:LOCALAPPDATA "Temp\Xamarin"),
-        (Join-Path $env:LOCALAPPDATA "Temp\MonoAndroid")
-    )
-    
-    foreach ($folder in $foldersToClean) {
-        if (Test-Path $folder) {
-            try {
-                Remove-Item -Path $folder -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Log "   ✅ Đã xóa: $folder" $C_Gray
-            } catch {
-                Write-Log "   ⚠️  Không xóa được: $folder" $C_Warn
-            }
-        }
-    }
-    
-    # Clean Android intermediate cache (quan trọng!)
-    $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
-    if (Test-Path $androidCache) {
-        Get-ChildItem $androidCache -Filter "*.stamp" -Recurse -ErrorAction SilentlyContinue | 
-            Remove-Item -Force -ErrorAction SilentlyContinue
-        Write-Log "   ✅ Đã xóa Android stamp files" $C_Gray
-    }
 }
 
 # 2. Hàm Resolve đường dẫn tuyệt đối (Xử lý khoảng trắng)
@@ -86,23 +47,9 @@ function Get-SafePath {
     } catch { return $path }
 }
 
-# 3. Hàm lấy Short Path trên Windows (Giải quyết lỗi Runtime Host khi đường dẫn có khoảng trắng)
-function Get-WindowsShortPath {
-    param([string]$longPath)
-    if (-not $IsWindows -or -not (Test-Path $longPath)) { return $longPath }
-    try {
-        $fso = New-Object -ComObject Scripting.FileSystemObject
-        if (Test-Path $longPath -PathType Container) {
-            return $fso.GetFolder($longPath).ShortPath
-        } else {
-            return $fso.GetFile($longPath).ShortPath
-        }
-    } catch { return $longPath }
-}
-
-# 4. Tìm Android SDK của Google (Hỗ trợ nhiều biến môi trường và đường dẫn mặc định)
+# 3. Tìm Android SDK
 function Get-AndroidSdkPath {
-    Write-Log "🔍 Đang săn tìm Android SDK của Google..." $C_Gray
+    Write-Log "🔍 Đang săn tìm Android SDK..." $C_Gray
     $searchList = @(
         (Join-Path $PSScriptRoot ".sdk\android-sdk"),
         $env:ANDROID_HOME,
@@ -120,146 +67,63 @@ function Get-AndroidSdkPath {
     return $null
 }
 
-# Hàm tìm đường dẫn Java JDK (Local hoặc System)
+# 4. Tìm Java JDK
 function Get-JavaSdkPath {
-    # 1. Ưu tiên kiểm tra folder .sdk/jdk trong project
     $localJdk = Join-Path $PSScriptRoot ".sdk\jdk"
-    if (Test-Path (Join-Path $localJdk "bin\javac.exe")) {
-        return Get-SafePath $localJdk
-    }
-    # 2. Nếu không có, thử lấy từ biến môi trường của máy
-    if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME "bin\javac.exe"))) {
-        return Get-SafePath $env:JAVA_HOME
-    }
+    if (Test-Path (Join-Path $localJdk "bin\javac.exe")) { return Get-SafePath $localJdk }
+    if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME "bin\javac.exe"))) { return Get-SafePath $env:JAVA_HOME }
     return $null
 }
 
-# 5. Phân giải Dotnet Exe (Ưu tiên Máy -> Local thư mục .sdk)
+# 5. Phân giải Dotnet Exe (System > Local .sdk)
 function Resolve-DotnetExe {
     Write-Log "🔍 Đang kiểm tra .NET SDK..." $C_Gray
-
-    # Ưu tiên 1: Kiểm tra SDK Máy (Đảm bảo máy có cài SDK, không chỉ là Runtime)
+    # Ưu tiên 1: System
     $sysDotnet = Get-Command dotnet -ErrorAction SilentlyContinue
     if ($sysDotnet) {
         $sdks = & $sysDotnet.Source --list-sdks 2>&1
         if ($LASTEXITCODE -eq 0 -and $sdks) {
             Write-Log "🚀 Sử dụng .NET SDK hệ thống." $C_Info
             return $sysDotnet.Source
-        } else {
-            Write-Log "⚠️ Phát hiện dotnet command nhưng không có SDK trên máy. Chuyển sang Local SDK..." $C_Warn
         }
-    } else {
-        Write-Log "⚠️ Không tìm thấy lệnh dotnet trên máy. Chuyển sang Local SDK..." $C_Warn
     }
-
-    # Ưu tiên 2: SDK Local trong .sdk (theo cây thư mục hiện tại)
+    # Ưu tiên 2: Local
     $localDir = Join-Path $PSScriptRoot ".sdk"
     $localExe = Join-Path $localDir "dotnet.exe"
-    if (-not $IsWindows) { $localExe = Join-Path $localDir "dotnet" }
-
     if (Test-Path $localExe) {
         $sdkRoot = Get-SafePath $localDir
         $exePath = Join-Path $sdkRoot (Split-Path $localExe -Leaf)
-        
         Write-Log "📦 Kích hoạt SDK Local tại: $sdkRoot" $C_Warn
-
-        # Thiết lập biến môi trường để Dotnet Host không bị lỗi đường dẫn
         $env:DOTNET_ROOT = $sdkRoot
         ${env:DOTNET_ROOT(x86)} = $sdkRoot
         $env:DOTNET_MULTILEVEL_LOOKUP = "0"
-        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $sdkRoot
-        $env:DOTNET_SDK_WORKLOAD_MANIFEST_ROOT = Join-Path $sdkRoot "sdk-manifests"
-        $env:DOTNET_SDK_WORKLOAD_PACK_ROOT = Join-Path $sdkRoot "packs"
-        
-        # Đưa path SDK local lên đầu ưu tiên
         $env:PATH = "$sdkRoot$([IO.Path]::PathSeparator)$env:PATH"
-
         return $exePath
     }
-    
-    Write-Log "❌ Không tìm thấy .NET SDK trên hệ thống lẫn trong thư mục .sdk!" $C_Err
+    Write-Log "❌ Không tìm thấy .NET SDK!" $C_Err
     return $null
 }
 
-# QUÉT THIẾT BỊ ĐANG KẾT NỐI VỚI ADB (Dành cho Android Debug/Run trực tiếp)
-function Get-ConnectedDevices {
-    $sdk = Get-AndroidSdkPath
-    if (!$sdk) { return @() }
-    $adb = Join-Path $sdk "platform-tools\adb.exe"
-    if (!(Test-Path $adb)) { return @() }
-    
-    # Lấy danh sách thiết bị từ adb
-    $adbOut = @(& $adb devices | Select-String -Pattern "\tdevice$")
-    return $adbOut
-}
-
-# THỰC THI DEBUG (RUN) TRỰC TIẾP LÊN THIẾT BỊ (Sử dụng -t:Run thay vì publish)
-function Invoke-DeviceDebug {
-    param([string]$Project, [string]$Tfm)
-    
-    $devices = @(Get-ConnectedDevices)
-    if ($devices.Count -eq 0) {
-        Write-Log "❌ Không tìm thấy thiết bị Android nào đang kết nối (device)!" $C_Err
-        Write-Log "👉 Hãy đảm bảo đã bật USB Debugging và 'adb devices' có phản hồi." $C_Warn
-        return
-    }
-
-    # TỰ ĐỘNG CẤU HÌNH CHO MỘT SỐ THIẾT BỊ NHƯ XIAOMI (Tránh lỗi cài đặt qua USB)
-    $sdk = Get-AndroidSdkPath
-    $adb = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
-
-    Write-Log "🛠  Đang tối ưu cấu hình cài đặt cho Xiaomi..." $C_Gray
-    # Tắt xác minh app qua USB (Tránh bảng hỏi của Google Play Protect)
-    & $adb shell settings put global verifier_verify_adb_installs 0
-    & $adb shell settings put global package_verifier_enable 0
-    # ---------------------------------------
-
-    Write-Host "`n📱 PHÁT HIỆN THIẾT BỊ: $($devices[0].ToString().Trim())" -ForegroundColor $C_Info
-    $confirm = Read-Host "`n❓ Bạn có muốn bắt đầu gỡ lỗi trên thiết bị này không? (Y/N)"
-    if ($confirm -ne 'y' -and $confirm -ne 'Y') { return }
-
-    $dotnet = Resolve-DotnetExe
-    $androidSdk = Get-AndroidSdkPath
-    $javaSdk = Get-JavaSdkPath
-
-    Write-Log "🚀 Đang triển khai app lên thiết bị... (Vui lòng mở khóa màn hình)" $C_Succ
-    
-    # Lệnh chạy debug (Sử dụng -t:Run)
-    & $dotnet build -t:Run -f $Tfm `
-        "-p:AndroidSdkDirectory=$androidSdk" `
-        "-p:JavaSdkDirectory=$javaSdk" `
-        (Get-SafePath $Project)
-}
-
-# 6. Đọc TFMs từ file csproj
+# 6. Đọc TFMs
 function Get-CsprojTfms {
     param([string]$projPath)
     if (-not (Test-Path $projPath)) { return @() }
-    
     $content = Get-Content $projPath -Raw
     $tfms = @()
-
-    # Quét tất cả các thẻ TargetFramework hoặc TargetFrameworks
     $tfmMatches = [regex]::Matches($content, '<TargetFrameworks?>([^<]+)</TargetFrameworks?>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     foreach ($m in $tfmMatches) {
         $val = $m.Groups[1].Value.Trim()
         $parts = $val.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
         foreach ($p in $parts) { $tfms += $p.Trim() }
     }
-
-    $uniqueTfms = $tfms | Sort-Object -Unique
-    if ($uniqueTfms) {
-        Write-Log "📱 Các nền tảng phát hiện: $($uniqueTfms -join ', ')" $C_Gray
-    }
-    return $uniqueTfms
+    return $tfms | Sort-Object -Unique
 }
 
-# 7. Tìm project MAUI thông minh hơn
+# 7. Tìm project MAUI
 function Get-MauiCsproj {
     Write-Log "📂 Đang quét tìm file project MAUI..." $C_Gray
-    $files = Get-ChildItem . -Recurse -Filter *.csproj -File | 
-             Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|.sdk)[\\/]' }
-    
+    $files = Get-ChildItem . -Recurse -Filter *.csproj -File |
+        Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|.sdk)[\\/]' }
     foreach ($f in $files) {
         $content = Get-Content $f.FullName -Raw -EA SilentlyContinue
         if ($content -match '<UseMaui>\s*true\s*</UseMaui>' -or $content -match 'net\d+(\.\d+)?-(android|ios|windows)') {
@@ -269,7 +133,7 @@ function Get-MauiCsproj {
     return $null
 }
 
-# 8. Quản lý Keystore (Android)
+# 8. Quản lý Keystore
 function Find-AndroidKeystore([string]$projectDir) {
     Write-Log "🔐 Đang tìm kiếm Keystore để ký..." $C_Gray
     $propsFile = Join-Path $projectDir 'signing.properties'
@@ -288,11 +152,9 @@ function Find-AndroidKeystore([string]$projectDir) {
     return $null
 }
 
-# 9. Giao diện nhập thông tin Keystore
 function Read-KeystoreInteractive([hashtable]$ks) {
     Write-Host "`n--- THÔNG TIN KÝ ANDROID ---" -ForegroundColor $C_Info
     Write-Host "📍 File: $($ks.Path)" -ForegroundColor $C_Gray
-    
     if (-not $ks.StorePass) {
         $sp = Read-Host "🔑 Nhập Store Password (Enter để bỏ qua ký)"
         if ([string]::IsNullOrWhiteSpace($sp)) { return $null }
@@ -309,34 +171,110 @@ function Read-KeystoreInteractive([hashtable]$ks) {
     return $ks
 }
 
-# 10. Hiển thị thông tin tổng kết sau build
-function Show-BuildSummary([string]$dir) {
-    if (-not (Test-Path $dir)) { return }
-    $files = Get-ChildItem $dir -File | Where-Object { $_.Extension -in '.apk','.aab','.msix','.ipa','.pkg' }
-    if (-not $files) {
-        Write-Log "⚠️ Build hoàn tất nhưng không thấy file output mong đợi trong $dir" $C_Warn
-        return
+# ==================================================================================================
+# [SECTION 2.5] AGGRESSIVE CLEAN & KILL (CHỐNG LỖI LOCK FILE)
+# ==================================================================================================
+function Invoke-AggressiveClean {
+    param([string]$ProjectDir)
+    
+    Write-Log "🧹 Bắt đầu quy trình dọn dẹp và kill process..." $C_Gray
+    
+    # --- BƯỚC 1: KILL .NET HOST ---
+    Write-Log "🔪 Đang quét process .NET Host đang giữ file..." $C_Gray
+    try {
+        $hostProcs = Get-Process -Name "dotnet" -ErrorAction SilentlyContinue | 
+            Where-Object { $_.Path -like "*$ProjectDir*" -or $_.WorkingDirectory -like "*$ProjectDir*" }
+        
+        if ($hostProcs) {
+            foreach ($proc in $hostProcs) {
+                Write-Log "   🔴 Kill process .NET Host (PID: $($proc.Id))..." $C_Warn
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+            Start-Sleep -Milliseconds 800 # Chờ Windows nhả handle
+        } else {
+            Write-Log "   ℹ️ Không tìm thấy process .NET Host nào đang chạy." $C_Gray
+        }
+    } catch {
+        Write-Log "   ⚠️ Lỗi khi kill process: $_" $C_Warn
     }
-    Write-Host "`n🚀 --- TỔNG KẾT BUILD ---" -ForegroundColor $C_Succ
-    Write-Host "📂 Thư mục: $dir" -ForegroundColor $C_Gray
-    foreach ($f in $files) {
-        $size = [math]::Round($f.Length / 1MB, 2)
-        $type = if ($f.Name -match 'Signed|Release') { "💎 Release" } else { "📦 Debug/Unsigned" }
-        Write-Host "  $type  -> $($f.Name) ($size MB)" -ForegroundColor White
+
+    # --- BƯỚC 2: XÓA THƯ MỤC RÁC ---
+    $foldersToClean = @(
+        (Join-Path $ProjectDir "bin"),
+        (Join-Path $ProjectDir "obj"),
+        (Join-Path $ProjectDir ".vs")
+    )
+
+    foreach ($folder in $foldersToClean) {
+        if (Test-Path $folder) {
+            $retry = 0
+            $max = 3
+            $deleted = $false
+            while (-not $deleted -and $retry -lt $max) {
+                try {
+                    Remove-Item -Path $folder -Recurse -Force -ErrorAction Stop
+                    $deleted = $true
+                    Write-Log "   ✅ Đã xóa: $folder" $C_Gray
+                } catch {
+                    $retry++
+                    Write-Log "   ⏳ File bị khóa, chờ 500ms rồi thử lại ($retry/$max)..." $C_Gray
+                    Start-Sleep -Milliseconds 500
+                }
+            }
+        }
     }
-    if ($IsWindows) { Start-Process explorer.exe -ArgumentList $dir }
+
+    # --- BƯỚC 3: DỌN CACHE XAMARIN ---
+    $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
+    if (Test-Path $androidCache) {
+        try {
+            Get-ChildItem $androidCache -Recurse -Include "*.stamp","res.zip.*","__environment__.txt" -EA SilentlyContinue |
+                Remove-Item -Force -EA SilentlyContinue
+            Write-Log "   ✅ Đã dọn dẹp cache Android trung gian" $C_Gray
+        } catch { }
+    }
+    
+    Write-Log "✅ Dọn dẹp hoàn tất!" $C_Succ
 }
 
 # ==================================================================================================
-# [SECTION 3] TIẾN TRÌNH BUILD CHÍNH (THE CORE ENGINE)
+# [SECTION 3] TIẾN TRÌNH BUILD & DEPLOY
 # ==================================================================================================
+function Invoke-DeviceDebug {
+    param([string]$Project, [string]$Tfm)
+    $sdk = Get-AndroidSdkPath
+    if (!$sdk) { return }
+    $adb = Join-Path $sdk "platform-tools\adb.exe"
+    if (!(Test-Path $adb)) { return }
 
-# ==================================================================================================
-# 11. Tự động tìm thiết bị + deploy APK (Ưu tiên máy thật)
-# ==================================================================================================
+    $devices = @(& $adb devices | Select-String -Pattern "\tdevice$")
+    if ($devices.Count -eq 0) {
+        Write-Log "❌ Không tìm thấy thiết bị Android nào đang kết nối!" $C_Err
+        return
+    }
+
+    # Tắt xác minh app cho Xiaomi
+    Write-Log "🛠  Đang tối ưu cài đặt cho Xiaomi..." $C_Gray
+    & $adb shell settings put global verifier_verify_adb_installs 0
+    & $adb shell settings put global package_verifier_enable 0
+
+    Write-Host "`n📱 PHÁT HIỆN THIẾT BỊ: $($devices[0].ToString().Trim())" -ForegroundColor $C_Info
+    $confirm = Read-Host "`n❓ Bạn có muốn bắt đầu gỡ lỗi trên thiết bị này không? (Y/N)"
+    if ($confirm -ne 'y' -and $confirm -ne 'Y') { return }
+
+    $dotnet = Resolve-DotnetExe
+    $androidSdk = Get-AndroidSdkPath
+    $javaSdk = Get-JavaSdkPath
+    Write-Log "🚀 Đang triển khai app lên thiết bị..." $C_Succ
+    
+    & $dotnet build -t:Run -f $Tfm `
+        "-p:AndroidSdkDirectory=$androidSdk" `
+        "-p:JavaSdkDirectory=$javaSdk" `
+        (Get-SafePath $Project)
+}
+
 function Invoke-AutoDeploy {
     param([string]$ApkPath, [string]$AppId)
-
     $sdk = Get-AndroidSdkPath
     $adb = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
     if (-not (Test-Path $adb) -and $adb -ne "adb") {
@@ -344,19 +282,8 @@ function Invoke-AutoDeploy {
         return
     }
 
-    # ── BƯỚC 1: KIỂM TRA FILE APK ──────────────────────────────────────
-    if (-not (Test-Path $ApkPath)) {
-        Write-Log "❌ File APK không tồn tại: $ApkPath" $C_Err
-        return
-    }
-    $apkInfo = Get-Item $ApkPath
-    if ($apkInfo.Length -lt 1MB) {
-        Write-Log "⚠️ APK quá nhỏ ($([math]::Round($apkInfo.Length/1KB,1)) KB) - Có thể build chưa hoàn tất." $C_Warn
-        Write-Log "🔄 Chờ 2s rồi thử lại..." $C_Gray
-        Start-Sleep -Seconds 2
-    }
-
-    # ── BƯỚC 2: Lấy danh sách thiết bị ─────────────────────────────────
+    # Bước 1: Lấy thiết bị
+    Write-Log "🔍 Đang quét thiết bị..." $C_Gray
     $rawList = @(& $adb devices 2>&1)
     $allDevices = @($rawList | Where-Object { $_ -match "\tdevice$" } | ForEach-Object { ($_ -split "\t")[0].Trim() })
     if ($allDevices.Count -eq 0) {
@@ -364,109 +291,86 @@ function Invoke-AutoDeploy {
         return
     }
 
-    # ── BƯỚC 3: Phân loại & Chọn thiết bị ──────────────────────────────
-    # Ưu tiên máy thật → Máy ảo
+    # Bước 2: Phân loại
     $realDevices = @($allDevices | Where-Object { $_ -notmatch "^emulator-" -and $_ -notmatch "^127\.0\.0\." })
     $emulators   = @($allDevices | Where-Object { $_ -match "^emulator-" -or $_ -match "^127\.0\.0\." })
-    $targetDevice = if ($realDevices.Count -gt 0) { $realDevices[0] } else { $emulators[0] }
-    Write-Log "🎯 Deploy lên: $targetDevice" $C_Info
+    
+    $orderedDevices = @()
+    if ($realDevices.Count -gt 0) { $orderedDevices += $realDevices }
+    if ($emulators.Count -gt 0)   { $orderedDevices += $emulators }
 
-    # ── BƯỚC 4: Gỡ app cũ + Chờ hệ thống Android ───────────────────────
-    Write-Log "🗑️  Gỡ app cũ ($AppId)..." $C_Warn
+    $targetDevice = $null
+    if ($orderedDevices.Count -eq 1) {
+        $targetDevice = $orderedDevices[0]
+        Write-Log "🎯 Tự động chọn: $targetDevice" $C_Succ
+    } else {
+        Write-Host "`n📋 DANH SÁCH THIẾT BỊ:" -ForegroundColor $C_Info
+        for ($i = 0; $i -lt $orderedDevices.Count; $i++) {
+            $d = $orderedDevices[$i]
+            $label = if ($realDevices -contains $d) { "📱 Máy thật" } else { "🖥️  Máy ảo" }
+            Write-Host "  [$($i+1)] $label | $d" -ForegroundColor White
+        }
+        Write-Host "  [0] Bỏ qua deploy" -ForegroundColor $C_Gray
+        $choice = Read-Host "`n⌨  Chọn thiết bị (Enter = Tự động)"
+        if ([string]::IsNullOrWhiteSpace($choice)) {
+            $targetDevice = $orderedDevices[0]
+        } elseif ($choice -ne "0") {
+            $idx = [int]$choice - 1
+            if ($idx -ge 0 -and $idx -lt $orderedDevices.Count) { $targetDevice = $orderedDevices[$idx] }
+        }
+    }
+
+    if (-not $targetDevice) { return }
+
+    # Bước 3: Cài đặt
+    Write-Log "🗑️ Gỡ app cũ ($AppId)..." $C_Warn
     & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-Null
-    Start-Sleep -Milliseconds 800 # Chờ Dalvik/PackageManager giải phóng lock file
+    Start-Sleep -Milliseconds 800
 
-    # ── BƯỚC 5: Cài đặt với chế độ tolerant ────────────────────────────
-    Write-Log "📦 Đang cài APK (cho phép downgrade/replace)..." $C_Info
-    # -r: replace existing, -d: allow version downgrade, -t: allow test packages
-    $installOut = @(& $adb -s $targetDevice install -r -d -t $ApkPath 2>&1)
-    $fullLog = $installOut -join "`n"
-
-    if ($fullLog -match "Success") {
+    Write-Log "📦 Đang cài APK..." $C_Info
+    $installOut = & $adb -s $targetDevice install -r -d -t $ApkPath 2>&1
+    
+    if ($installOut -match "Success") {
         Write-Log "✅ Cài đặt thành công!" $C_Succ
+        # Auto-launch
+        $mainAct = & $adb -s $targetDevice shell "pm dump $AppId" 2>&1 |
+            Select-String "android.intent.action.MAIN" -Context 0,3 |
+            ForEach-Object { $_.Context.PostContext } |
+            Select-String "$AppId/" |
+            ForEach-Object { ($_ -split "$AppId/")[1].Trim() -replace "\s.*", "" } |
+            Select-Object -First 1
         
-        # ── BƯỚC 6 & 7: Tự động lấy MainActivity & Khởi động app ────────
-        $mainActivity = $fullLog | Select-String "$AppId/" | Select-Object -First 1
-        if ($mainActivity) {
-            $act = ($mainActivity -split "$AppId/")[1].Trim() -replace "\s.*", ""
-            if ($act) {
-                Write-Log "🚀 Khởi động: $AppId/$act" $C_Info
-                & $adb -s $targetDevice shell "am start -n $AppId/$act" 2>&1 | Out-Null
-            }
+        if ($mainAct) {
+            Write-Log "🚀 Khởi động: $AppId/$mainAct" $C_Info
+            & $adb -s $targetDevice shell "am start -n $AppId/$mainAct" 2>&1 | Out-Null
         }
     } else {
-        Write-Log "❌ Cài đặt thất bại! Chi tiết Android:" $C_Err
-        foreach ($line in $installOut) {
-            if ($line -match "Failure|Error|failed") {
-                Write-Log "   🔍 $line" $C_Warn
-            }
-        }
-        Write-Log "💡 Mẹo: Chạy thủ công 'adb uninstall $AppId' rồi thử lại." $C_Info
-    }
-}
-
-# ════════════════════════════════════════════════════════════════
-# [NEW] AUTO-CLEAN BUILD ARTIFACTS — Chống crash UnsatisfiedLinkError
-# ════════════════════════════════════════════════════════════════
-function Invoke-CleanBuildArtifacts {
-    param([string]$ProjectDir)
-    
-    Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
-    
-    $foldersToClean = @(
-        (Join-Path $ProjectDir "bin"),
-        (Join-Path $ProjectDir "obj"),
-        (Join-Path $ProjectDir ".vs"),
-        (Join-Path $env:LOCALAPPDATA "Temp\Xamarin"),
-        (Join-Path $env:LOCALAPPDATA "Temp\MonoAndroid")
-    )
-    
-    foreach ($folder in $foldersToClean) {
-        if (Test-Path $folder) {
-            try {
-                Remove-Item -Path $folder -Recurse -Force -EA SilentlyContinue
-                Write-Log "   ✅ Đã xóa: $folder" $C_Gray
-            } catch {
-                Write-Log "   ⚠️  Không xóa được: $folder" $C_Warn
-            }
-        }
-    }
-    
-    # Clean Android intermediate cache (quan trọng!)
-    $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
-    if (Test-Path $androidCache) {
-        Get-ChildItem $androidCache -Filter "*.stamp" -Recurse -EA SilentlyContinue | 
-            Remove-Item -Force -EA SilentlyContinue
+        Write-Log "❌ Cài đặt thất bại!" $C_Err
+        Write-Log $installOut $C_Warn
     }
 }
 
 function ProcessBuildAndShow {
     param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
-
-    # 🔥 Clean artifacts TRƯỚC khi build để tránh UnsatisfiedLinkError
+    
+    # 🔥 [FIX] AGGRESSIVE CLEAN TRƯỚC KHI BUILD
     $projectDir = Split-Path $Project -Parent
-    Invoke-CleanBuildArtifacts -ProjectDir $projectDir
-
+    Invoke-AggressiveClean -ProjectDir $projectDir
+    
     # Làm sạch folder output
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
-    if (Test-Path $rawOut) { 
-        Get-ChildItem $rawOut -Recurse | Remove-Item -Force -EA SilentlyContinue
-        Remove-Item $rawOut -Recurse -Force -EA SilentlyContinue 
-    }
+    if (Test-Path $rawOut) { Remove-Item $rawOut -Recurse -Force -EA SilentlyContinue }
     New-Item -ItemType Directory -Force -Path $rawOut | Out-Null
     
-    # Chuyển mọi đường dẫn về Safe Path (Khử khoảng trắng)
     $safeProj = Get-SafePath $Project
     $safeOut  = Get-SafePath $rawOut
-
     $dotnet = Resolve-DotnetExe
     if (-not $dotnet) { Write-Log "❌ Không tìm thấy SDK .NET!" $C_Err; exit 1 }
-
-    # Lấy đường dẫn các SDK quan trọng
+    
     $androidSdk = Get-AndroidSdkPath
     $javaSdk    = Get-JavaSdkPath
-
-    # Mảng tham số build chuẩn
+    
+    # Build params
     $params = @(
         "publish", $safeProj,
         "-f", $Tfm,
@@ -475,54 +379,43 @@ function ProcessBuildAndShow {
         "-p:UseMaui=true",
         "-p:SingleProject=true"
     )
-
-    # 🔥 Force rebuild native bindings để tránh UnsatisfiedLinkError
+    
+    # Force native rebuild flags cho Android
     if ($Tfm -match "android") {
         $params += @(
             "-p:AndroidUseSharedRuntime=false",
-            "-p:EmbedAssembliesIntoApk=true",
-            "-p:AndroidFastDeploymentType=None"  # ← Force embed assemblies
+            "-p:EmbedAssembliesIntoApk=true"
         )
-        Write-Log "🔧 Đã kích hoạt force native rebuild cho Android" $C_Info
+        Write-Log "🔧 Đã kích hoạt native rebuild mode" $C_Info
     }
-
+    
     if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
     if ($javaSdk)    { $params += "-p:JavaSdkDirectory=$javaSdk" }
     if ($BuildArgs)  { $params += $BuildArgs }
-
+    
     Write-Host ("`n" + "┌" + ("─" * 58) + "┐") -ForegroundColor $C_Gray
     Write-Log " 🚀 ĐANG TIẾN HÀNH BUILD: $Tfm" $C_Info
-    Write-Log " 📁 Output: $OutputSubDir" $C_Gray
     Write-Host ("└" + ("─" * 58) + "┘") -ForegroundColor $C_Gray
-
+    
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-
-    # Thực thi lệnh build (bỏ -v diag để tăng tốc)
     & $dotnet $params
-
     if ($LASTEXITCODE -ne 0) {
         Write-Log "❌ BUILD THẤT BẠI (Mã lỗi: $LASTEXITCODE)" $C_Err
         exit 1
     }
-
     $sw.Stop()
     Write-Log "✅ THÀNH CÔNG TRONG $($sw.Elapsed.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
-
-    # ── AUTO DEPLOY (chỉ với APK, không deploy AAB) ───────────────────────
+    
+    # Auto Deploy
     if ($Tfm -match "android" -and $OutputSubDir -eq "apk") {
-        $apkFile = Get-ChildItem $rawOut -Filter "*Signed*.apk" -Recurse |
-                   Select-Object -First 1
-        if (-not $apkFile) {
-            $apkFile = Get-ChildItem $rawOut -Filter "*.apk" -Recurse |
-                       Select-Object -First 1
-        }
-
+        $apkFile = Get-ChildItem $rawOut -Filter "*Signed*.apk" -Recurse | Select-Object -First 1
+        if (-not $apkFile) { $apkFile = Get-ChildItem $rawOut -Filter "*.apk" -Recurse | Select-Object -First 1 }
+        
         if ($apkFile) {
-            # Lấy ApplicationId từ csproj
             $csprojContent = Get-Content $safeProj -Raw -EA SilentlyContinue
             $appIdMatch    = [regex]::Match($csprojContent, '<ApplicationId>([^<]+)</ApplicationId>')
             $appId         = if ($appIdMatch.Success) { $appIdMatch.Groups[1].Value.Trim() } else { "com.companyname.app" }
-
+            
             Write-Host "`n" -NoNewline
             Invoke-AutoDeploy -ApkPath $apkFile.FullName -AppId $appId
         } else {
@@ -530,117 +423,84 @@ function ProcessBuildAndShow {
             if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
         }
     } else {
-        # AAB hoặc platform khác → Mở folder
         if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
     }
 }
 
-# ==================================================================================================
-# [SECTION 4] GITHUB ACTIONS INTEGRATION
-# ==================================================================================================
-
 function Invoke-GitHubBuild([string]$PackageFormat) {
     Write-Log "☁ Đang kết nối GitHub Cloud..." $C_Info
     $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath "gh.exe" }
-    
     if (-not (Test-Path $gh) -and $gh -ne "gh") {
         Write-Log "❌ Không tìm thấy gh.exe (GitHub CLI)!" $C_Err
         return
     }
-
     $branch = git branch --show-current 2>$null
     if (-not $branch) { $branch = "main" }
-
     Write-Log "🚀 Đang gửi yêu cầu build $PackageFormat lên nhánh $branch..." $C_Succ
     & $gh workflow run build.yml --ref $branch -f "package_format=$PackageFormat"
-    
     Write-Log "✅ Đã trigger thành công. Vui lòng kiểm tra web GitHub." $C_Info
 }
 
 # ==================================================================================================
-# [SECTION 5] LUỒNG ĐIỀU KHIỂN CHÍNH (MAIN FLOW)
+# [SECTION 4] MAIN FLOW
 # ==================================================================================================
-
 Write-Host @"
 `n╔════════════════════════════════════════════════════════════════════╗
-║         🚀  MAUI ULTIMATE BUILD TOOL — VIP PRO MAX V1              ║
-║      (Fixed: Space Paths, Runtime Host & Android SDK Errors)       ║
+║         🚀  MAUI BUILD TOOL — VIP PRO MAX V1                       ║
+║      (Fixed: File Lock, Space Paths & Auto Deploy)                 ║
 ╚════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
 
-# 🔧 Resolve đường dẫn dotnet.exe TRƯỚC khi dùng nó cho global.json
+# Quản lý global.json
 $dotnetExe = Resolve-DotnetExe
-if (-not $dotnetExe) {
-    Write-Log "❌ Không tìm thấy .NET SDK để khởi tạo cấu hình!" $C_Err
-    exit 1
-}
-
-# ==========================================
-# QUẢN LÝ global.json (SMART CHECK & CREATE)
-# ==========================================
-$gJsonPath = Join-Path $PSScriptRoot "global.json"
-
-# Lấy version SDK mới nhất đang được sử dụng
-$sdks = & $dotnetExe --list-sdks
-if (-not $sdks) {
-    Write-Host "❌ Không thể đọc danh sách SDK từ Dotnet!" -ForegroundColor Red
-    exit 1
-}
-$latestSdk = ($sdks[-1] -split ' ')[0]
-$needsUpdate = $true # Mặc định là cần tạo mới
-
-# Kiểm tra nếu file đã tồn tại
-if (Test-Path $gJsonPath) {
-    try {
-        $content = Get-Content $gJsonPath -Raw -ErrorAction Stop
-        $json = ConvertFrom-Json $content -ErrorAction Stop
-        if ($json.sdk -and $json.sdk.version -eq $latestSdk) {
-            $needsUpdate = $false
-            Write-Host "✅ global.json đã tồn tại và đúng phiên bản ($latestSdk) -> Bỏ qua." -ForegroundColor Green
-        } else {
-            $currentVer = if ($json.sdk) { $json.sdk.version } else { "Unknown" }
-            Write-Host "⚠️ global.json version cũ/sai ($currentVer) -> Sẽ cập nhật lên ($latestSdk)." -ForegroundColor Yellow
+if ($dotnetExe) {
+    $sdks = & $dotnetExe --list-sdks
+    if ($sdks) {
+        $latestSdk = ($sdks[-1] -split ' ')[0]
+        $gJsonPath = Join-Path $PSScriptRoot "global.json"
+        $needsUpdate = $true
+        
+        if (Test-Path $gJsonPath) {
+            try {
+                $json = Get-Content $gJsonPath -Raw | ConvertFrom-Json
+                if ($json.sdk -and $json.sdk.version -eq $latestSdk) {
+                    $needsUpdate = $false
+                    Write-Host "✅ global.json đã tồn tại ($latestSdk)" -ForegroundColor Green
+                } else {
+                    Write-Host "⚠️ global.json version cũ -> Sẽ cập nhật." -ForegroundColor Yellow
+                }
+            } catch {}
         }
-    } catch {
-        Write-Host "⚠️ File global.json bị lỗi định dạng -> Sẽ tạo lại." -ForegroundColor Yellow
-    }
-}
-
-# Chỉ ghi đè khi cần thiết
-if ($needsUpdate) {
-    $config = @{
-        sdk = @{
-            version = $latestSdk
-            rollForward = "latestMajor"
-            allowPrerelease = $true
+        
+        if ($needsUpdate) {
+            @{ sdk = @{ version = $latestSdk; rollForward = "latestMajor"; allowPrerelease = $true } } |
+                ConvertTo-Json -Depth 3 | Out-File $gJsonPath -Encoding utf8 -Force
+            Write-Host "🧾 Đã cập nhật global.json ($latestSdk)" -ForegroundColor Cyan
         }
     }
-    $config | ConvertTo-Json -Depth 3 | Out-File $gJsonPath -Encoding utf8 -Force
-    Write-Host "🧾 Đã tạo/cập nhật global.json ($latestSdk)" -ForegroundColor Cyan
 }
 
 # 1. Tìm Project
 $csproj = Get-MauiCsproj
-if (-not $csproj) { Write-Log "❌ Không tìm thấy project MAUI nào trong thư mục này!" $C_Err; exit 1 }
+if (-not $csproj) { Write-Log "❌ Không tìm thấy project MAUI!" $C_Err; exit 1 }
 $projPath = $csproj.FullName
 Write-Log "📄 Project mục tiêu: $($csproj.Name)" $C_Info
 
-# 2. Xử lý Nền tảng (TFM)
+# 2. Xử lý TFM
 $tfms = @(Get-CsprojTfms -projPath $projPath)
-if ($tfms.Count -eq 0) { Write-Log "❌ Không thể đọc danh sách TargetFrameworks!" $C_Err; exit 1 }
+if ($tfms.Count -eq 0) { Write-Log "❌ Không đọc được TargetFrameworks!" $C_Err; exit 1 }
 
 $androidTfm = $tfms | Where-Object { $_ -match 'android' } | Select-Object -First 1
 $winTfm     = $tfms | Where-Object { $_ -match 'windows' } | Select-Object -First 1
 $iosTfm     = $tfms | Where-Object { $_ -match 'ios' } | Select-Object -First 1
 $macTfm     = $tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -First 1
 
-# 3. Menu Lựa chọn
+# 3. Menu
 $choice = '0'
-if ($GitHub -or $NonInteractive) {
-    $choice = '1'
-} else {
+if ($GitHub -or $NonInteractive) { $choice = '1' }
+else {
     Write-Host "`n👉 CHỌN NỀN TẢNG MUỐN XUẤT BẢN:" -ForegroundColor White
-    if ($androidTfm) { 
+    if ($androidTfm) {
         Write-Host "  [1] Debug trên thiết bị Android" -ForegroundColor $C_Gray
         Write-Host "  [2] Android APK  (Cài đặt nhanh)" -ForegroundColor $C_Info
         Write-Host "  [3] Android AAB  (Google Play)" -ForegroundColor $C_Info
@@ -648,26 +508,24 @@ if ($GitHub -or $NonInteractive) {
     if ($iosTfm -and $IsMacOS) { Write-Host "  [4] iOS IPA" -ForegroundColor "Magenta" }
     if ($macTfm -and $IsMacOS) { Write-Host "  [5] Mac Catalyst" -ForegroundColor "Magenta" }
     if ($winTfm -and $IsWindows) { Write-Host "  [6] Windows MSIX" -ForegroundColor "DarkYellow" }
-    
     Write-Host "  [7] GitHub Cloud Build" -ForegroundColor $C_Succ
     Write-Host "  [0] Thoát" -ForegroundColor $C_Gray
-    
     $choice = Read-Host "`n⌨  Nhập số"
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' } # Mặc định là debug nếu chỉ nhấn Enter
+    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
 }
 
-# 4. Thực thi Logic Build
+# 4. Thực thi
 switch ($choice) {
     '1' {
-        if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
+        if (!$androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
         Invoke-DeviceDebug -Project $projPath -Tfm $androidTfm
     }
-    '2' { 
-        if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
-        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk") 
+    '2' {
+        if (!$androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
+        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk")
     }
     '3' {
-        if (!$androidTfm) { Write-Log "❌ Project này không hỗ trợ Android!" $C_Err; exit 1 }
+        if (!$androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
         $ks = Find-AndroidKeystore (Split-Path $projPath)
         $bArgs = @("-p:AndroidPackageFormat=aab")
         if ($ks) {
@@ -692,6 +550,3 @@ switch ($choice) {
 }
 
 Write-Log "🏁 HOÀN TẤT TRONG $([math]::Round(((Get-Date) - $Global:StartTime).TotalSeconds, 1))s." $C_Gray
-# ==================================================================================================
-# KẾT THÚC FILE (END OF SCRIPT)
-# ==================================================================================================

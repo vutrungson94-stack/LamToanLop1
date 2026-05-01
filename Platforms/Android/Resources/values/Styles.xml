@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- ✅ Theme CHÍNH cho app - BẮT BUỘC kế thừa từ Theme.MaterialComponents -->
+  <style name="Maui.MainTheme" parent="Theme.MaterialComponents.Light.NoActionBar">
+    <!-- Các thuộc tính cơ bản -->
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:windowActionBar">false</item>
+    <item name="android:windowFullscreen">false</item>
+    <item name="android:windowContentOverlay">@null</item>
+    
+    <!-- Màu sắc bắt buộc cho Material Components -->
+    <item name="colorPrimary">@color/colorPrimary</item>
+    <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+    <item name="colorAccent">@color/colorAccent</item>
+    
+    <!-- Thuộc tính bổ sung cho MAUI -->
+    <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+    <item name="android:navigationBarColor">@color/colorPrimaryDark</item>
+  </style>
+
+  <!-- ✅ Theme cho Splash Screen - cũng phải kế thừa MaterialComponents -->
+  <style name="Maui.SplashTheme" parent="Theme.MaterialComponents.Light.NoActionBar">
+    <item name="android:windowBackground">@drawable/maui_splash</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:windowActionBar">false</item>
+  </style>
+</resources>

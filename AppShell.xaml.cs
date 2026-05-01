@@ -12,6 +12,8 @@ public partial class AppShell : Shell
         Shell.SetNavBarIsVisible(this, false);
         Shell.SetTabBarIsVisible(this, false);
 
+        Title = String.Empty; // Ẩn tiêu đề của Shell
+        
 		// SplashPage: trang đầu tiên, cần ITtsService → phải dùng DI factory
         Items.Add(new ShellContent
         {

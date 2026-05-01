@@ -34,8 +34,16 @@ public static class MauiProgram
         // 🎵 DI Audio Manager an toàn (tránh ném null reference)
         builder.Services.AddSingleton<IAudioManager>(_ =>
         {
-            try { return AudioManager.Current ?? throw new InvalidOperationException("AudioManager not available on this device."); }
-            catch (Exception ex) { Debug.WriteLine($"AudioManager Init Failed: {ex.Message}"); return null!; }
+            try 
+            { 
+                var audioManager = AudioManager.Current;
+                return audioManager ?? throw new InvalidOperationException("AudioManager not available on this device.");
+            }
+            catch (Exception ex) 
+            { 
+                Debug.WriteLine($"AudioManager Init Failed: {ex.Message}"); 
+                return null!; 
+            }
         });
 
         // 🔊 Đăng ký Service với Null-Safety
