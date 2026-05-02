@@ -62,7 +62,7 @@ function Invoke-KillBuildProcesses {
         try {
             $procs = Get-Process -Name $procName -ErrorAction SilentlyContinue |
                 Where-Object {
-                    # Kiểm tra an toàn - tránh lỗi property không tồn tại
+                    # Kiểm tra an toàn — tránh lỗi property không tồn tại
                     try {
                         ($_.Modules.FileName -like "*$ProjectDir*" -or
                         $_.Path -like "*$ProjectDir*" -or
@@ -92,7 +92,7 @@ function Test-FileLocked {
     param([string]$FilePath)
     
     try {
-        # Thử mở file với quyền ReadWrite - nếu fail nghĩa là file đang bị lock
+        # Thử mở file với quyền ReadWrite — nếu fail nghĩa là file đang bị lock
         $file = [System.IO.File]::Open($FilePath, 'Open', 'Read', 'ReadWrite')
         $file.Close()
         return $false  # File không bị lock
@@ -453,8 +453,13 @@ function Invoke-AutoDeploy {
         return
     }
 
-    # Bước 1: Lấy thiết bị
-    Write-Log "🔍 Đang quét thiết bị..." $C_Gray
+    # ── BƯỚC 1: KIỂM TRA FILE APK ──────────────────────────────────────
+    if (-not (Test-Path $ApkPath)) {
+        Write-Log "❌ File APK không tồn tại: $ApkPath" $C_Err
+        return
+    }
+
+    # ── BƯỚC 2: Lấy danh sách thiết bị ─────────────────────────────────
     $rawList = @(& $adb devices 2>&1)
     $allDevices = @($rawList | Where-Object { $_ -match "\tdevice$" } | ForEach-Object { ($_ -split "\t")[0].Trim() })
     if ($allDevices.Count -eq 0) {
@@ -462,62 +467,40 @@ function Invoke-AutoDeploy {
         return
     }
 
-    # Bước 2: Phân loại
+    # ── BƯỚC 3: Phân loại & Chọn thiết bị ──────────────────────────────
     $realDevices = @($allDevices | Where-Object { $_ -notmatch "^emulator-" -and $_ -notmatch "^127\.0\.0\." })
     $emulators   = @($allDevices | Where-Object { $_ -match "^emulator-" -or $_ -match "^127\.0\.0\." })
-    
-    $orderedDevices = @()
-    if ($realDevices.Count -gt 0) { $orderedDevices += $realDevices }
-    if ($emulators.Count -gt 0)   { $orderedDevices += $emulators }
+    $targetDevice = if ($realDevices.Count -gt 0) { $realDevices[0] } else { $emulators[0] }
+    Write-Log "🎯 Deploy lên: $targetDevice" $C_Info
 
-    $targetDevice = $null
-    if ($orderedDevices.Count -eq 1) {
-        $targetDevice = $orderedDevices[0]
-        Write-Log "🎯 Tự động chọn: $targetDevice" $C_Succ
-    } else {
-        Write-Host "`n📋 DANH SÁCH THIẾT BỊ:" -ForegroundColor $C_Info
-        for ($i = 0; $i -lt $orderedDevices.Count; $i++) {
-            $d = $orderedDevices[$i]
-            $label = if ($realDevices -contains $d) { "📱 Máy thật" } else { "🖥️  Máy ảo" }
-            Write-Host "  [$($i+1)] $label | $d" -ForegroundColor White
-        }
-        Write-Host "  [0] Bỏ qua deploy" -ForegroundColor $C_Gray
-        $choice = Read-Host "`n⌨  Chọn thiết bị (Enter = Tự động)"
-        if ([string]::IsNullOrWhiteSpace($choice)) {
-            $targetDevice = $orderedDevices[0]
-        } elseif ($choice -ne "0") {
-            $idx = [int]$choice - 1
-            if ($idx -ge 0 -and $idx -lt $orderedDevices.Count) { $targetDevice = $orderedDevices[$idx] }
-        }
-    }
-
-    if (-not $targetDevice) { return }
-
-    # Bước 3: Cài đặt
-    Write-Log "🗑️ Gỡ app cũ ($AppId)..." $C_Warn
+    # ── BƯỚC 4: Gỡ app cũ + Chờ hệ thống Android ───────────────────────
+    Write-Log "🗑️  Gỡ app cũ ($AppId)..." $C_Warn
     & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-Null
-    Start-Sleep -Milliseconds 800
+    Start-Sleep -Milliseconds 1200 # Chờ PackageManager giải phóng hoàn toàn
 
-    Write-Log "📦 Đang cài APK..." $C_Info
-    $installOut = & $adb -s $targetDevice install -r -d -t $ApkPath 2>&1
-    
-    if ($installOut -match "Success") {
+    # ── BƯỚC 5: Cài đặt với chế độ tolerant & chống lỗi Streamed ────────
+    Write-Log "📦 Đang cài APK (chống lỗi Streamed & tự cấp quyền)..." $C_Info
+    # -r: replace, -d: downgrade, -t: test, -g: grant permissions, --no-streaming: tránh corruption
+    $installArgs = "-s", $targetDevice, "install", "-r", "-d", "-t", "-g", "--no-streaming", $ApkPath
+    $installOut = @(& $adb @installArgs 2>&1)
+    $fullLog = $installOut -join "`n"
+
+    if ($fullLog -match "Success") {
         Write-Log "✅ Cài đặt thành công!" $C_Succ
-        # Auto-launch
-        $mainAct = & $adb -s $targetDevice shell "pm dump $AppId" 2>&1 |
-            Select-String "android.intent.action.MAIN" -Context 0,3 |
-            ForEach-Object { $_.Context.PostContext } |
-            Select-String "$AppId/" |
-            ForEach-Object { ($_ -split "$AppId/")[1].Trim() -replace "\s.*", "" } |
-            Select-Object -First 1
-        
-        if ($mainAct) {
-            Write-Log "🚀 Khởi động: $AppId/$mainAct" $C_Info
-            & $adb -s $targetDevice shell "am start -n $AppId/$mainAct" 2>&1 | Out-Null
+        # ── BƯỚC 6: Tự động lấy MainActivity & Khởi động app ────────
+        $mainActivity = $fullLog | Select-String "$AppId/" | Select-Object -First 1
+        if ($mainActivity) {
+            $act = ($mainActivity -split "$AppId/")[1].Trim() -replace "\s.*", ""
+            if ($act) {
+                Write-Log "🚀 Khởi động: $AppId/$act" $C_Info
+                & $adb -s $targetDevice shell "am start -n $AppId/$act" 2>&1 | Out-Null
+            }
         }
     } else {
-        Write-Log "❌ Cài đặt thất bại!" $C_Err
-        Write-Log $installOut $C_Warn
+        Write-Log "❌ Cài đặt thất bại! Chi tiết Android:" $C_Err
+        # Log toàn bộ output để debug chính xác
+        $installOut | ForEach-Object { Write-Log "   $_" $C_Warn }
+        Write-Log "💡 Mẹo: Nếu báo 'UPDATE_INCOMPATIBLE', chạy thủ công: adb -s $targetDevice uninstall $AppId" $C_Info
     }
 }
 

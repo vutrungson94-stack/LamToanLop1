@@ -751,7 +751,7 @@ public partial class GamePage : ContentPage
                                 catch (Exception ex) { Debug.WriteLine($"FarmMath compute/render error: {ex}"); }
                             });
                         }
-                        
+
                         RenderStandardAnswers(q);
                         break;
 
@@ -928,7 +928,7 @@ public partial class GamePage : ContentPage
     // RENDER & LOGIC TỪNG GAME
     // ==========================================
     // PHÂN TÁCH: Compute layout off-UI để tránh block (trả về list Rect position)
-    private const double FARM_HORIZON_RATIO = 0.3; // Tỷ lệ chiều cao dành cho phần "đất" trong Farm (phần dưới)
+    private const double FARM_HORIZON_RATIO = 0.45; // Tỷ lệ chiều cao dành cho phần "đất" trong Farm (phần dưới)
     private const double FARM_BOTTOM_RATIO = 0.82; // Tỷ lệ chiều cao tối đa của item so với container (để tránh quá to)
     private const double FARM_DEPTH_MIN = 0.55; // Tỷ lệ scale nhỏ nhất (cho item ở "xa")
     private const double FARM_DEPTH_MAX = 1.25; // Tỷ lệ scale lớn nhất (cho item ở "gần")
@@ -1303,8 +1303,33 @@ public partial class GamePage : ContentPage
         {
             try
             {
+                Rect container = Rect.Zero;
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    if (FarmContainer?.Width > 0 && FarmContainer.Height > 0)
+                        container = new Rect(0, 0, FarmContainer.Width, FarmContainer.Height);
+                });
+
+                if (container.Width <= 0) return;
+
+                double cw = container.Width;
+                double ch = container.Height;
+
+                // 🔥 Tính vùng "Đáp Đất" dựa trên hằng số FARM_HORIZON_RATIO
+                // Đảm bảo con vật chỉ xuất hiện từ 50% chiều cao màn hình trở xuống
+                double safeY = ch * FARM_HORIZON_RATIO; 
+                double safeH = (ch * FARM_BOTTOM_RATIO) - safeY;
+                Rect groundZone = new Rect(0, safeY, cw, safeH);
+
                 // Dùng flat model với kích thước đúng theo Scale thật của từng con
-                var pre = await ComputeScatterLayoutAsync(items, renderToken, useFarmDepth: false, enforceExactScale: true);
+                var pre = await ComputeScatterLayoutAsync(
+                    items, 
+                    renderToken, 
+                    useFarmDepth: false, 
+                    limitZone: groundZone,
+                    enforceExactScale: true
+                );
+                
                 if (renderToken.IsCancellationRequested) return;
 
                 // Load ảnh
@@ -1723,7 +1748,7 @@ public partial class GamePage : ContentPage
                     0, 
                     cartY - margin, 
                     FarmContainer.Width, 
-                    (FarmContainer.Height - (cartY - margin))
+                    (FarmContainer.Height - (cartY - margin - 100))
                 );
             }
 

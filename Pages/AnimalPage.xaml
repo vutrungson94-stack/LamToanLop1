@@ -22,6 +22,7 @@
             WidthRequest="110"
             HorizontalOptions="Center"
             VerticalOptions="Center"
+            Margin="0, 30, 0, 0"
             Clicked="OnHomeClicked"
             BackgroundColor="White"
             CornerRadius="22"
