@@ -678,11 +678,12 @@ public partial class GamePage : ContentPage
                         FarmBackground.IsVisible = true; 
                         FarmContainer.IsVisible = true;
                         // Cập nhật lại kiểu dữ liệu cho đúng với logic khởi tạo
-                        if (q.Data is Tuple<List<GameItem>, bool> farmData)
+                        if (q.Data is Tuple<List<GameItem>, int, bool> farmData)
                         {
                             // Gộp 2 list lại và đếm số lượng list 1 làm mốc chia (highlightCount)
                             var allItems = farmData.Item1;
-                            bool isAdd = farmData.Item2;
+                            int highlightCount = farmData.Item2;
+                            bool isAdd = farmData.Item3;
 
                             // Dùng ComputeScatter + Render để tối ưu
                             var token = _cts?.Token ?? CancellationToken.None;
@@ -703,6 +704,10 @@ public partial class GamePage : ContentPage
                                         // Vẽ viền tròn cho các con có IsTarget = true (dùng bounds hiện có)
                                         int imageIndex = 0;
                                         var imageViews = FarmContainer.Children.OfType<Image>().Select(img => (img, AbsoluteLayout.GetLayoutBounds(img))).ToList();
+                                        
+                                        // 🔥 CHỌN MÀU THEO LOẠI BÀI
+                                        Color highlightColor = isAdd ? Colors.LimeGreen : Colors.OrangeRed;
+                                        
                                         foreach (var item in allItems)
                                         {
                                             if (item.IsTarget && imageIndex < imageViews?.Count)
@@ -710,7 +715,7 @@ public partial class GamePage : ContentPage
                                                 var (img, bounds) = imageViews[imageIndex];
                                                 var circle = new Border
                                                 {
-                                                    Stroke = isAdd ? Colors.LimeGreen : Colors.Red,
+                                                    Stroke = highlightColor,
                                                     StrokeThickness = 4,
                                                     BackgroundColor = Colors.Transparent,
                                                     StrokeShape = new RoundRectangle { CornerRadius = (float)(bounds.Width / 2 + 5) },
@@ -746,16 +751,7 @@ public partial class GamePage : ContentPage
                                 catch (Exception ex) { Debug.WriteLine($"FarmMath compute/render error: {ex}"); }
                             });
                         }
-                        else if (q.Data is Tuple<List<GameItem>, List<GameItem>> mdList)
-                        {
-                            var combinedList = new List<GameItem>(mdList.Item1);
-                            combinedList.AddRange(mdList.Item2);
-                            RenderFarmMath(combinedList, mdList.Item1.Count);
-                        }
-                        else if (q.Data is Tuple<List<GameItem>, int> md)
-                        {
-                            RenderFarmMath(md.Item1, md.Item2);
-                        }
+                        
                         RenderStandardAnswers(q);
                         break;
 
@@ -1708,11 +1704,27 @@ public partial class GamePage : ContentPage
             CollectionBin.IsVisible = true;
             CounterLabel.Text = $"0/{_totalTargetCount}";
 
-            // Tính vùng cấm chính xác - giỏ hàng cao 120dp ở đáy
-            double binHeight = 120;
-            if (FarmContainer.Height > 0)
+            // 🔥 TÍNH TOÁN VÙNG CẤM ĐỘNG THEO VỊ TRÍ THỰC TẾ CỦA GIỎ HÀNG
+            if (CollectionBin != null && CollectionBin.IsVisible)
             {
-                forbiddenZone = new Rect(0, FarmContainer.Height - binHeight, FarmContainer.Width, binHeight);
+                double cartY = CollectionBin.Y;
+                double cartH = CollectionBin.Height;
+                double margin = 20; // Khoảng cách an toàn giữa item và giỏ
+                
+                 // Nếu layout chưa render xong (Height = 0), dùng vị trí dự đoán
+                if (cartH <= 0)
+                {
+                    cartH = 120; // Chiều cao dự đoán của giỏ hàng
+                    cartY = FarmContainer.Height - cartH; // Vị trí dự đoán của giỏ hàng
+                }
+
+                // Vùng cấm: Từ đỉnh giỏ hàng trở xuống hết container + margin
+                forbiddenZone = new Rect(
+                    0, 
+                    cartY - margin, 
+                    FarmContainer.Width, 
+                    (FarmContainer.Height - (cartY - margin))
+                );
             }
 
             var sample = items.FirstOrDefault(i => i.IsTarget);
@@ -1733,8 +1745,14 @@ public partial class GamePage : ContentPage
                 // Đảm bảo forbiddenZone đã được tính
                 if (forbiddenZone == Rect.Zero && FarmContainer.Height > 0)
                 {
-                    double binHeight = 120;
-                    forbiddenZone = new Rect(0, FarmContainer.Height - binHeight, FarmContainer.Width, binHeight);
+                    double cartH = 120;
+                    double cartY = FarmContainer.Height - cartH;
+                    forbiddenZone = new Rect(
+                        0, 
+                        FarmContainer.Height - 20, 
+                        FarmContainer.Width, 
+                        cartH + 20
+                    );
                 }
 
                 // TRUYỀN forbiddenZones vào ComputeScatterLayoutAsync
@@ -1742,7 +1760,8 @@ public partial class GamePage : ContentPage
                     items, 
                     renderToken, 
                     useFarmDepth: !isShapeGame,
-                    forbiddenZones: new List<Rect> { forbiddenZone }  // ← THÊM DÒNG NÀY
+                    forbiddenZones: 
+                    [forbiddenZone]  // ← THÊM DÒNG NÀY
                 );
                 
                 if (renderToken.IsCancellationRequested) return;

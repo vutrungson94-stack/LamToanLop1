@@ -250,7 +250,7 @@
                     CorrectAnswer = isAnimal ? targetPair.Key : targetPair.Value;
 
                     string tName = targetPair.Value.StartsWith("Con ") ? targetPair.Value[4..] : targetPair.Value;
-                    Title = isAnimal ? $"Tìm xem có bao nhiêu bạn {tName}?" : $"Bé hãy tìm tất cả hình {tName} nhé!";
+                    Title = isAnimal ? $"Bé hãy tìm tất cả bạn {tName} nhé!" : $"Bé hãy tìm tất cả hình {tName} nhé!";
 
                     // [FIX] Scale thật của loài vật (Voi=1.8, Chuột=0.46...)
                     double tScale = (isAnimal && GameData.AnimalScales.TryGetValue(targetPair.Key, out double s)) ? s : 1.0;
@@ -372,39 +372,48 @@
                     VisualType = "FarmMath";
                     int limit = level == 1 ? 6 : (level == 2 ? 12 : 18);
                     bool isAdd = _rnd.Next(2) == 0;
-                    int a, b, result;
+                    int a, b;
                     
                     if (isAdd)
                     {
                         // PHÉP CỘNG: Có a bạn, thêm b bạn → Tổng = a + b
                         a = _rnd.Next(1, limit);
                         b = _rnd.Next(1, limit - a + 1);
-                        result = a + b;
                     }
                     else
                     {
                         // PHÉP TRỪ: Có a bạn, bớt b bạn → Còn = a - b
                         a = _rnd.Next(2, limit + 1);  // Tổng ban đầu
                         b = _rnd.Next(1, a);           // Số cần bớt (nhỏ hơn a)
-                        result = a - b;
                     }
 
                     Title = $"Có {a} bạn nhỏ, nếu {(isAdd ? "thêm" : "bớt")} {b} bạn thì có tất cả bao nhiêu bạn?";
-                    CorrectAnswer = result.ToString();
+                    CorrectAnswer = (isAdd ? a + b : a - b).ToString();
 
                     // TẠO DANH SÁCH ĐỘNG VẬT:
                     // - Luôn hiển thị ĐỦ a con ban đầu
                     // - Highlight b con để thể hiện "thêm" hoặc "bớt"
-                    var groupA = GenerateRandomAnimals(a);
+                    var allAnimals = new List<GameItem>();
+
+                    if (isAdd)
+                    {
+                        // Bài THÊM: Hiển thị (a+b) con, highlight b con
+                        allAnimals = GenerateRandomAnimals(a + b);
+                    }
+                    else
+                    {
+                        // Bài BỚT: Hiển thị a con, highlight b con
+                        allAnimals = GenerateRandomAnimals(a);
+                    }
                     
                     // Đánh dấu b con đầu tiên là IsTarget (để highlight)
-                    for (int i = 0; i < b && i < groupA.Count; i++)
+                    for (int i = 0; i < b && i < allAnimals.Count; i++)
                     {
-                        groupA[i].IsTarget = true;
+                        allAnimals[i].IsTarget = true;
                     }
 
                     // Data = (danh sách a con, số lượng con được highlight = b)
-                    Data = new Tuple<List<GameItem>, int>(groupA, b);
+                    Data = new Tuple<List<GameItem>, int, bool>(allAnimals, b, isAdd);
                     
                     // Tạo options cho đáp án
                     Options = CreateOptions(CorrectAnswer, 0, limit + 5);

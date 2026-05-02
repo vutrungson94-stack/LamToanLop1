@@ -7,60 +7,44 @@
     BackgroundColor="#E0F7FA"
     Shell.NavBarIsVisible="False">
 
-    <!-- Grid Root - 4 HÀNG: Home, Ảnh, Tên+Loa, Nút điều hướng -->
+    <!-- Sử dụng Grid chia 4 hàng: Nút Home - Ảnh - Tên - Nút bấm -->
     <Grid RowDefinitions="Auto, *, Auto, Auto" 
-          ColumnDefinitions="*" 
-          Padding="15" 
-          RowSpacing="15">
-        
-        <!-- Nút Home góc trên TRÁI -->
-        <Button 
-			Grid.Row="0" Grid.Column="0"
-			Text="🏠"
-			FontSize="22"
-			FontAttributes="Bold"
-			HeightRequest="44" 
-			WidthRequest="44"
-			HorizontalOptions="Start"
-			VerticalOptions="Start"
-			Clicked="OnHomeClicked"
-			BackgroundColor="White"
-			CornerRadius="22"
-			Padding="0"
-			BorderColor="#4CAF50"
-			BorderWidth="2"
-			TextColor="#2E7D32">
-			
-			<Button.Shadow>
-				<Shadow Brush="Black" Offset="1,1" Opacity="0.3"/>
-			</Button.Shadow>
-			
-			<Button.VisualStateManager.VisualStateGroups>
-				<VisualStateGroupList>
-					<VisualStateGroup x:Name="CommonStates">
-						<VisualState x:Name="Normal"/>
-						<VisualState x:Name="Pressed">
-							<VisualState.Setters>
-								<Setter Property="BackgroundColor" Value="#E8F5E9"/>
-								<Setter Property="Scale" Value="0.95"/>
-							</VisualState.Setters>
-						</VisualState>
-					</VisualStateGroup>
-				</VisualStateGroupList>
-			</Button.VisualStateManager.VisualStateGroups>
-		</Button>
+          RowSpacing="15" 
+          Padding="15, 15, 15, 15">
 
-        <!-- Khung hình con vật -->
+        <!-- 1. Nút Home: Đưa vào giữa hàng trên cùng -->
+        <Button 
+            Grid.Row="0"
+            Text="🏠 Home"
+            FontSize="14"
+            FontAttributes="Bold"
+            HeightRequest="44" 
+            WidthRequest="110"
+            HorizontalOptions="Center"
+            VerticalOptions="Center"
+            Clicked="OnHomeClicked"
+            BackgroundColor="White"
+            CornerRadius="22"
+            Padding="10, 5"
+            TextColor="#2E7D32"
+            BorderColor="#4CAF50"
+            BorderWidth="1">
+            <Button.Shadow>
+                <Shadow Brush="Black" Offset="1,1" Opacity="0.3"/>
+            </Button.Shadow>
+        </Button>
+
+        <!-- 2. Khung ảnh con vật (Chiếm phần giữa màn hình) -->
         <Border 
-            Grid.Row="1" Grid.Column="0"
+            Grid.Row="1"
             StrokeShape="RoundRectangle 20" 
             Padding="15" 
             Stroke="#4CAF50" 
             StrokeThickness="3"
             BackgroundColor="#FFFFFF" 
             HorizontalOptions="Fill"
-            VerticalOptions="Center"
-            Margin="20, 0"
+            VerticalOptions="Center" 
+            Margin="10, 0"
             HeightRequest="300">
             
             <Border.GestureRecognizers>
@@ -74,13 +58,13 @@
                 VerticalOptions="Center"/>
         </Border>
 
-        <!-- Tên con vật + Loa -->
+        <!-- 3. Tên con vật + Loa -->
         <HorizontalStackLayout 
-            Grid.Row="2" Grid.Column="0"
+            Grid.Row="2"
             HorizontalOptions="Center" 
             Spacing="15" 
             VerticalOptions="Center"
-            Margin="0,0,0,10">
+            Margin="0, 0, 0, 10">
             
             <ImageButton
                 Source="bieutuong_loa.png"
@@ -114,12 +98,12 @@
             </Label>
         </HorizontalStackLayout>
 
-        <!-- NÚT ĐIỀU HƯỚNG - Hàng 3 -->
+        <!-- 4. Nút điều hướng (Xem lại / Tiếp theo) -->
         <Grid 
-            Grid.Row="3" Grid.Column="0"
+            Grid.Row="3"
             ColumnDefinitions="*,*" 
             ColumnSpacing="15" 
-            Margin="0, 10, 0, 0">
+            Margin="0, 0, 0, 5">
             
             <Button 
                 x:Name="BtnBack" 

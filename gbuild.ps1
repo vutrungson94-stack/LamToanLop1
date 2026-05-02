@@ -47,6 +47,177 @@ function Get-SafePath {
     } catch { return $path }
 }
 
+# ==================================================================================================
+# [SECTION 2.1] KILL PROCESSES ĐANG GIỮ LOCK FILE — CHỐNG LỖI XARLP7024
+# ==================================================================================================
+function Invoke-KillBuildProcesses {
+    param([string]$ProjectDir)
+    
+    Write-Log "🔪 Đang quét và kill process đang giữ lock file..." $C_Gray
+    
+    # Danh sách process cần kill
+    $processNames = @('dotnet', 'msbuild', 'vbcscompiler', 'csc', 'VBCSCompiler', 'java')
+    
+    foreach ($procName in $processNames) {
+        try {
+            $procs = Get-Process -Name $procName -ErrorAction SilentlyContinue |
+                Where-Object {
+                    # Kiểm tra an toàn - tránh lỗi property không tồn tại
+                    try {
+                        ($_.Modules.FileName -like "*$ProjectDir*" -or
+                        $_.Path -like "*$ProjectDir*" -or
+                        (Get-Item $_.Path -ErrorAction SilentlyContinue).DirectoryName -like "*$ProjectDir*")
+                    } catch {
+                        $false
+                    }
+                }
+            
+            foreach ($proc in $procs) {
+                Write-Log "   🎯 Kill $procName (PID: $($proc.Id))..." $C_Warn
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-Log "   ⚠️  Lỗi khi quét process $procName : $($_.Exception.Message)" $C_Warn
+        }
+    }
+    
+    # Chờ 800ms để hệ thống nhả file handle
+    Start-Sleep -Milliseconds 800
+}
+
+# ==================================================================================================
+# [SECTION 2.2] KIỂM TRA FILE BỊ KHÓA
+# ==================================================================================================
+function Test-FileLocked {
+    param([string]$FilePath)
+    
+    try {
+        # Thử mở file với quyền ReadWrite - nếu fail nghĩa là file đang bị lock
+        $file = [System.IO.File]::Open($FilePath, 'Open', 'Read', 'ReadWrite')
+        $file.Close()
+        return $false  # File không bị lock
+    } catch {
+        return $true   # File đang bị lock
+    }
+}
+
+# ==================================================================================================
+# [SECTION 2.3] ĐỢI FILE ĐƯỢC RELEASE
+# ==================================================================================================
+function Wait-FileUnlocked {
+    param([string]$FilePath, [int]$MaxWaitSeconds = 10)
+    
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $MaxWaitSeconds) {
+        if (-not (Test-FileLocked -FilePath $FilePath)) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    return $false  # Timeout
+}
+
+# ==================================================================================================
+# [SECTION 2.4] AUTO-CLEAN BUILD ARTIFACTS — CHỐNG LOCK FILE & UNSATISFIEDLINKERROR
+# ==================================================================================================
+function Invoke-CleanBuildArtifacts {
+    param([string]$ProjectDir)
+    
+    Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
+    
+    # ── BƯỚC 0: KILL PROCESS TRƯỚC KHI CLEAN ─────────────────────────────
+    Invoke-KillBuildProcesses -ProjectDir $ProjectDir
+    
+    # ── BƯỚC 1: Xóa folder bin/obj/.vs với retry logic ───────────────────
+    $foldersToClean = @(
+        (Join-Path $ProjectDir "bin"),
+        (Join-Path $ProjectDir "obj"),
+        (Join-Path $ProjectDir ".vs")
+    )
+    
+    foreach ($folder in $foldersToClean) {
+        if (Test-Path $folder) {
+            $retryCount = 0
+            $maxRetries = 10  # Tăng lên 10 lần retry
+            $deleted = $false
+            
+            while (-not $deleted -and $retryCount -lt $maxRetries) {
+                try {
+                    # Kiểm tra xem folder có file nào bị lock không
+                    $files = Get-ChildItem $folder -Recurse -File -ErrorAction SilentlyContinue
+                    $lockedFiles = @()
+                    foreach ($f in $files) {
+                        if (Test-FileLocked -FilePath $f.FullName) {
+                            $lockedFiles += $f.FullName
+                        }
+                    }
+                    
+                    if ($lockedFiles.Count -gt 0) {
+                        Write-Log "   ⏳ File đang bị khóa, chờ 1s..." $C_Gray
+                        Start-Sleep -Seconds 1
+                        $retryCount++
+                        continue
+                    }
+                    
+                    Remove-Item -Path $folder -Recurse -Force -ErrorAction Stop
+                    $deleted = $true
+                    Write-Log "   ✅ Đã xóa: $folder" $C_Gray
+                } catch {
+                    $retryCount++
+                    if ($retryCount -lt $maxRetries) {
+                        $delay = $retryCount * 500
+                        Write-Log "   ⏳ File bị lock, chờ ${delay}ms rồi thử lại ($retryCount/$maxRetries)..." $C_Gray
+                        Start-Sleep -Milliseconds $delay
+                        
+                        # Thử kill process lần nữa nếu vẫn fail ở lần 5
+                        if ($retryCount -eq 5) {
+                            Invoke-KillBuildProcesses -ProjectDir $ProjectDir
+                        }
+                    } else {
+                        Write-Log "   ⚠️  Không xóa được sau $maxRetries lần: $folder" $C_Warn
+                        Write-Log "      💡 Mẹo: Đóng VS Code, tắt antivirus, rồi chạy lại" $C_Info
+                    }
+                }
+            }
+        }
+    }
+    
+    # ── BƯỚC 2: Clean Android intermediate cache sâu ─────────────────────
+    $androidCachePaths = @(
+        (Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"),
+        (Join-Path $env:LOCALAPPDATA "Temp\Xamarin"),
+        (Join-Path $env:LOCALAPPDATA "Temp\MonoAndroid")
+    )
+    
+    foreach ($cachePath in $androidCachePaths) {
+        if (Test-Path $cachePath) {
+            try {
+                Get-ChildItem $cachePath -Recurse -Include "*.stamp","*.zip","__environment__.txt","res.zip.*" -ErrorAction SilentlyContinue |
+                    Remove-Item -Force -ErrorAction SilentlyContinue
+                Write-Log "   ✅ Đã xóa Android cache files trong: $cachePath" $C_Gray
+            } catch {
+                Write-Log "   ⚠️  Không xóa được cache: $cachePath" $C_Warn
+            }
+        }
+    }
+    
+    # ── BƯỚC 3: Clean sâu trong obj/Release/net10.0-android/ ─────────────
+    $androidObj = Join-Path $ProjectDir "obj\Release\net10.0-android"
+    if (Test-Path $androidObj) {
+        try {
+            Get-ChildItem $androidObj -Recurse -Include "*.so","*.dll","*.stamp","__environment__.txt","res.zip.*" -ErrorAction SilentlyContinue |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+            Write-Log "   ✅ Đã xóa Android native cache trong obj/" $C_Gray
+        } catch {
+            Write-Log "   ⚠️  Không xóa được native cache: $($_.Exception.Message)" $C_Warn
+        }
+    }
+    
+    # ── BƯỚC 4: Đợi hệ thống giải phóng file handle ──────────────────────
+    Start-Sleep -Milliseconds 1200
+    Write-Log "✅ Dọn dẹp hoàn tất!" $C_Succ
+}
+
 # 3. Tìm Android SDK
 function Get-AndroidSdkPath {
     Write-Log "🔍 Đang săn tìm Android SDK..." $C_Gray
@@ -355,6 +526,16 @@ function ProcessBuildAndShow {
     
     # 🔥 [FIX] AGGRESSIVE CLEAN TRƯỚC KHI BUILD
     $projectDir = Split-Path $Project -Parent
+    
+    #kill process đang giữ lock file & dọn dẹp build artifacts cũ
+    Invoke-KillBuildProcesses -ProjectDir $projectDir
+
+    #dọn dẹp build artifacts cũ với retry logic chống lock file
+    Invoke-CleanBuildArtifacts -ProjectDir $projectDir
+
+    # Chờ thêm 1s để đảm bảo hệ thống đã nhả file handle
+    Start-Sleep -Seconds 1
+    
     Invoke-AggressiveClean -ProjectDir $projectDir
     
     # Làm sạch folder output
