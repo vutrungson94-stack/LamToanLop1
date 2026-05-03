@@ -930,7 +930,7 @@ public partial class GamePage : ContentPage
 // ==========================================
 
 // 🔥 TỶ LỆ CHUẨN CHO MÀN HÌNH DÀI (ANDROID)
-private const double FARM_HORIZON_RATIO = 0.32; // Trời chiếm 32% trên cùng
+private const double FARM_HORIZON_RATIO = 0.35; // Trời chiếm 32% trên cùng
 private const double FARM_BOTTOM_RATIO = 0.80;  // Vùng đất an toàn kết thúc ở 80% (chừa 20% dưới cho nút bấm)
 private const double FARM_DEPTH_MIN = 0.55;     // Con vật xa nhất (nhỏ nhất)
 private const double FARM_DEPTH_MAX = 1.25;     // Con vật gần nhất (to nhất)
@@ -1732,23 +1732,22 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
         // 🔥 TÍNH TOÁN VÙNG CẤM CHÍNH XÁC THEO VỊ TRÍ GIỎ HÀNG
         if (CollectionBin != null && CollectionBin.IsVisible)
         {
-            double cartY = CollectionBin.Y;
-            double cartH = CollectionBin.Height;
+            double binX = CollectionBin.X;
+            double binY = CollectionBin.Y;
+            double binWidth = CollectionBin.Width;
+            double binHeight = CollectionBin.Height;
             double margin = 30; // Khoảng đệm an toàn
 
-            // Nếu layout chưa render xong (Height = 0), dùng vị trí dự đoán
-            if (cartH <= 0)
-            {
-                cartH = 120; // Chiều cao dự đoán
-                cartY = FarmContainer.Height - cartH;  // Vị trí dự đoán (góc trên cùng)
-            }
+            if (binWidth <= 0) binWidth = 180; // Chiều rộng dự đoán
+            if (binHeight <= 0) binHeight = 60; // Chiều cao dự đoán
+            if (binY <= 0) binY = 5; // Vị trí dự đoán nếu chưa render xong
 
             // Vùng cấm: Từ đỉnh màn hình (Y=0) đến đáy giỏ hàng + margin
             forbiddenZone = new Rect(
                 0, 
                 0, 
                 FarmContainer.Width, 
-                cartY + cartH + margin
+                binY + binHeight + margin
             );
         }
 
@@ -1770,11 +1769,12 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
             // 🔥 Fallback: Nếu chưa tính được vùng cấm thì giả lập vùng trên cùng
             if (forbiddenZone == Rect.Zero && FarmContainer.Height > 0)
             {
+                double binHeightEstimate = 80; // Ước lượng chiều cao giỏ hàng nếu chưa render xong
                 forbiddenZone = new Rect(
                     0, 
                     0, 
                     FarmContainer.Width, 
-                    FarmContainer.Height * 0.20 // 20% trên cùng là vùng cấm
+                    binHeightEstimate // 20% trên cùng là vùng cấm
                 );
             }
 
@@ -1783,7 +1783,7 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                 items, 
                 renderToken, 
                 useFarmDepth: !isShapeGame,
-                forbiddenZones: new List<Rect> { forbiddenZone }
+                forbiddenZones: [forbiddenZone]
             );
             
             if (renderToken.IsCancellationRequested) return;
