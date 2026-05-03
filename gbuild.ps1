@@ -1,9 +1,9 @@
 #!/usr/bin/env pwsh
 # ==================================================================================================
 #  FILE NAME: gbuild.ps1
-#  VERSION: 4.0.1 (FIXED: File Lock & Aggressive Clean)
+#  VERSION: 4.1.0 (OPTIMIZED & CLEAN)
 #  DESCRIPTION: Build MAUI locally + Deploy + GitHub Actions.
-#  FIX: Added Aggressive Clean to prevent XARLP7024 error.
+#  FIX: Consolidated clean functions, removed redundant logic, optimized speed.
 # ==================================================================================================
 # --------------------------------------------------------------------------------------------------
 # [SECTION 0] KHAI BÁO THAM SỐ
@@ -28,6 +28,7 @@ $C_Header = "Magenta"; $C_Info = "Cyan"; $C_Warn = "Yellow"; $C_Err = "Red"; $C_
 # ==================================================================================================
 # [SECTION 2] HÀM BỔ TRỢ (HELPERS)
 # ==================================================================================================
+
 # 1. Hàm ghi log
 function Write-Log([string]$msg, [string]$color = "White") {
     $time = Get-Date -Format "HH:mm:ss"
@@ -45,174 +46,6 @@ function Get-SafePath {
         if (Test-Path $path -PathType Container) { return $fso.GetFolder($path).ShortPath }
         return $fso.GetFile($path).ShortPath
     } catch { return $path }
-}
-
-# ==================================================================================================
-# [SECTION 2.1] KILL PROCESSES ĐANG GIỮ LOCK FILE — CHỐNG LỖI XARLP7024
-# ==================================================================================================
-function Invoke-KillBuildProcesses {
-    param([string]$ProjectDir)
-    
-    Write-Log "🔪 Đang quét và kill process đang giữ lock file..." $C_Gray
-    
-    $processNames = @('dotnet', 'msbuild', 'vbcscompiler', 'csc', 'VBCSCompiler', 'java')
-    
-    foreach ($procName in $processNames) {
-        try {
-            $procs = Get-Process -Name $procName -ErrorAction SilentlyContinue |
-                Where-Object {
-                    try {
-                        ($_.Modules.FileName -like "*$ProjectDir*" -or
-                        $_.Path -like "*$ProjectDir*" -or
-                        (Get-Item $_.Path -ErrorAction SilentlyContinue).DirectoryName -like "*$ProjectDir*")
-                    } catch {
-                        $false
-                    }
-                }
-            
-            foreach ($proc in $procs) {
-                Write-Log "   🎯 Kill $procName (PID: $($proc.Id))..." $C_Warn
-                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            }
-        } catch {
-            Write-Log "   ⚠️  Lỗi khi quét process $procName" $C_Warn
-        }
-    }
-    
-    Start-Sleep -Milliseconds 500
-}
-
-# ==================================================================================================
-# [SECTION 2.2] KIỂM TRA FILE BỊ KHÓA
-# ==================================================================================================
-function Test-FileLocked {
-    param([string]$FilePath)
-    
-    try {
-        # Thử mở file với quyền ReadWrite — nếu fail nghĩa là file đang bị lock
-        $file = [System.IO.File]::Open($FilePath, 'Open', 'Read', 'ReadWrite')
-        $file.Close()
-        return $false  # File không bị lock
-    } catch {
-        return $true   # File đang bị lock
-    }
-}
-
-# ==================================================================================================
-# [SECTION 2.3] ĐỢI FILE ĐƯỢC RELEASE
-# ==================================================================================================
-function Wait-FileUnlocked {
-    param([string]$FilePath, [int]$MaxWaitSeconds = 10)
-    
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($sw.Elapsed.TotalSeconds -lt $MaxWaitSeconds) {
-        if (-not (Test-FileLocked -FilePath $FilePath)) {
-            return $true
-        }
-        Start-Sleep -Milliseconds 200
-    }
-    return $false  # Timeout
-}
-
-# ==================================================================================================
-# [SECTION 2.4] AUTO-CLEAN BUILD ARTIFACTS — CHỐNG LOCK FILE & UNSATISFIEDLINKERROR
-# ==================================================================================================
-function Invoke-CleanBuildArtifacts {
-    param([string]$ProjectDir)
-    
-    Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
-    
-    # ── BƯỚC 0: KILL PROCESS TRƯỚC KHI CLEAN ─────────────────────────────
-    Invoke-KillBuildProcesses -ProjectDir $ProjectDir
-    
-    # ── BƯỚC 1: Xóa folder bin/obj/.vs với retry logic ───────────────────
-    $foldersToClean = @(
-        (Join-Path $ProjectDir "bin"),
-        (Join-Path $ProjectDir "obj"),
-        (Join-Path $ProjectDir ".vs")
-    )
-    
-    foreach ($folder in $foldersToClean) {
-        if (Test-Path $folder) {
-            $retryCount = 0
-            $maxRetries = 5  # Tăng lên 5 lần retry
-            $deleted = $false
-            
-            while (-not $deleted -and $retryCount -lt $maxRetries) {
-                try {
-                    # Kiểm tra xem folder có file nào bị lock không
-                    $files = Get-ChildItem $folder -Recurse -File -ErrorAction SilentlyContinue
-                    $lockedFiles = @()
-                    foreach ($f in $files) {
-                        if (Test-FileLocked -FilePath $f.FullName) {
-                            $lockedFiles += $f.FullName
-                        }
-                    }
-                    
-                    if ($lockedFiles.Count -gt 0) {
-                        Write-Log "   ⏳ File đang bị khóa, chờ 1s..." $C_Gray
-                        Start-Sleep -Seconds 1
-                        $retryCount++
-                        continue
-                    }
-                    
-                    Remove-Item -Path $folder -Recurse -Force -ErrorAction Stop
-                    $deleted = $true
-                    Write-Log "   ✅ Đã xóa: $folder" $C_Gray
-                } catch {
-                    $retryCount++
-                    if ($retryCount -lt $maxRetries) {
-                        $delay = $retryCount * 500
-                        Write-Log "   ⏳ File bị lock, chờ ${delay}ms rồi thử lại ($retryCount/$maxRetries)..." $C_Gray
-                        Start-Sleep -Milliseconds $delay
-                        
-                        # Thử kill process lần nữa nếu vẫn fail ở lần 5
-                        if ($retryCount -eq 5) {
-                            Invoke-KillBuildProcesses -ProjectDir $ProjectDir
-                        }
-                    } else {
-                        Write-Log "   ⚠️  Không xóa được sau $maxRetries lần: $folder" $C_Warn
-                        Write-Log "      💡 Mẹo: Đóng VS Code, tắt antivirus, rồi chạy lại" $C_Info
-                    }
-                }
-            }
-        }
-    }
-    
-    # ── BƯỚC 2: Clean Android intermediate cache sâu ─────────────────────
-    $androidCachePaths = @(
-        (Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"),
-        (Join-Path $env:LOCALAPPDATA "Temp\Xamarin"),
-        (Join-Path $env:LOCALAPPDATA "Temp\MonoAndroid")
-    )
-    
-    foreach ($cachePath in $androidCachePaths) {
-        if (Test-Path $cachePath) {
-            try {
-                Get-ChildItem $cachePath -Recurse -Include "*.stamp","*.zip","__environment__.txt","res.zip.*" -ErrorAction SilentlyContinue |
-                    Remove-Item -Force -ErrorAction SilentlyContinue
-                Write-Log "   ✅ Đã xóa Android cache files trong: $cachePath" $C_Gray
-            } catch {
-                Write-Log "   ⚠️  Không xóa được cache: $cachePath" $C_Warn
-            }
-        }
-    }
-    
-    # ── BƯỚC 3: Clean sâu trong obj/Release/net10.0-android/ ─────────────
-    $androidObj = Join-Path $ProjectDir "obj\Release\net10.0-android"
-    if (Test-Path $androidObj) {
-        try {
-            Get-ChildItem $androidObj -Recurse -Include "*.so","*.dll","*.stamp","__environment__.txt","res.zip.*" -ErrorAction SilentlyContinue |
-                Remove-Item -Force -ErrorAction SilentlyContinue
-            Write-Log "   ✅ Đã xóa Android native cache trong obj/" $C_Gray
-        } catch {
-            Write-Log "   ⚠️  Không xóa được native cache: $($_.Exception.Message)" $C_Warn
-        }
-    }
-    
-    # ── BƯỚC 4: Đợi hệ thống giải phóng file handle ──────────────────────
-    Start-Sleep -Milliseconds 1200
-    Write-Log "✅ Dọn dẹp hoàn tất!" $C_Succ
 }
 
 # 3. Tìm Android SDK
@@ -340,33 +173,49 @@ function Read-KeystoreInteractive([hashtable]$ks) {
 }
 
 # ==================================================================================================
-# [SECTION 2.5] AGGRESSIVE CLEAN & KILL (CHỐNG LỖI LOCK FILE)
+# [SECTION 2.1] CLEAN & KILL OPTIMIZED — CHỐNG LOCK FILE & TỐI ƯU TỐC ĐỘ
 # ==================================================================================================
-function Invoke-AggressiveClean {
-    param([string]$ProjectDir)
-    
-    Write-Log "🧹 Bắt đầu quy trình dọn dẹp và kill process..." $C_Gray
-    
-    # --- BƯỚC 1: KILL .NET HOST ---
-    Write-Log "🔪 Đang quét process .NET Host đang giữ file..." $C_Gray
+
+# Hàm kiểm tra file lock
+function Test-FileLocked {
+    param([string]$FilePath)
     try {
-        $hostProcs = Get-Process -Name "dotnet" -ErrorAction SilentlyContinue | 
-            Where-Object { $_.Path -like "*$ProjectDir*" -or $_.WorkingDirectory -like "*$ProjectDir*" }
-        
-        if ($hostProcs) {
-            foreach ($proc in $hostProcs) {
-                Write-Log "   🔴 Kill process .NET Host (PID: $($proc.Id))..." $C_Warn
+        $file = [System.IO.File]::Open($FilePath, 'Open', 'Read', 'ReadWrite')
+        $file.Close()
+        return $false
+    } catch { return $true }
+}
+
+# Hàm Kill Process an toàn
+function Invoke-KillBuildProcesses {
+    param([string]$ProjectDir)
+    $processNames = @('dotnet', 'msbuild', 'vbcscompiler', 'csc', 'VBCSCompiler', 'java')
+    foreach ($procName in $processNames) {
+        try {
+            $procs = Get-Process -Name $procName -ErrorAction SilentlyContinue |
+                Where-Object {
+                    try {
+                        ($_.Path -like "*$ProjectDir*") -or
+                        ((Get-Item $_.Path -ErrorAction SilentlyContinue).DirectoryName -like "*$ProjectDir*")
+                    } catch { $false }
+                }
+            foreach ($proc in $procs) {
                 Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
             }
-            Start-Sleep -Milliseconds 800 # Chờ Windows nhả handle
-        } else {
-            Write-Log "   ℹ️ Không tìm thấy process .NET Host nào đang chạy." $C_Gray
-        }
-    } catch {
-        Write-Log "   ⚠️ Lỗi khi kill process: $_" $C_Warn
+        } catch {}
     }
+    Start-Sleep -Milliseconds 500
+}
 
-    # --- BƯỚC 2: XÓA THƯ MỤC RÁC ---
+# Hàm Clean tối ưu (Gộp cả 2 hàm cũ thành 1)
+function Invoke-SmartClean {
+    param([string]$ProjectDir)
+    Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
+    
+    # BƯỚC 1: Kill process
+    Invoke-KillBuildProcesses -ProjectDir $ProjectDir
+
+    # BƯỚC 2: Xóa bin/obj/.vs
     $foldersToClean = @(
         (Join-Path $ProjectDir "bin"),
         (Join-Path $ProjectDir "obj"),
@@ -375,31 +224,39 @@ function Invoke-AggressiveClean {
 
     foreach ($folder in $foldersToClean) {
         if (Test-Path $folder) {
-            $retry = 0
-            $max = 3
+            $retryCount = 0
+            $maxRetries = 5
             $deleted = $false
-            while (-not $deleted -and $retry -lt $max) {
+            while (-not $deleted -and $retryCount -lt $maxRetries) {
                 try {
-                    Remove-Item -Path $folder -Recurse -Force -ErrorAction Stop
+                    # Dùng robocopy để xóa nhanh hơn trên Windows
+                    if ($IsWindows) {
+                        $emptyDir = Join-Path $env:TEMP "empty_dir_$(Get-Random)"
+                        New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+                        robocopy $emptyDir $folder /MIR /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+                        Remove-Item $folder -Force -ErrorAction SilentlyContinue
+                        Remove-Item $emptyDir -Force -ErrorAction SilentlyContinue
+                    } else {
+                        Remove-Item -Path $folder -Recurse -Force -ErrorAction Stop
+                    }
                     $deleted = $true
                     Write-Log "   ✅ Đã xóa: $folder" $C_Gray
                 } catch {
-                    $retry++
-                    Write-Log "   ⏳ File bị khóa, chờ 500ms rồi thử lại ($retry/$max)..." $C_Gray
-                    Start-Sleep -Milliseconds 500
+                    $retryCount++
+                    Start-Sleep -Milliseconds ($retryCount * 300)
+                    if ($retryCount -eq 3) { Invoke-KillBuildProcesses -ProjectDir $ProjectDir }
                 }
             }
         }
     }
 
-    # --- BƯỚC 3: DỌN CACHE XAMARIN ---
+    # BƯỚC 3: Clean Android Cache (chọn lọc để tăng tốc)
     $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
     if (Test-Path $androidCache) {
         try {
             Get-ChildItem $androidCache -Recurse -Include "*.stamp","res.zip.*","__environment__.txt" -EA SilentlyContinue |
                 Remove-Item -Force -EA SilentlyContinue
-            Write-Log "   ✅ Đã dọn dẹp cache Android trung gian" $C_Gray
-        } catch { }
+        } catch {}
     }
     
     Write-Log "✅ Dọn dẹp hoàn tất!" $C_Succ
@@ -408,33 +265,30 @@ function Invoke-AggressiveClean {
 # ==================================================================================================
 # [SECTION 3] TIẾN TRÌNH BUILD & DEPLOY
 # ==================================================================================================
+
 function Invoke-DeviceDebug {
     param([string]$Project, [string]$Tfm)
     $sdk = Get-AndroidSdkPath
     if (!$sdk) { return }
     $adb = Join-Path $sdk "platform-tools\adb.exe"
     if (!(Test-Path $adb)) { return }
-
     $devices = @(& $adb devices | Select-String -Pattern "\tdevice$")
     if ($devices.Count -eq 0) {
         Write-Log "❌ Không tìm thấy thiết bị Android nào đang kết nối!" $C_Err
         return
     }
-
-    # Tắt xác minh app cho Xiaomi
     Write-Log "🛠  Đang tối ưu cài đặt cho Xiaomi..." $C_Gray
-    & $adb shell settings put global verifier_verify_adb_installs 0
-    & $adb shell settings put global package_verifier_enable 0
-
+    & $adb shell settings put global verifier_verify_adb_installs 0 2>&1 | Out-Null
+    & $adb shell settings put global package_verifier_enable 0 2>&1 | Out-Null
+    
     Write-Host "`n📱 PHÁT HIỆN THIẾT BỊ: $($devices[0].ToString().Trim())" -ForegroundColor $C_Info
     $confirm = Read-Host "`n❓ Bạn có muốn bắt đầu gỡ lỗi trên thiết bị này không? (Y/N)"
     if ($confirm -ne 'y' -and $confirm -ne 'Y') { return }
-
+    
     $dotnet = Resolve-DotnetExe
     $androidSdk = Get-AndroidSdkPath
     $javaSdk = Get-JavaSdkPath
     Write-Log "🚀 Đang triển khai app lên thiết bị..." $C_Succ
-    
     & $dotnet build -t:Run -f $Tfm `
         "-p:AndroidSdkDirectory=$androidSdk" `
         "-p:JavaSdkDirectory=$javaSdk" `
@@ -445,92 +299,62 @@ function Invoke-AutoDeploy {
     param([string]$ApkPath, [string]$AppId)
     $sdk = Get-AndroidSdkPath
     $adb = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
-    if (-not (Test-Path $adb) -and $adb -ne "adb") {
-        Write-Log "⚠️ Không tìm thấy adb.exe - Bỏ qua auto deploy." $C_Warn
-        return
-    }
-
-    # ── BƯỚC 1: KIỂM TRA FILE APK ──────────────────────────────────────
-    if (-not (Test-Path $ApkPath)) {
-        Write-Log "❌ File APK không tồn tại: $ApkPath" $C_Err
-        return
-    }
-
-    # ── BƯỚC 2: Lấy danh sách thiết bị ─────────────────────────────────
+    if (-not (Test-Path $adb) -and $adb -ne "adb") { return }
+    
+    if (-not (Test-Path $ApkPath)) { return }
+    
     $rawList = @(& $adb devices 2>&1)
     $allDevices = @($rawList | Where-Object { $_ -match "\tdevice$" } | ForEach-Object { ($_ -split "\t")[0].Trim() })
-    if ($allDevices.Count -eq 0) {
-        Write-Log "⚠️ Không tìm thấy thiết bị nào." $C_Warn
-        return
-    }
-
-    # ── BƯỚC 3: Phân loại & Chọn thiết bị ──────────────────────────────
+    if ($allDevices.Count -eq 0) { return }
+    
     $realDevices = @($allDevices | Where-Object { $_ -notmatch "^emulator-" -and $_ -notmatch "^127\.0\.0\." })
     $emulators   = @($allDevices | Where-Object { $_ -match "^emulator-" -or $_ -match "^127\.0\.0\." })
     $targetDevice = if ($realDevices.Count -gt 0) { $realDevices[0] } else { $emulators[0] }
-    Write-Log "🎯 Deploy lên: $targetDevice" $C_Info
-
-    # ── BƯỚC 4: Gỡ app cũ + Chờ hệ thống Android ───────────────────────
-    Write-Log "🗑️  Gỡ app cũ ($AppId)..." $C_Warn
+    
+    Write-Log "🗑️ Gỡ app cũ ($AppId)..." $C_Warn
     & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-Null
-    Start-Sleep -Milliseconds 1200 # Chờ PackageManager giải phóng hoàn toàn
-
-    # ── BƯỚC 5: Cài đặt với chế độ tolerant & chống lỗi Streamed ────────
-    Write-Log "📦 Đang cài APK (chống lỗi Streamed & tự cấp quyền)..." $C_Info
-    # -r: replace, -d: downgrade, -t: test, -g: grant permissions, --no-streaming: tránh corruption
-    $installArgs = "-s", $targetDevice, "install", "-r", "-d", "-t", "-g", "--no-streaming", $ApkPath
-    $installOut = @(& $adb @installArgs 2>&1)
-    $fullLog = $installOut -join "`n"
-
-    if ($fullLog -match "Success") {
+    Start-Sleep -Milliseconds 800
+    
+    Write-Log "📦 Đang cài APK..." $C_Info
+    $installOut = & $adb -s $targetDevice install -r -d -t -g --no-streaming $ApkPath 2>&1
+    
+    if ($installOut -match "Success") {
         Write-Log "✅ Cài đặt thành công!" $C_Succ
-        # ── BƯỚC 6: Tự động lấy MainActivity & Khởi động app ────────
-        $mainActivity = $fullLog | Select-String "$AppId/" | Select-Object -First 1
-        if ($mainActivity) {
-            $act = ($mainActivity -split "$AppId/")[1].Trim() -replace "\s.*", ""
+        $mainAct = $installOut | Select-String "$AppId/" | Select-Object -First 1
+        if ($mainAct) {
+            $act = ($mainAct -split "$AppId/")[1].Trim() -replace "\s.*", ""
             if ($act) {
                 Write-Log "🚀 Khởi động: $AppId/$act" $C_Info
                 & $adb -s $targetDevice shell "am start -n $AppId/$act" 2>&1 | Out-Null
             }
         }
     } else {
-        Write-Log "❌ Cài đặt thất bại! Chi tiết Android:" $C_Err
-        # Log toàn bộ output để debug chính xác
-        $installOut | ForEach-Object { Write-Log "   $_" $C_Warn }
-        Write-Log "💡 Mẹo: Nếu báo 'UPDATE_INCOMPATIBLE', chạy thủ công: adb -s $targetDevice uninstall $AppId" $C_Info
+        Write-Log "❌ Cài đặt thất bại!" $C_Err
+        Write-Log $installOut $C_Warn
     }
 }
 
 function ProcessBuildAndShow {
     param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
     
-    # 🔥 [FIX] AGGRESSIVE CLEAN TRƯỚC KHI BUILD
+    # 🔥 SỬ DỤNG HÀM CLEAN TỐI ƯU
     $projectDir = Split-Path $Project -Parent
-    
-    #kill process đang giữ lock file & dọn dẹp build artifacts cũ
-    Invoke-KillBuildProcesses -ProjectDir $projectDir
-
-    #dọn dẹp build artifacts cũ với retry logic chống lock file
-    Invoke-CleanBuildArtifacts -ProjectDir $projectDir
-
-    # Chờ thêm 1s để đảm bảo hệ thống đã nhả file handle
+    Invoke-SmartClean -ProjectDir $projectDir
     Start-Sleep -Seconds 1
-    
-    Invoke-AggressiveClean -ProjectDir $projectDir
-    
+
     # Làm sạch folder output
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
     if (Test-Path $rawOut) { Remove-Item $rawOut -Recurse -Force -EA SilentlyContinue }
     New-Item -ItemType Directory -Force -Path $rawOut | Out-Null
-    
+
     $safeProj = Get-SafePath $Project
     $safeOut  = Get-SafePath $rawOut
     $dotnet = Resolve-DotnetExe
     if (-not $dotnet) { Write-Log "❌ Không tìm thấy SDK .NET!" $C_Err; exit 1 }
-    
+
     $androidSdk = Get-AndroidSdkPath
     $javaSdk    = Get-JavaSdkPath
-    
+
     # Build params
     $params = @(
         "publish", $safeProj,
@@ -543,32 +367,28 @@ function ProcessBuildAndShow {
         "-m"
     )
     
-    # Force native rebuild flags cho Android
     if ($Tfm -match "android") {
         $params += @(
             "-p:AndroidUseSharedRuntime=false",
             "-p:EmbedAssembliesIntoApk=true"
         )
-        Write-Log "🔧 Đã kích hoạt native rebuild mode" $C_Info
     }
     
     if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
     if ($javaSdk)    { $params += "-p:JavaSdkDirectory=$javaSdk" }
     if ($BuildArgs)  { $params += $BuildArgs }
-    
+
     Write-Host ("`n" + "┌" + ("─" * 58) + "┐") -ForegroundColor $C_Gray
     Write-Log " 🚀 ĐANG TIẾN HÀNH BUILD: $Tfm" $C_Info
     Write-Host ("└" + ("─" * 58) + "┘") -ForegroundColor $C_Gray
-    
+
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     & $dotnet $params
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log "❌ BUILD THẤT BẠI (Mã lỗi: $LASTEXITCODE)" $C_Err
-        exit 1
-    }
+    if ($LASTEXITCODE -ne 0) { Write-Log "❌ BUILD THẤT BẠI (Mã lỗi: $LASTEXITCODE)" $C_Err; exit 1 }
     $sw.Stop()
-    Write-Log "✅ THÀNH CÔNG TRONG $($sw.Elapsed.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
     
+    Write-Log "✅ THÀNH CÔNG TRONG $($sw.Elapsed.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
+
     # Auto Deploy
     if ($Tfm -match "android" -and $OutputSubDir -eq "apk") {
         $apkFile = Get-ChildItem $rawOut -Filter "*Signed*.apk" -Recurse | Select-Object -First 1
@@ -578,7 +398,6 @@ function ProcessBuildAndShow {
             $csprojContent = Get-Content $safeProj -Raw -EA SilentlyContinue
             $appIdMatch    = [regex]::Match($csprojContent, '<ApplicationId>([^<]+)</ApplicationId>')
             $appId         = if ($appIdMatch.Success) { $appIdMatch.Groups[1].Value.Trim() } else { "com.companyname.app" }
-            
             Write-Host "`n" -NoNewline
             Invoke-AutoDeploy -ApkPath $apkFile.FullName -AppId $appId
         } else {
@@ -593,12 +412,11 @@ function ProcessBuildAndShow {
 function Invoke-GitHubBuild([string]$PackageFormat) {
     Write-Log "☁ Đang kết nối GitHub Cloud..." $C_Info
     $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath "gh.exe" }
-    if (-not (Test-Path $gh) -and $gh -ne "gh") {
-        Write-Log "❌ Không tìm thấy gh.exe (GitHub CLI)!" $C_Err
-        return
-    }
+    if (-not (Test-Path $gh) -and $gh -ne "gh") { Write-Log "❌ Không tìm thấy gh.exe (GitHub CLI)!" $C_Err; return }
+    
     $branch = git branch --show-current 2>$null
     if (-not $branch) { $branch = "main" }
+    
     Write-Log "🚀 Đang gửi yêu cầu build $PackageFormat lên nhánh $branch..." $C_Succ
     & $gh workflow run build.yml --ref $branch -f "package_format=$PackageFormat"
     Write-Log "✅ Đã trigger thành công. Vui lòng kiểm tra web GitHub." $C_Info
@@ -607,10 +425,11 @@ function Invoke-GitHubBuild([string]$PackageFormat) {
 # ==================================================================================================
 # [SECTION 4] MAIN FLOW
 # ==================================================================================================
+
 Write-Host @"
 `n╔════════════════════════════════════════════════════════════════════╗
-║         🚀  MAUI BUILD TOOL — VIP PRO MAX V1                       ║
-║      (Fixed: File Lock, Space Paths & Auto Deploy)                 ║
+║         🚀  MAUI BUILD TOOL — VIP PRO MAX V2                       ║
+║      (Optimized: No Duplicates, Fast Clean, Auto Deploy)           ║
 ╚════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
 
@@ -622,19 +441,12 @@ if ($dotnetExe) {
         $latestSdk = ($sdks[-1] -split ' ')[0]
         $gJsonPath = Join-Path $PSScriptRoot "global.json"
         $needsUpdate = $true
-        
         if (Test-Path $gJsonPath) {
             try {
                 $json = Get-Content $gJsonPath -Raw | ConvertFrom-Json
-                if ($json.sdk -and $json.sdk.version -eq $latestSdk) {
-                    $needsUpdate = $false
-                    Write-Host "✅ global.json đã tồn tại ($latestSdk)" -ForegroundColor Green
-                } else {
-                    Write-Host "⚠️ global.json version cũ -> Sẽ cập nhật." -ForegroundColor Yellow
-                }
+                if ($json.sdk -and $json.sdk.version -eq $latestSdk) { $needsUpdate = $false }
             } catch {}
         }
-        
         if ($needsUpdate) {
             @{ sdk = @{ version = $latestSdk; rollForward = "latestMajor"; allowPrerelease = $true } } |
                 ConvertTo-Json -Depth 3 | Out-File $gJsonPath -Encoding utf8 -Force

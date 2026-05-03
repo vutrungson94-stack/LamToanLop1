@@ -926,153 +926,149 @@ public partial class GamePage : ContentPage
     }    
 
     // ==========================================
-    // RENDER & LOGIC TỪNG GAME
-    // ==========================================
-    // PHÂN TÁCH: Compute layout off-UI để tránh block (trả về list Rect position)
-    private const double FARM_HORIZON_RATIO = 0.5; // Tỷ lệ chiều cao dành cho phần "đất" trong Farm (phần dưới)
-    private const double FARM_BOTTOM_RATIO = 0.82; // Tỷ lệ chiều cao tối đa của item so với container (để tránh quá to)
-    private const double FARM_DEPTH_MIN = 0.55; // Tỷ lệ scale nhỏ nhất (cho item ở "xa")
-    private const double FARM_DEPTH_MAX = 1.25; // Tỷ lệ scale lớn nhất (cho item ở "gần")
+// RENDER & LOGIC TỪNG GAME
+// ==========================================
 
-    // --- HÀM TÍNH TOÁN VỊ TRÍ (ComputeScatterLayoutAsync) ---
-    private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameItem> items, CancellationToken token, bool useFarmDepth = false, Rect limitZone = default, List<Rect>? forbiddenZones = null, bool enforceExactScale = false)
+// 🔥 TỶ LỆ CHUẨN CHO MÀN HÌNH DÀI (ANDROID)
+private const double FARM_HORIZON_RATIO = 0.32; // Trời chiếm 32% trên cùng
+private const double FARM_BOTTOM_RATIO = 0.80;  // Vùng đất an toàn kết thúc ở 80% (chừa 20% dưới cho nút bấm)
+private const double FARM_DEPTH_MIN = 0.55;     // Con vật xa nhất (nhỏ nhất)
+private const double FARM_DEPTH_MAX = 1.25;     // Con vật gần nhất (to nhất)
+
+// --- HÀM TÍNH TOÁN VỊ TRÍ (ComputeScatterLayoutAsync) ---
+private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameItem> items, CancellationToken token, bool useFarmDepth = false, Rect limitZone = default, List<Rect>? forbiddenZones = null, bool enforceExactScale = false)
+{
+    var result = new List<PrecomputedItem>(items.Count);
+    var rand = System.Random.Shared;
+
+    Rect container = Rect.Zero;
+    await MainThread.InvokeOnMainThreadAsync(() =>
     {
-        // Giữ mọi tính toán nặng ở đây (khoảng cách, tránh chồng lấp, scale)
-        // Trả về danh sách bounds (Rect) và depth/scale để render
-        var result = new List<PrecomputedItem>(items.Count);
-        var rand = System.Random.Shared;
-
-        // Lấy kích thước container một lần trên UI thread
-        Rect container = Rect.Zero;
-
-        await MainThread.InvokeOnMainThreadAsync(() =>
+        if (FarmContainer.Width > 0 && FarmContainer.Height > 0)
         {
-            if (FarmContainer.Width > 0 && FarmContainer.Height > 0)
-            {
-                container = new Rect(0, 0, FarmContainer.Width, FarmContainer.Height);
-            }
-        });
-
-        if (container.Width <= 0)
-        {
-            var density = DeviceDisplay.MainDisplayInfo.Density;
-            container = new Rect(0, 0, DeviceDisplay.MainDisplayInfo.Width / density, DeviceDisplay.MainDisplayInfo.Height / density); // Fallback kích thước mặc định (360x640 dp)
+            container = new Rect(0, 0, FarmContainer.Width, FarmContainer.Height);
         }
+    });
 
-        double cw = container.Width; 
-        double ch = container.Height;
-
-        Rect houseZone = new(0, 0, cw * 0.35, ch * 0.45); // Vùng "nhà" cố định ở góc trên bên trái, không rải item vào đây
-
-        // Vùng hợp lệ để rải (có thể bị giới hạn bởi limitZone)
-        double zoneX = limitZone == default ? 0 : limitZone.X;
-        double zoneY = limitZone == default ? 0 : limitZone.Y;
-        double zoneWidth = limitZone == default ? cw : limitZone.Width;
-        double zoneHeight = limitZone == default ? ch : limitZone.Height;
-
-        // Vùng đất farm (Y tuyệt đối trên container)
-        double horizonY = ch * FARM_HORIZON_RATIO;
-        double bottomY = ch * FARM_BOTTOM_RATIO;
-        double depthRange = bottomY - horizonY;
-
-        // Kích thước cơ sở: dựa vào số lượng item (càng nhiều thì càng nhỏ)
-        double baseSize = Math.Clamp(Math.Min(cw, ch) * (items.Count <= 5 ? 0.14 : items.Count <= 10 ? 0.11 : 0.09), 28, 110);
-
-        var placed = new List<Rect>(items.Count);
-
-        // Sắp xếp item to trước (ưu tiên đặt item lớn khi còn nhiều chỗ trống)
-        var sorted = items.OrderByDescending(x => x.Scale).ToList();
-
-        foreach (var it in sorted)
-        {
-            if (token.IsCancellationRequested) break;
-
-            Rect r = Rect.Zero;
-            double depthRatio = 0.5; // mặc định giữa
-
-            if (useFarmDepth)
-            {
-                // --- FARM DEPTH MODEL ---
-                // Cố gắng đặt với depth ngẫu nhiên, scale tương ứng
-                bool placed_ok = false;
-                double globalShrink = 1.0;
-
-                for (int attempt = 0; attempt < 60 && !placed_ok; attempt++)
-                {
-                    // Depth ngẫu nhiên trong vùng farm (giới hạn thêm bởi limitZone nếu có)
-                    double yMin = limitZone == default ? horizonY : Math.Max(horizonY, zoneY);
-                    double yMax = limitZone == default ? bottomY : Math.Min(bottomY, zoneY + zoneHeight);
-                    if (yMax <= yMin) { yMin = horizonY; yMax = bottomY; }
-
-                    depthRatio = 0.15 + rand.NextDouble() * 0.85; // 0 = xa (nhỏ), 1 = gần (to)
-                    double yPos = yMin + depthRatio * (yMax - yMin);
-
-                    // Kích thước = baseSize * scale_con_vat * depth_scale
-                    double depthScale = FARM_DEPTH_MIN + depthRatio * (FARM_DEPTH_MAX - FARM_DEPTH_MIN);
-                    double sz = baseSize * it.Scale * depthScale * globalShrink;
-                    sz = Math.Clamp(sz, 28, cw * 0.40);
-
-                    double xMin = limitZone == default ? 0 : zoneX;
-                    double xMax = limitZone == default ? cw : zoneX + zoneWidth;
-                    double x = xMin + rand.NextDouble() * Math.Max(0, (xMax - xMin) - sz); 
-
-                    r = new Rect(x, yPos, sz, sz);
-
-                    // Padding tỷ lệ với kích thước (item to cần khoảng cách lớn hơn)
-                    double pad = sz * 0.15;
-                    Rect padded = new(r.X - pad, r.Y - pad, r.Width + pad * 2, r.Height + pad * 2);
-
-                    bool isColliding = placed.Any(p => p.IntersectsWith(padded)) || 
-                                        (forbiddenZones?.Any(fz => fz.IntersectsWith(padded)) ?? false) ||
-                                        houseZone.IntersectsWith(padded);
-
-                    if (!isColliding)
-                        placed_ok = true;
-
-                    // Sau 20 lần thất bại, thu nhỏ toàn cục 5%
-                    if (!placed_ok && attempt % 20 == 19)
-                        globalShrink = Math.Max(0.4, globalShrink - 0.05);
-                }
-
-                if (r == Rect.Zero) // fallback: ép vào vị trí bất kỳ
-                {
-                    double sz = baseSize * it.Scale * 0.6;
-                    double yPos = horizonY + rand.NextDouble() * depthRange;
-                    depthRatio = (yPos - horizonY) / (depthRange > 0 ? depthRange : 1);
-                    r = new Rect(rand.NextDouble() * Math.Max(0, cw - sz), yPos, sz, sz);
-                }
-            }
-            else
-            {
-                // --- FLAT MODEL (hình học) ---
-                double randomScale = enforceExactScale ? 1.0 : 0.8 + rand.NextDouble() * 0.4; // Nếu cần exact scale thì giữ nguyên tỷ lệ thật
-                double sz = baseSize * it.Scale * randomScale;
-                sz = Math.Clamp(sz, 35, cw * 0.25);
-
-                bool placed_ok = false;
-                for (int attempt = 0; attempt < 50 && !placed_ok; attempt++)
-                {
-                    double x = zoneX + rand.NextDouble() * Math.Max(0, zoneWidth - sz);
-                    double y = zoneY + rand.NextDouble() * Math.Max(0, zoneHeight - sz);
-                    r = new Rect(x, y, sz, sz);
-
-                    bool isColliding = placed.Any(p => p.IntersectsWith(r)) || 
-                                        (forbiddenZones?.Any(fz => fz.IntersectsWith(r)) ?? false) ||
-                                        houseZone.IntersectsWith(r);
-
-                    if (!isColliding) placed_ok = true;
-                }
-                if (r == Rect.Zero)
-                    r = new Rect(zoneX, zoneY, sz, sz); // fallback
-                depthRatio = 0.5;
-            }
-
-            placed.Add(r);
-            result.Add(new PrecomputedItem(it, r, depthRatio));
-        }
-
-        return result;
+    if (container.Width <= 0)
+    {
+        var density = DeviceDisplay.MainDisplayInfo.Density;
+        container = new Rect(0, 0, DeviceDisplay.MainDisplayInfo.Width / density, DeviceDisplay.MainDisplayInfo.Height / density);
     }
+
+    double cw = container.Width;
+    double ch = container.Height;
+
+    // 🔥 1. VÙNG CẤM TĨNH (NGÔI NHÀ GÓC TRÁI)
+    // Mở rộng nhẹ để tránh con vật bám sát mép nhà trên màn hình rộng
+    Rect houseZone = new Rect(0, 0, cw * 0.38, ch * 0.45);
+
+    // 🔥 2. VÙNG CẤM ĐỘNG (TỪ BÊN NGOÀI TRUYỀN VÀO - NHƯ GIỎ HÀNG)
+    List<Rect> allForbiddenZones = new List<Rect>();
+    if (forbiddenZones != null) allForbiddenZones.AddRange(forbiddenZones);
+    allForbiddenZones.Add(houseZone); // Thêm nhà vào danh sách cấm
+
+    // Vùng hợp lệ để rải
+    double zoneX = limitZone == default ? 0 : limitZone.X;
+    double zoneY = limitZone == default ? 0 : limitZone.Y;
+    double zoneWidth = limitZone == default ? cw : limitZone.Width;
+    double zoneHeight = limitZone == default ? ch : limitZone.Height;
+
+    // Vùng đất farm (Y tuyệt đối trên container)
+    double horizonY = ch * FARM_HORIZON_RATIO;
+    double bottomY = ch * FARM_BOTTOM_RATIO;
+    double depthRange = bottomY - horizonY;
+
+    // Kích thước cơ sở
+    double baseSize = Math.Clamp(Math.Min(cw, ch) * (items.Count <= 5 ? 0.14 : items.Count <= 10 ? 0.11 : 0.09), 28, 110);
+
+    var placed = new List<Rect>(items.Count);
+    var sorted = items.OrderByDescending(x => x.Scale).ToList();
+
+    foreach (var it in sorted)
+    {
+        if (token.IsCancellationRequested) break;
+
+        Rect r = Rect.Zero;
+        double depthRatio = 0.5;
+
+        if (useFarmDepth)
+        {
+            // --- FARM DEPTH MODEL ---
+            bool placed_ok = false;
+            double globalShrink = 1.0;
+
+            for (int attempt = 0; attempt < 60 && !placed_ok; attempt++)
+            {
+                double yMin = limitZone == default ? horizonY : Math.Max(horizonY, zoneY);
+                double yMax = limitZone == default ? bottomY : Math.Min(bottomY, zoneY + zoneHeight);
+                if (yMax <= yMin) { yMin = horizonY; yMax = bottomY; }
+
+                // Depth ngẫu nhiên (0 = xa, 1 = gần)
+                depthRatio = rand.NextDouble();
+                double yPos = yMin + depthRatio * (yMax - yMin);
+
+                double depthScale = FARM_DEPTH_MIN + depthRatio * (FARM_DEPTH_MAX - FARM_DEPTH_MIN);
+                double sz = baseSize * it.Scale * depthScale * globalShrink;
+                sz = Math.Clamp(sz, 28, cw * 0.40);
+
+                double xMin = limitZone == default ? 0 : zoneX;
+                double xMax = limitZone == default ? cw : zoneX + zoneWidth;
+                double x = xMin + rand.NextDouble() * Math.Max(0, (xMax - xMin) - sz);
+
+                r = new Rect(x, yPos, sz, sz);
+
+                double pad = sz * 0.15; // Padding an toàn
+                Rect padded = new Rect(r.X - pad, r.Y - pad, r.Width + pad * 2, r.Height + pad * 2);
+
+                // 🔥 KIỂM TRA VA CHẠM VỚI TẤT CẢ VÙNG CẤM
+                bool isColliding = placed.Any(p => p.IntersectsWith(padded)) ||
+                                   allForbiddenZones.Any(fz => fz.IntersectsWith(padded));
+
+                if (!isColliding)
+                    placed_ok = true;
+
+                if (!placed_ok && attempt % 20 == 19)
+                    globalShrink = Math.Max(0.4, globalShrink - 0.05);
+            }
+
+            // Fallback: Nếu không tìm được chỗ, ép xuống vùng đất an toàn
+            if (r == Rect.Zero)
+            {
+                double sz = baseSize * it.Scale * 0.6;
+                double yPos = horizonY + depthRange * 0.4; // Đặt ở giữa vùng đất
+                r = new Rect(rand.NextDouble() * Math.Max(0, cw - sz), yPos, sz, sz);
+            }
+        }
+        else
+        {
+            // --- FLAT MODEL (HÌNH KHỐI) ---
+            double randomScale = enforceExactScale ? 1.0 : 0.8 + rand.NextDouble() * 0.4;
+            double sz = baseSize * it.Scale * randomScale;
+            sz = Math.Clamp(sz, 35, cw * 0.25);
+
+            bool placed_ok = false;
+            for (int attempt = 0; attempt < 50 && !placed_ok; attempt++)
+            {
+                double x = zoneX + rand.NextDouble() * Math.Max(0, zoneWidth - sz);
+                double y = zoneY + rand.NextDouble() * Math.Max(0, zoneHeight - sz);
+                r = new Rect(x, y, sz, sz);
+
+                bool isColliding = placed.Any(p => p.IntersectsWith(r)) ||
+                                   allForbiddenZones.Any(fz => fz.IntersectsWith(r));
+
+                if (!isColliding) placed_ok = true;
+            }
+            if (r == Rect.Zero) r = new Rect(zoneX, zoneY, sz, sz);
+            depthRatio = 0.5;
+        }
+
+        placed.Add(r);
+        result.Add(new PrecomputedItem(it, r, depthRatio));
+    }
+
+    return result;
+}
 
     // Hàm dựng view từ kết quả precomputed (chạy trên UI thread)
     private async Task RenderItemsScatterFromPrecomputedAsync(List<PrecomputedItem> pre, CancellationToken token, bool isInteractive = false)
@@ -1717,93 +1713,89 @@ public partial class GamePage : ContentPage
     }
 
     private void RenderInteractiveGame(List<GameItem> items)
+{
+    _currentFoundCount = 0;
+    _totalTargetCount = items.Count(i => i.IsTarget);
+    bool isShapeGame = items.Any(x => string.IsNullOrEmpty(x.Key));
+
+    // Biến lưu vùng cấm
+    Rect forbiddenZone = Rect.Zero;
+
+    MainThread.BeginInvokeOnMainThread(() =>
     {
-        _currentFoundCount = 0;
-        _totalTargetCount = items.Count(i => i.IsTarget);
+        FarmBackground.IsVisible = !isShapeGame;
+        MathBackground.IsVisible = isShapeGame;
+        FarmContainer.IsVisible = true;
+        CollectionBin.IsVisible = true;
+        CounterLabel.Text = $"0/{_totalTargetCount}";
 
-        bool isShapeGame = items.Any(x => string.IsNullOrEmpty(x.Key));
-
-        // Tính vùng cấm (giỏ hàng)
-        Rect forbiddenZone = Rect.Zero;
-
-        MainThread.BeginInvokeOnMainThread(() =>
+        // 🔥 TÍNH TOÁN VÙNG CẤM CHÍNH XÁC THEO VỊ TRÍ GIỎ HÀNG
+        if (CollectionBin != null && CollectionBin.IsVisible)
         {
-            FarmBackground.IsVisible = !isShapeGame;
-            MathBackground.IsVisible = isShapeGame;
-            FarmContainer.IsVisible = true;
-            CollectionBin.IsVisible = true;
-            CounterLabel.Text = $"0/{_totalTargetCount}";
+            double cartY = CollectionBin.Y;
+            double cartH = CollectionBin.Height;
+            double margin = 25; // Khoảng đệm an toàn
 
-            // 🔥 TÍNH TOÁN VÙNG CẤM ĐỘNG THEO VỊ TRÍ THỰC TẾ CỦA GIỎ HÀNG
-            if (CollectionBin != null && CollectionBin.IsVisible)
+            // Nếu layout chưa render xong (Height = 0), dùng vị trí dự đoán
+            if (cartH <= 0)
             {
-                double cartY = CollectionBin.Y;
-                double cartH = CollectionBin.Height;
-                double margin = 20; // Khoảng cách an toàn giữa item và giỏ
-                
-                 // Nếu layout chưa render xong (Height = 0), dùng vị trí dự đoán
-                if (cartH <= 0)
-                {
-                    cartH = 120; // Chiều cao dự đoán của giỏ hàng
-                    cartY = FarmContainer.Height - cartH; // Vị trí dự đoán của giỏ hàng
-                }
+                cartH = 120; // Chiều cao dự đoán
+                cartY = 10;  // Vị trí dự đoán (góc trên cùng)
+            }
 
-                // Vùng cấm: Từ đỉnh giỏ hàng trở xuống hết container + margin
+            // Vùng cấm: Từ đỉnh màn hình (Y=0) đến đáy giỏ hàng + margin
+            forbiddenZone = new Rect(
+                0, 
+                0, 
+                FarmContainer.Width, 
+                cartY + cartH + margin
+            );
+        }
+
+        var sample = items.FirstOrDefault(i => i.IsTarget);
+        if (sample != null)
+        {
+            if (TargetIconContainer.Content is Image oldImg) oldImg.Source = null;
+            TargetIconContainer.Content = !string.IsNullOrEmpty(sample.Key)
+                ? new Image { Source = $"{sample.Key}.webp", Aspect = Aspect.AspectFit }
+                : (View)CreateShapeView(sample.Value, "#4CAF50", 30);
+        }
+    });
+
+    var renderToken = _renderCts.Token;
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            // 🔥 Fallback: Nếu chưa tính được vùng cấm thì giả lập vùng trên cùng
+            if (forbiddenZone == Rect.Zero && FarmContainer.Height > 0)
+            {
                 forbiddenZone = new Rect(
                     0, 
-                    cartY - margin, 
+                    0, 
                     FarmContainer.Width, 
-                    (FarmContainer.Height - (cartY - margin - 100))
+                    FarmContainer.Height * 0.20 // 20% trên cùng là vùng cấm
                 );
             }
 
-            var sample = items.FirstOrDefault(i => i.IsTarget);
-            if (sample != null)
-            {
-                if (TargetIconContainer.Content is Image oldImg) oldImg.Source = null;
-                TargetIconContainer.Content = !string.IsNullOrEmpty(sample.Key)
-                    ? new Image { Source = $"{sample.Key}.webp", Aspect = Aspect.AspectFit }
-                    : (View)CreateShapeView(sample.Value, "#4CAF50", 30);
-            }
-        });
-
-        var renderToken = _renderCts.Token;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                // Đảm bảo forbiddenZone đã được tính
-                if (forbiddenZone == Rect.Zero && FarmContainer.Height > 0)
-                {
-                    double cartH = 120;
-                    double cartY = FarmContainer.Height - cartH;
-                    forbiddenZone = new Rect(
-                        0, 
-                        FarmContainer.Height - 20, 
-                        FarmContainer.Width, 
-                        cartH + 20
-                    );
-                }
-
-                // TRUYỀN forbiddenZones vào ComputeScatterLayoutAsync
-                var pre = await ComputeScatterLayoutAsync(
-                    items, 
-                    renderToken, 
-                    useFarmDepth: !isShapeGame,
-                    forbiddenZones: 
-                    [forbiddenZone]  // ← THÊM DÒNG NÀY
-                );
-                
-                if (renderToken.IsCancellationRequested) return;
-                
-                await RenderItemsScatterFromPrecomputedAsync(pre, renderToken, isInteractive: true);
-            }
-            catch (Exception ex) 
-            { 
-                Debug.WriteLine($"RenderInteractiveGame error: {ex}"); 
-            }
-        });
-    }
+            // Truyền forbiddenZones vào ComputeScatterLayoutAsync
+            var pre = await ComputeScatterLayoutAsync(
+                items, 
+                renderToken, 
+                useFarmDepth: !isShapeGame,
+                forbiddenZones: new List<Rect> { forbiddenZone }
+            );
+            
+            if (renderToken.IsCancellationRequested) return;
+            
+            await RenderItemsScatterFromPrecomputedAsync(pre, renderToken, isInteractive: true);
+        }
+        catch (Exception ex) 
+        { 
+            Debug.WriteLine($"RenderInteractiveGame error: {ex}"); 
+        }
+    });
+}
 
     private async Task HandleItemTap(View view, GameItem item)
     {
