@@ -1734,13 +1734,13 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
         {
             double cartY = CollectionBin.Y;
             double cartH = CollectionBin.Height;
-            double margin = 25; // Khoảng đệm an toàn
+            double margin = 30; // Khoảng đệm an toàn
 
             // Nếu layout chưa render xong (Height = 0), dùng vị trí dự đoán
             if (cartH <= 0)
             {
                 cartH = 120; // Chiều cao dự đoán
-                cartY = 10;  // Vị trí dự đoán (góc trên cùng)
+                cartY = FarmContainer.Height - cartH;  // Vị trí dự đoán (góc trên cùng)
             }
 
             // Vùng cấm: Từ đỉnh màn hình (Y=0) đến đáy giỏ hàng + margin
@@ -1897,8 +1897,8 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
             ch = DeviceDisplay.MainDisplayInfo.Height / DeviceDisplay.MainDisplayInfo.Density - 20;
         }
 
-        double safeHeight = ch * 0.75; // Chỉ rải số trong 75% chiều cao đầu, để tránh trùng với ô đáp án bên dưới
-
+        double safeHeight = ch * 0.65; // Chỉ rải số trong 75% chiều cao đầu, để tránh trùng với ô đáp án bên dưới
+        double answerAreaHeight = OrderingSlots.HeightRequest + 150; // Dự kiến chiều cao khu vực ô đáp án + khoảng cách an toàn
         // 🔥 Tính toán vùng rải số động dựa trên kích thước thực tế của container, đảm bảo không rải vào khu vực ô đáp án
         Rect scatterZone = new(20, 20, cw - 40, safeHeight - 40);
         

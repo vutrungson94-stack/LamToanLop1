@@ -89,13 +89,14 @@
                     x:Name="ClassicText" 
                     Text="15 - 6 = ?" 
                     FontFamily="BalooTammudu2ExtraBold"
-                    FontSize="54" 
+                    FontSize="36" 
                     FontAttributes="Bold" 
                     TextColor="#3F51B5" 
                     HorizontalOptions="Center" 
                     VerticalOptions="Center" 
                     LineBreakMode="NoWrap" 
-                    IsVisible="False"/>
+                    IsVisible="False"
+                    Padding="20,0"/>
 
                 <Grid x:Name="ShapeContainer" HorizontalOptions="Center" VerticalOptions="Center" IsVisible="False"/>
 
