@@ -311,7 +311,7 @@ function Invoke-AutoDeploy {
     $emulators   = @($allDevices | Where-Object { $_ -match "^emulator-" -or $_ -match "^127\.0\.0\." })
     $targetDevice = if ($realDevices.Count -gt 0) { $realDevices[0] } else { $emulators[0] }
     
-    Write-Log "🗑️ Gỡ app cũ ($AppId)..." $C_Warn
+    Write-Log "🗑️  Gỡ app cũ ($AppId)..." $C_Warn
     & $adb -s $targetDevice uninstall $AppId 2>&1 | Out-Null
     Start-Sleep -Milliseconds 800
     

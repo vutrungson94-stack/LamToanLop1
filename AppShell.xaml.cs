@@ -53,7 +53,8 @@ public partial class AppShell : Shell
         });
 
 		// Đăng ký đường dẫn cho các trang con
-		Routing.RegisterRoute(nameof(GamePage), typeof(GamePage));
+	    Routing.RegisterRoute(nameof(NumberPage), typeof(NumberPage));
 		Routing.RegisterRoute(nameof(AnimalPage), typeof(AnimalPage));
-	}
+		Routing.RegisterRoute(nameof(GamePage), typeof(GamePage));
+    }
 }

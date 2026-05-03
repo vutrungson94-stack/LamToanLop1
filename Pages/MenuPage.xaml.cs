@@ -145,4 +145,17 @@ public partial class MenuPage : ContentPage
         LevelMenu.IsVisible = false;
         ModeMenu.IsVisible = true;
     }
+
+    private async void OnNumberDiscoveryClicked(object sender, EventArgs e)
+{
+    if (sender is Button btn)
+    {
+        AbortSpecificAnimations(btn);
+        await btn.ScaleToAsync(0.9, 50);
+        await btn.ScaleToAsync(1.0, 50);
+    }
+    
+    // Navigate đến trang chọn phạm vi
+    await Shell.Current.GoToAsync(nameof(NumberPage));
+}
 }

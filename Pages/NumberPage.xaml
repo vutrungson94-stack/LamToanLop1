@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="LamToanLop1.Pages.NumberPage"
+             Title="KHÁM PHÁ CON SỐ"
+             BackgroundColor="#E3F2FD"
+             Shell.NavBarIsVisible="False">
+
+    <Grid>
+        <Image Source="hinhnen_lam_toan_lop_1.webp" Aspect="AspectFill" Opacity="0.3"/>
+
+        <VerticalStackLayout Spacing="25" 
+                             VerticalOptions="Center" 
+                             HorizontalOptions="Center" 
+                             Padding="20">
+            
+            <Label Text="CHỌN PHẠM VI SỐ" 
+                   FontFamily="BalooTammudu2ExtraBold"
+                   FontSize="36" 
+                   FontAttributes="Bold" 
+                   TextColor="#333" 
+                   HorizontalOptions="Center" />
+
+            <!-- Phạm vi 0-9 -->
+            <Button Text="🎯 SỐ TỪ 0 ĐẾN 9" 
+                    Clicked="OnRange0to9Clicked"
+                    BackgroundColor="#4CAF50"
+                    FontFamily="NunitoExtraBold"
+                    FontSize="20"
+                    FontAttributes="Bold"
+                    TextColor="White"
+                    CornerRadius="25"
+                    HeightRequest="70"
+                    WidthRequest="300"
+                    Margin="0,20">
+                <Button.Shadow>
+                    <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
+                </Button.Shadow>
+            </Button>
+
+            <!-- Phạm vi 10-20 -->
+            <Button Text="🎯 SỐ TỪ 10 ĐẾN 20" 
+                    Clicked="OnRange10to20Clicked"
+                    BackgroundColor="#2196F3"
+                    FontFamily="NunitoExtraBold"
+                    FontSize="20"
+                    FontAttributes="Bold"
+                    TextColor="White"
+                    CornerRadius="25"
+                    HeightRequest="70"
+                    WidthRequest="300"
+                    Margin="0,10">
+                <Button.Shadow>
+                    <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
+                </Button.Shadow>
+            </Button>
+
+            <!-- Phạm vi 20+ -->
+            <Button Text="🎲 SỐ NGẪU NHIÊN (21-100)" 
+                    Clicked="OnRange20PlusClicked"
+                    BackgroundColor="#9C27B0"
+                    FontFamily="NunitoExtraBold"
+                    FontSize="20"
+                    FontAttributes="Bold"
+                    TextColor="White"
+                    CornerRadius="25"
+                    HeightRequest="70"
+                    WidthRequest="300"
+                    Margin="0,10">
+                <Button.Shadow>
+                    <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
+                </Button.Shadow>
+            </Button>
+
+            <!-- Nút Quay lại -->
+            <Button Text="🔙 QUAY LẠI" 
+                    Clicked="OnBackToMenuClicked"
+                    BackgroundColor="#757575"
+                    FontFamily="NunitoExtraBold"
+                    FontSize="18"
+                    FontAttributes="Bold"
+                    TextColor="White"
+                    CornerRadius="25"
+                    HeightRequest="55"
+                    WidthRequest="200"
+                    Margin="0,30">
+                <Button.Shadow>
+                    <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
+                </Button.Shadow>
+            </Button>
+        </VerticalStackLayout>
+    </Grid>
+</ContentPage>

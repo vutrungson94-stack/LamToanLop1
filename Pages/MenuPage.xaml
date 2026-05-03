@@ -39,8 +39,9 @@
                     </Label.Shadow>
                 </Label>
 
-                <Button Text="🧮 BÉ LUYỆN TOÁN" Clicked="OnOpenMathMenu" BackgroundColor="#2196F3" Style="{StaticResource MenuButtonStyle}" />
+                <Button Text="🔢 KHÁM PHÁ CON SỐ" Clicked="OnNumberDiscoveryClicked" BackgroundColor="#E91E63" Style="{StaticResource MenuButtonStyle}" />
                 <Button Text="🐾 KHÁM PHÁ ĐỘNG VẬT" Clicked="OnAnimalDiscoveryClicked" BackgroundColor="#4CAF50" Style="{StaticResource MenuButtonStyle}" />
+                <Button Text="🧮 BÉ LUYỆN TOÁN" Clicked="OnOpenMathMenu" BackgroundColor="#2196F3" Style="{StaticResource MenuButtonStyle}" />
             </VerticalStackLayout>
         </Grid>
 

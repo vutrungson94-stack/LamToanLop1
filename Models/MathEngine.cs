@@ -302,11 +302,11 @@
                 case 2: // SẮP XẾP SỐ
                     VisualType = "Ordering";
                     bool asc = _rnd.Next(0, 2) == 0;
-                    // [FIX] Đảm bảo số lượng số tạo ra khớp với level (3, 4 hoặc 5 số)
+                    // Đảm bảo số lượng số tạo ra khớp với level (3, 4 hoặc 5 số)
                     int count = level == 1 ? 3 : (level == 2 ? 4 : 5);
                     var nums = new HashSet<int>();
                     while (nums.Count < count) 
-                        nums.Add(_rnd.Next(1, maxRange));
+                        nums.Add(_rnd.Next(1, maxRange + 1));
 
                     var sortedList = asc ? nums.OrderBy(x => x).ToList() : [.. nums.OrderByDescending(x => x)];
                     CorrectAnswer = string.Join(", ", sortedList);
