@@ -55,14 +55,12 @@ function Invoke-KillBuildProcesses {
     
     Write-Log "🔪 Đang quét và kill process đang giữ lock file..." $C_Gray
     
-    # Danh sách process cần kill
     $processNames = @('dotnet', 'msbuild', 'vbcscompiler', 'csc', 'VBCSCompiler', 'java')
     
     foreach ($procName in $processNames) {
         try {
             $procs = Get-Process -Name $procName -ErrorAction SilentlyContinue |
                 Where-Object {
-                    # Kiểm tra an toàn — tránh lỗi property không tồn tại
                     try {
                         ($_.Modules.FileName -like "*$ProjectDir*" -or
                         $_.Path -like "*$ProjectDir*" -or
@@ -77,12 +75,11 @@ function Invoke-KillBuildProcesses {
                 Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
             }
         } catch {
-            Write-Log "   ⚠️  Lỗi khi quét process $procName : $($_.Exception.Message)" $C_Warn
+            Write-Log "   ⚠️  Lỗi khi quét process $procName" $C_Warn
         }
     }
     
-    # Chờ 800ms để hệ thống nhả file handle
-    Start-Sleep -Milliseconds 800
+    Start-Sleep -Milliseconds 500
 }
 
 # ==================================================================================================
@@ -138,7 +135,7 @@ function Invoke-CleanBuildArtifacts {
     foreach ($folder in $foldersToClean) {
         if (Test-Path $folder) {
             $retryCount = 0
-            $maxRetries = 10  # Tăng lên 10 lần retry
+            $maxRetries = 5  # Tăng lên 5 lần retry
             $deleted = $false
             
             while (-not $deleted -and $retryCount -lt $maxRetries) {
@@ -541,7 +538,9 @@ function ProcessBuildAndShow {
         "-c", "Release",
         "--output", $safeOut,
         "-p:UseMaui=true",
-        "-p:SingleProject=true"
+        "-p:SingleProject=true",
+        "-p:BuildInParallel=true",
+        "-m"
     )
     
     # Force native rebuild flags cho Android

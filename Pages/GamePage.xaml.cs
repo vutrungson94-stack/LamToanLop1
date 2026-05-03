@@ -717,6 +717,7 @@ public partial class GamePage : ContentPage
                                                 {
                                                     Stroke = highlightColor,
                                                     StrokeThickness = 4,
+                                                    StrokeDashArray = new[] { 6.0f, 4.0f },
                                                     BackgroundColor = Colors.Transparent,
                                                     StrokeShape = new RoundRectangle { CornerRadius = (float)(bounds.Width / 2 + 5) },
                                                     InputTransparent = true
@@ -928,7 +929,7 @@ public partial class GamePage : ContentPage
     // RENDER & LOGIC TỪNG GAME
     // ==========================================
     // PHÂN TÁCH: Compute layout off-UI để tránh block (trả về list Rect position)
-    private const double FARM_HORIZON_RATIO = 0.45; // Tỷ lệ chiều cao dành cho phần "đất" trong Farm (phần dưới)
+    private const double FARM_HORIZON_RATIO = 0.5; // Tỷ lệ chiều cao dành cho phần "đất" trong Farm (phần dưới)
     private const double FARM_BOTTOM_RATIO = 0.82; // Tỷ lệ chiều cao tối đa của item so với container (để tránh quá to)
     private const double FARM_DEPTH_MIN = 0.55; // Tỷ lệ scale nhỏ nhất (cho item ở "xa")
     private const double FARM_DEPTH_MAX = 1.25; // Tỷ lệ scale lớn nhất (cho item ở "gần")
@@ -958,7 +959,10 @@ public partial class GamePage : ContentPage
             container = new Rect(0, 0, DeviceDisplay.MainDisplayInfo.Width / density, DeviceDisplay.MainDisplayInfo.Height / density); // Fallback kích thước mặc định (360x640 dp)
         }
 
-        double cw = container.Width; double ch = container.Height;
+        double cw = container.Width; 
+        double ch = container.Height;
+
+        Rect houseZone = new(0, 0, cw * 0.35, ch * 0.45); // Vùng "nhà" cố định ở góc trên bên trái, không rải item vào đây
 
         // Vùng hợp lệ để rải (có thể bị giới hạn bởi limitZone)
         double zoneX = limitZone == default ? 0 : limitZone.X;
@@ -1000,7 +1004,7 @@ public partial class GamePage : ContentPage
                     double yMax = limitZone == default ? bottomY : Math.Min(bottomY, zoneY + zoneHeight);
                     if (yMax <= yMin) { yMin = horizonY; yMax = bottomY; }
 
-                    depthRatio = rand.NextDouble(); // 0 = xa (nhỏ), 1 = gần (to)
+                    depthRatio = 0.15 + rand.NextDouble() * 0.85; // 0 = xa (nhỏ), 1 = gần (to)
                     double yPos = yMin + depthRatio * (yMax - yMin);
 
                     // Kích thước = baseSize * scale_con_vat * depth_scale
@@ -1018,7 +1022,9 @@ public partial class GamePage : ContentPage
                     double pad = sz * 0.15;
                     Rect padded = new(r.X - pad, r.Y - pad, r.Width + pad * 2, r.Height + pad * 2);
 
-                    bool isColliding = placed.Any(p => p.IntersectsWith(padded)) || (forbiddenZones?.Any(fz => fz.IntersectsWith(padded)) ?? false);
+                    bool isColliding = placed.Any(p => p.IntersectsWith(padded)) || 
+                                        (forbiddenZones?.Any(fz => fz.IntersectsWith(padded)) ?? false) ||
+                                        houseZone.IntersectsWith(padded);
 
                     if (!isColliding)
                         placed_ok = true;
@@ -1050,7 +1056,9 @@ public partial class GamePage : ContentPage
                     double y = zoneY + rand.NextDouble() * Math.Max(0, zoneHeight - sz);
                     r = new Rect(x, y, sz, sz);
 
-                    bool isColliding = placed.Any(p => p.IntersectsWith(r)) || (forbiddenZones?.Any(fz => fz.IntersectsWith(r)) ?? false);
+                    bool isColliding = placed.Any(p => p.IntersectsWith(r)) || 
+                                        (forbiddenZones?.Any(fz => fz.IntersectsWith(r)) ?? false) ||
+                                        houseZone.IntersectsWith(r);
 
                     if (!isColliding) placed_ok = true;
                 }
@@ -1286,11 +1294,7 @@ public partial class GamePage : ContentPage
 
     private void RenderSizeCompareGame(List<GameItem> items)
     {
-        if (items == null || items.Count == 0)
-        {
-            Debug.WriteLine("RenderSizeCompareGame: No items to render.");
-            return;
-        }   
+        if (items == null || items.Count == 0) return;
 
         // SizeCompare: hiển thị các con vật với kích thước tỉ lệ theo Scale thực,
         // không dùng farm-depth (muốn kích thước phản ánh đúng to/nhỏ),
@@ -1317,9 +1321,9 @@ public partial class GamePage : ContentPage
 
                 // 🔥 Tính vùng "Đáp Đất" dựa trên hằng số FARM_HORIZON_RATIO
                 // Đảm bảo con vật chỉ xuất hiện từ 50% chiều cao màn hình trở xuống
-                double safeY = ch * FARM_HORIZON_RATIO; 
-                double safeH = (ch * FARM_BOTTOM_RATIO) - safeY;
-                Rect groundZone = new Rect(0, safeY, cw, safeH);
+                double startY = ch * FARM_HORIZON_RATIO; 
+                double endY = ch * FARM_BOTTOM_RATIO;
+                Rect groundZone = new(0, startY, cw, endY - startY);
 
                 // Dùng flat model với kích thước đúng theo Scale thật của từng con
                 var pre = await ComputeScatterLayoutAsync(
@@ -1346,9 +1350,10 @@ public partial class GamePage : ContentPage
                 // Render + gắn tap từng con
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
+                    if (renderToken.IsCancellationRequested) return;
+
                     foreach (var (p, src) in loaded.OrderBy(t => t.p.Bounds.Y))
                     {
-                        if (renderToken.IsCancellationRequested) break;
                         var view = GetViewFromPool(p.Bounds.Width);
                         if (view is not Image img) continue;
 
@@ -1900,14 +1905,11 @@ public partial class GamePage : ContentPage
             ch = DeviceDisplay.MainDisplayInfo.Height / DeviceDisplay.MainDisplayInfo.Density - 20;
         }
 
-        double answerH = AnswerLayout.IsVisible ? AnswerLayout.Height : 0;
-        double slotsHeight = OrderingSlots.HeightRequest + 40;
-        ch = Math.Max(ch - answerH - slotsHeight - 30, 150); 
+        double safeHeight = ch * 0.75; // Chỉ rải số trong 75% chiều cao đầu, để tránh trùng với ô đáp án bên dưới
 
-        // Chia vùng trên & dưới ô đáp án
-        Rect scatterZoneTop = new(10, 10, cw - 20, ch / 2 - 20);
-        Rect scatterZoneBottom = new(10, ch / 2 + slotsHeight + 10, cw - 20, ch / 2 - 20);
-
+        // 🔥 Tính toán vùng rải số động dựa trên kích thước thực tế của container, đảm bảo không rải vào khu vực ô đáp án
+        Rect scatterZone = new(20, 20, cw - 40, safeHeight - 40);
+        
         var occupied = new List<Rect>();
         // 🔥 Shuffle đúng số lượng số có trong đề
         var shuffled = numbers.OrderBy(_ => rand.Next()).ToList();
@@ -1918,24 +1920,31 @@ public partial class GamePage : ContentPage
             double size = rand.Next(55, 85);
 
             Rect pos = Rect.Zero;
-            Rect[] zones = { scatterZoneTop, scatterZoneBottom };
+            bool placed = false;
             
-            foreach (var zone in zones)
+            for (int attempt = 0; attempt < 100; attempt++)
             {
-                for (int attempt = 0; attempt < 100; attempt++)
+                double x = scatterZone.X + rand.NextDouble() * Math.Max(0, scatterZone.Width - size);
+                double y = scatterZone.Y + rand.NextDouble() * Math.Max(0, scatterZone.Height - size);
+                Rect candidate = new(x, y, size, size);
+                
+                // Kiểm tra va chạm với các số đã đặt
+                bool isColliding = occupied.Any(o => o.IntersectsWith(candidate));
+                if (!isColliding)
                 {
-                    double x = zone.X + rand.NextDouble() * Math.Max(0, zone.Width - size);
-                    double y = zone.Y + rand.NextDouble() * Math.Max(0, zone.Height - size);
-                    Rect candidate = new(x, y, size, size);
-                    if (!occupied.Any(r => r.IntersectsWith(candidate)))
-                    {
-                        pos = candidate; break;
-                    }
+                    pos = candidate;
+                    placed = true;
+                    break;
                 }
-                if (pos != Rect.Zero) break;
             }
 
-            if (pos == Rect.Zero) pos = new Rect(scatterZoneTop.X, scatterZoneTop.Y + (i * 90), size, size);
+            if (!placed)
+            {
+                double offsetX = (i % 3) * 80;
+                double offsetY = (i / 3) * 90;
+                pos = new Rect(scatterZone.X + offsetX, scatterZone.Y + offsetY, size, size);
+            }
+
             occupied.Add(pos);
 
             var border = new Border
