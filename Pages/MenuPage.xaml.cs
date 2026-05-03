@@ -150,7 +150,6 @@ public partial class MenuPage : ContentPage
 {
     if (sender is Button btn)
     {
-        AbortSpecificAnimations(btn);
         await btn.ScaleToAsync(0.9, 50);
         await btn.ScaleToAsync(1.0, 50);
     }
