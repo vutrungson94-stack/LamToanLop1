@@ -7,7 +7,7 @@
     {
         public static readonly List<KeyValuePair<string, string>> AnimalList =
         [
-            new("convat_bach_tuoc", "Bạch tuộc"), new("convat_bo_canh_cam", "Bọ cánh cam"), new("convat_buom", "Con bướm"),
+            new("convat_su_tu", "Sư tử"), new("convat_bach_tuoc", "Bạch tuộc"), new("convat_bo_canh_cam", "Bọ cánh cam"), new("convat_buom", "Con bướm"),
             new("convat_ca_he", "Cá hề"), new("convat_ca_heo", "Cá heo"), new("convat_ca_map", "Cá mập"),
             new("convat_ca_sau", "Cá sấu"), new("convat_ca_voi", "Cá voi"), new("convat_cao_tuyet", "Cáo tuyết"),
             new("convat_chau_chau", "Châu chấu"), new("convat_chim_canh_cut", "Chim cánh cụt"), new("convat_cho_con", "Chó con"),
