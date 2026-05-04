@@ -100,7 +100,7 @@ public partial class NumberPage : ContentPage
             var card = new Border
             {
                 BackgroundColor = _cardColors[colorIndex],
-                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundedRectangle { CornerRadius = 28 },
+                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 28 },
                 StrokeThickness = 0,
                 WidthRequest = 150,
                 HeightRequest = 150,
@@ -173,7 +173,7 @@ public partial class NumberPage : ContentPage
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"TTS Error: {ex.Message}");
-            await DisplayAlert("Oops!", "Máy chưa thể đọc số lúc này.", "OK");
+            global::System.Object value = await DisplayAlert("Oops!", "Máy chưa thể đọc số lúc này.", "OK");
         }
     }
 
