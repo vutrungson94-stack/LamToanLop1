@@ -7,9 +7,14 @@
              Shell.NavBarIsVisible="False">
 
     <Grid>
-        <Image Source="hinhnen_lam_toan_lop_1.webp" Aspect="AspectFill" Opacity="0.3"/>
+        <!-- Hình nền đồng nhất -->
+        <Image Source="hinhnen_lam_toan_lop_1.webp" 
+               Aspect="AspectFill" 
+               Opacity="0.3"/>
 
-        <VerticalStackLayout Spacing="25" 
+        <!-- ===== STATE 1: Chọn phạm vi số ===== -->
+        <VerticalStackLayout x:Name="RangeSelectionLayout"
+                             Spacing="25" 
                              VerticalOptions="Center" 
                              HorizontalOptions="Center" 
                              Padding="20">
@@ -21,7 +26,6 @@
                    TextColor="#333" 
                    HorizontalOptions="Center" />
 
-            <!-- Phạm vi 0-9 -->
             <Button Text="🎯 SỐ TỪ 0 ĐẾN 9" 
                     Clicked="OnRange0to9Clicked"
                     BackgroundColor="#4CAF50"
@@ -38,7 +42,6 @@
                 </Button.Shadow>
             </Button>
 
-            <!-- Phạm vi 10-20 -->
             <Button Text="🎯 SỐ TỪ 10 ĐẾN 20" 
                     Clicked="OnRange10to20Clicked"
                     BackgroundColor="#2196F3"
@@ -55,7 +58,6 @@
                 </Button.Shadow>
             </Button>
 
-            <!-- Phạm vi 20+ -->
             <Button Text="🎲 SỐ NGẪU NHIÊN (21-100)" 
                     Clicked="OnRange20PlusClicked"
                     BackgroundColor="#9C27B0"
@@ -72,7 +74,6 @@
                 </Button.Shadow>
             </Button>
 
-            <!-- Nút Quay lại -->
             <Button Text="🔙 QUAY LẠI" 
                     Clicked="OnBackToMenuClicked"
                     BackgroundColor="#757575"
@@ -89,5 +90,63 @@
                 </Button.Shadow>
             </Button>
         </VerticalStackLayout>
+
+        <!-- ===== STATE 2: Hiển thị & đọc các con số ===== -->
+        <Grid x:Name="NumbersDisplayLayout" 
+              IsVisible="False"
+              RowDefinitions="Auto,*,Auto" 
+              Padding="20"
+              VerticalOptions="Fill">
+
+            <!-- Tiêu đề phạm vi đang học -->
+            <Border Grid.Row="0" 
+                    Stroke="#2196F3" 
+                    StrokeThickness="3" 
+                    BackgroundColor="#FFFFFF" 
+                    Padding="15,10" 
+                    Margin="0,10,0,15"
+                    StrokeShape="RoundRectangle 25"
+                    HorizontalOptions="Center">
+                <Border.Shadow>
+                    <Shadow Brush="Black" Offset="2,2" Opacity="0.2" Radius="4"/>
+                </Border.Shadow>
+                <Label x:Name="RangeTitleLabel"
+                       FontFamily="BalooTammudu2ExtraBold"
+                       Text="SỐ TỪ 0 ĐẾN 9" 
+                       FontSize="26" 
+                       FontAttributes="Bold" 
+                       TextColor="#1565C0" 
+                       HorizontalTextAlignment="Center"/>
+            </Border>
+
+            <!-- Vùng chứa các con số (cuộn được) -->
+            <ScrollView Grid.Row="1">
+                <FlexLayout x:Name="NumbersFlex" 
+                            Wrap="Wrap" 
+                            JustifyContent="SpaceAround" 
+                            AlignItems="Center"
+                            AlignContent="Start"
+                            Padding="10"/>
+            </ScrollView>
+
+            <!-- Nút quay lại chọn phạm vi -->
+            <Button Grid.Row="2" 
+                    Text="🔁 CHỌN PHẠM VI KHÁC" 
+                    Clicked="OnBackToRangesClicked"
+                    BackgroundColor="#FF9800" 
+                    FontFamily="NunitoExtraBold"
+                    FontSize="18"
+                    FontAttributes="Bold" 
+                    TextColor="White"
+                    CornerRadius="25" 
+                    HeightRequest="55" 
+                    WidthRequest="260"
+                    Margin="0,15,0,0"
+                    HorizontalOptions="Center">
+                <Button.Shadow>
+                    <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
+                </Button.Shadow>
+            </Button>
+        </Grid>
     </Grid>
 </ContentPage>

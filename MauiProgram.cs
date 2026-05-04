@@ -28,6 +28,7 @@ public static class MauiProgram
                     fonts.AddFont("Nunito-ExtraBold.ttf", "NunitoExtraBold");
                     fonts.AddFont("PatrickHand-Regular.ttf", "PatrickHandRegular");
                     fonts.AddFont("BalooTammudu2-ExtraBold.ttf", "BalooTammudu2ExtraBold");
+                    fonts.AddFont("Fredoka-Bold.ttf", "FredokaBold");
                 }
             });
 
