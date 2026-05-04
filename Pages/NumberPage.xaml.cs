@@ -1,6 +1,3 @@
-using System.Globalization;
-using Microsoft.Maui.Media;
-
 namespace LamToanLop1.Pages;
 
 public partial class NumberPage : ContentPage
@@ -103,7 +100,7 @@ public partial class NumberPage : ContentPage
             var card = new Border
             {
                 BackgroundColor = _cardColors[colorIndex],
-                StrokeShape = new RoundRectangle { CornerRadius = 28 },
+                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundedRectangle { CornerRadius = 28 },
                 StrokeThickness = 0,
                 WidthRequest = 150,
                 HeightRequest = 150,
@@ -126,8 +123,8 @@ public partial class NumberPage : ContentPage
             // Nhấn giữ xuống nhẹ (visual feedback)
             tap.Tapped += async (s, e) =>
             {
-                await card.ScaleTo(0.90, 80, Easing.CubicOut);
-                await card.ScaleTo(1.0, 120, Easing.SpringOut);
+                await card.ScaleToAsync(0.90, 80, Easing.CubicOut);
+                await card.ScaleToAsync(1.0, 120, Easing.SpringOut);
             };
 
             NumbersFlex.Children.Add(card);
@@ -145,8 +142,8 @@ public partial class NumberPage : ContentPage
         // 🎬 Animation stagger: thẻ bay ra từng cái
         foreach (var card in cards)
         {
-            await card.FadeTo(1, 180, Easing.CubicOut);
-            await card.ScaleTo(1.0, 220, Easing.SpringOut);
+            await card.FadeToAsync(1, 180, Easing.CubicOut);
+            await card.ScaleToAsync(1.0, 220, Easing.SpringOut);
         }
     }
 
@@ -156,7 +153,7 @@ public partial class NumberPage : ContentPage
         {
             // Định dạng tiếng Việt: 15 -> "mười lăm" (TextToSpeech tự xử lý nếu locale đúng)
             // Hoặc bạn có thể dùng thư viện đọc số tiếng Việt chuẩn nếu cần
-            string text = number.ToString("N0", new CultureInfo("vi-VN")).Replace(".", " ");
+            string text = number.ToString("N0", new System.Globalization.CultureInfo("vi-VN")).Replace(".", " ");
 
             var options = new SpeechOptions
             {
@@ -182,12 +179,12 @@ public partial class NumberPage : ContentPage
 
     private async void OnBackToRangesClicked(object sender, EventArgs e)
     {
-        await NumbersDisplayLayout.FadeTo(0, 200);
+        await NumbersDisplayLayout.FadeToAsync(0, 200);
         NumbersDisplayLayout.IsVisible = false;
         NumbersFlex.Children.Clear();
 
         RangeSelectionLayout.Opacity = 0;
         RangeSelectionLayout.IsVisible = true;
-        await RangeSelectionLayout.FadeTo(1, 250);
+        await RangeSelectionLayout.FadeToAsync(1, 250);
     }
 }
