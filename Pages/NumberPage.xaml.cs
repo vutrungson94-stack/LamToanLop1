@@ -173,7 +173,7 @@ public partial class NumberPage : ContentPage
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"TTS Error: {ex.Message}");
-            global::System.Object value = await DisplayAlert("Oops!", "Máy chưa thể đọc số lúc này.", "OK");
+            await DisplayAlertAsync("Lỗi", "Không thể phát âm thanh. Vui lòng thử lại sau.", "OK");
         }
     }
 
