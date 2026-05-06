@@ -582,10 +582,31 @@ switch ($choice) {
     }
     '7' {
         if ($isWebProject) {
-            # Dùng phiên bản .NET mới nhất của máy để build Web
+            # 1. Thực hiện Build
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web"
-        } else {
-            Write-Log "❌ Project này không phải là Web UI!" $C_Err
+            
+            # 2. Xác định đường dẫn file EXE sau khi build
+            $exePath = Join-Path $PSScriptRoot "publish-output\web\MultiAiAgent.exe"
+            $url = "http://localhost:5000"
+
+            if (Test-Path $exePath) {
+                Write-Log "🚀 Đang khởi chạy ứng dụng ngầm tại $url..." "Green"
+                
+                # 3. Chạy EXE ngầm (WindowStyle Hidden)
+                # Dùng Start-Process để khi tắt Terminal hoặc tắt trình duyệt, bạn có thể quản lý riêng
+                $appProcess = Start-Process $exePath -ArgumentList "--urls=$url" -WindowStyle Hidden -PassThru
+                
+                # 4. Đợi 1 chút để server khởi động rồi tự mở trang web
+                Start-Sleep -Seconds 2
+                Start-Process $url
+                
+                Write-Log "✅ Đã xong! App đang chạy ẩn. Nhấn phím bất kỳ để tắt cả App và Web." "Yellow"
+                
+                # 5. Cơ chế tự tắt: Đợi người dùng nhấn phím rồi kill process
+                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                Stop-Process -Id $appProcess.Id -Force
+                Write-Log "🛑 Đã đóng ứng dụng ngầm." "Red"
+            }
         }
     }
     '8' {
