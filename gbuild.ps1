@@ -551,9 +551,12 @@ switch ($choice) {
     '4' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") }
     '5' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" }
     '6' {
-        # Tự động chọn TFM cho Windows (Ưu tiên TFM từ project, nếu không có thì dùng mặc định Win10)
         $targetTfm = if ($winTfm) { $winTfm } else { "net10.0-windows10.0.19041.0" }
-        ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=MSIX")
+        ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @(
+            "-p:WindowsPackageType=None", 
+            "-p:PublishSingleFile=false",  # Chỉnh thành false
+            "--self-contained", "true"
+        )
     }
     '7' {
         if ($isWebProject) {
