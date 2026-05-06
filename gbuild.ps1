@@ -448,6 +448,27 @@ function Invoke-GitHubBuild([string]$PackageFormat) {
 # ==================================================================================================
 # [SECTION 4] MAIN FLOW
 # ==================================================================================================
+# --------------------------------------------------------------------------------------------------
+# [PHẦN MỚI] HÀM TỰ ĐỘNG NHẬN DIỆN .NET SDK MỚI NHẤT TRÊN MÁY
+# --------------------------------------------------------------------------------------------------
+function Get-LatestInstalledTfm {
+    # Lấy danh sách SDK từ hệ thống
+    $sdks = & dotnet --list-sdks 2>$null
+    if ($sdks) {
+        # Lấy dòng cuối cùng (phiên bản cao nhất), ví dụ: "10.0.100 [C:\...]"
+        $latestLine = $sdks[-1]
+        if ($latestLine -match '^(\d+)\.(\d+)') {
+            # Trả về định dạng net10.0 hoặc net9.0
+            return "net$($Matches[1]).$($Matches[2])"
+        }
+    }
+    return "net8.0" # Giá trị dự phòng (Fallback)
+}
+
+# Khởi tạo phiên bản TFM hiện tại của máy
+$currentTfm = Get-LatestInstalledTfm
+Write-Log "🔍 Đã nhận diện TFM mục tiêu: $currentTfm" "Cyan"
+
 
 Write-Host @"
 `n╔════════════════════════════════════════════════════════════════════╗
@@ -551,16 +572,18 @@ switch ($choice) {
     '4' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") }
     '5' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" }
     '6' {
-        $targetTfm = if ($winTfm) { $winTfm } else { "net10.0-windows10.0.19041.0" }
+        # Tự động ghép nối phiên bản .NET hiện tại với Windows SDK
+        $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows10.0.19041.0" }
         ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @(
             "-p:WindowsPackageType=None", 
-            "-p:PublishSingleFile=false",  # Chỉnh thành false
+            "-p:PublishSingleFile=false",
             "--self-contained", "true"
         )
     }
     '7' {
         if ($isWebProject) {
-            ProcessBuildAndShow -Project $projPath -Tfm "net10.0" -OutputSubDir "web"
+            # Dùng phiên bản .NET mới nhất của máy để build Web
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web"
         } else {
             Write-Log "❌ Project này không phải là Web UI!" $C_Err
         }
