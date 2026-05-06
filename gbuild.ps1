@@ -122,12 +122,16 @@ function Get-CsprojTfms {
 
 # 7. Tìm project MAUI
 function Get-MauiCsproj {
-    Write-Log "📂 Đang quét tìm file project MAUI..." $C_Gray
+    Write-Log "📂 Đang quét tìm file project..." $C_Gray
     $files = Get-ChildItem . -Recurse -Filter *.csproj -File |
         Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|.sdk)[\\/]' }
+    
     foreach ($f in $files) {
         $content = Get-Content $f.FullName -Raw -EA SilentlyContinue
-        if ($content -match '<UseMaui>\s*true\s*</UseMaui>' -or $content -match 'net\d+(\.\d+)?-(android|ios|windows)') {
+        # Chấp nhận cả project MAUI truyền thống và project Web SDK
+        if ($content -match '<UseMaui>\s*true\s*</UseMaui>' -or 
+            $content -match 'net\d+(\.\d+)?-(android|ios|windows)' -or
+            $content -match 'Sdk="Microsoft\.NET\.Sdk\.Web"') {
             return $f
         }
     }
@@ -447,12 +451,12 @@ function Invoke-GitHubBuild([string]$PackageFormat) {
 
 Write-Host @"
 `n╔════════════════════════════════════════════════════════════════════╗
-║         🚀  MAUI BUILD TOOL — VIP PRO MAX V2                       ║
+║         🚀  MAUI & WEB BUILD TOOL — VIP PRO MAX V2                 ║
 ║      (Optimized: No Duplicates, Fast Clean, Auto Deploy)           ║
 ╚════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
 
-# Quản lý global.json
+# 1. Quản lý global.json và SDK
 $dotnetExe = Resolve-DotnetExe
 if ($dotnetExe) {
     $sdks = & $dotnetExe --list-sdks
@@ -474,52 +478,63 @@ if ($dotnetExe) {
     }
 }
 
-# 1. Tìm Project
+# 2. Tìm Project (Tự động nhận diện MAUI hoặc Web)
 $csproj = Get-MauiCsproj
-if (-not $csproj) { Write-Log "❌ Không tìm thấy project MAUI!" $C_Err; exit 1 }
+if (-not $csproj) { Write-Log "❌ Không tìm thấy project hợp lệ!" $C_Err; exit 1 }
 $projPath = $csproj.FullName
+$csprojContent = Get-Content $projPath -Raw
+$isWebProject = $csprojContent -match 'Sdk="Microsoft\.NET\.Sdk\.Web"'
 Write-Log "📄 Project mục tiêu: $($csproj.Name)" $C_Info
 
-# 2. Xử lý TFM
+# 3. Xử lý TFMs (Target Frameworks)
 $tfms = @(Get-CsprojTfms -projPath $projPath)
-if ($tfms.Count -eq 0) { Write-Log "❌ Không đọc được TargetFrameworks!" $C_Err; exit 1 }
-
 $androidTfm = $tfms | Where-Object { $_ -match 'android' } | Select-Object -First 1
 $winTfm     = $tfms | Where-Object { $_ -match 'windows' } | Select-Object -First 1
 $iosTfm     = $tfms | Where-Object { $_ -match 'ios' } | Select-Object -First 1
 $macTfm     = $tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -First 1
 
-# 3. Menu
+# 4. Hiển thị Menu lựa chọn tăng dần
 $choice = '0'
 if ($GitHub -or $NonInteractive) { $choice = '1' }
 else {
     Write-Host "`n👉 CHỌN NỀN TẢNG MUỐN XUẤT BẢN:" -ForegroundColor White
+    
+    # Nhóm Android
     if ($androidTfm) {
-        Write-Host "  [1] Debug trên thiết bị Android" -ForegroundColor $C_Gray
-        Write-Host "  [2] Android APK  (Cài đặt nhanh)" -ForegroundColor $C_Info
-        Write-Host "  [3] Android AAB  (Google Play)" -ForegroundColor $C_Info
+        Write-Host "  [1] Debug trực tiếp trên thiết bị Android" -ForegroundColor $C_Gray
+        Write-Host "  [2] Xuất bản Android APK (Cài đặt nhanh)" -ForegroundColor $C_Info
+        Write-Host "  [3] Xuất bản Android AAB (Google Play)" -ForegroundColor $C_Info
     }
-    if ($iosTfm -and $IsMacOS) { Write-Host "  [4] iOS IPA" -ForegroundColor "Magenta" }
-    if ($macTfm -and $IsMacOS) { Write-Host "  [5] Mac Catalyst" -ForegroundColor "Magenta" }
-    if ($winTfm -and $IsWindows) { Write-Host "  [6] Windows MSIX" -ForegroundColor "DarkYellow" }
-    Write-Host "  [7] GitHub Cloud Build" -ForegroundColor $C_Succ
+    
+    # Nhóm Apple
+    if ($iosTfm -and $IsMacOS) { Write-Host "  [4] Xuất bản iOS IPA" -ForegroundColor "Magenta" }
+    if ($macTfm -and $IsMacOS) { Write-Host "  [5] Xuất bản Mac Catalyst" -ForegroundColor "Magenta" }
+    
+    # Nhóm Windows & Web (Dành cho AI Orchestrator)
+    if ($winTfm -or $isWebProject) {
+        Write-Host "  [6] Xuất bản Windows MSIX (Đóng gói cài đặt)" -ForegroundColor "DarkYellow"
+    }
+    if ($isWebProject) {
+        Write-Host "  [7] Xuất bản Web UI (Bản chạy trình duyệt)" -ForegroundColor "Cyan"
+    }
+
+    Write-Host "  [8] GitHub Cloud Build (Trình tự động hóa)" -ForegroundColor $C_Succ
     Write-Host "  [0] Thoát" -ForegroundColor $C_Gray
+    
     $choice = Read-Host "`n⌨  Nhập số"
     if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
 }
 
-# 4. Thực thi
+# 5. Thực thi theo lựa chọn
 switch ($choice) {
     '1' {
         if (!$androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
         Invoke-DeviceDebug -Project $projPath -Tfm $androidTfm
     }
     '2' {
-        if (!$androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
         ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk")
     }
     '3' {
-        if (!$androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
         $ks = Find-AndroidKeystore (Split-Path $projPath)
         $bArgs = @("-p:AndroidPackageFormat=aab")
         if ($ks) {
@@ -535,10 +550,24 @@ switch ($choice) {
     }
     '4' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") }
     '5' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" }
-    '6' { ProcessBuildAndShow -Project $projPath -Tfm $winTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=MSIX") }
+    '6' {
+        # Tự động chọn TFM cho Windows (Ưu tiên TFM từ project, nếu không có thì dùng mặc định Win10)
+        $targetTfm = if ($winTfm) { $winTfm } else { "net10.0-windows10.0.19041.0" }
+        ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=MSIX")
+    }
     '7' {
+        if ($isWebProject) {
+            ProcessBuildAndShow -Project $projPath -Tfm "net10.0" -OutputSubDir "web"
+        } else {
+            Write-Log "❌ Project này không phải là Web UI!" $C_Err
+        }
+    }
+    '8' {
         $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath (Join-Path $PSScriptRoot "gh.exe") }
-        if ($gh -eq "gh" -or (Test-Path $gh)) { & $gh workflow run build.yml -f "package_format=apk" ; Write-Log "🚀 Đã gửi lên GitHub!" $C_Succ }
+        if ($gh -eq "gh" -or (Test-Path $gh)) { 
+            & $gh workflow run build.yml -f "package_format=apk" 
+            Write-Log "🚀 Đã gửi yêu cầu build lên GitHub!" $C_Succ
+        }
     }
     '0' { exit 0 }
 }
