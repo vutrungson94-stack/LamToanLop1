@@ -188,23 +188,38 @@ function Test-FileLocked {
 
 # Hàm Kill Process an toàn
 function Invoke-KillBuildProcesses {
-    param([string]$ProjectDir)
-    $processNames = @('dotnet', 'msbuild', 'vbcscompiler', 'csc', 'VBCSCompiler', 'java')
-    foreach ($procName in $processNames) {
-        try {
-            $procs = Get-Process -Name $procName -ErrorAction SilentlyContinue |
-                Where-Object {
-                    try {
-                        ($_.Path -like "*$ProjectDir*") -or
-                        ((Get-Item $_.Path -ErrorAction SilentlyContinue).DirectoryName -like "*$ProjectDir*")
-                    } catch { $false }
-                }
-            foreach ($proc in $procs) {
-                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            }
-        } catch {}
+    param(
+        [string]$ProjectDir,
+        [string]$OutputSubDir
+    )
+    # 1. Các tiến trình hệ thống hỗ trợ build (luôn cần tắt)
+    $buildSystemProcs = @('dotnet', 'msbuild', 'vbcscompiler', 'csc')
+    foreach ($proc in $buildSystemProcs) {
+        Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
     }
-    Start-Sleep -Milliseconds 500
+
+    # 2. Tự động xác định tên file .exe mục tiêu dựa trên cấu trúc thư mục publish
+    # Chúng ta quét trong thư mục publish-output để xem có file .exe nào không
+    $outputPath = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
+    if (Test-Path $outputPath) {
+        $targetExes = Get-ChildItem -Path $outputPath -Filter "*.exe" -Recurse
+        
+        foreach ($exe in $targetExes) {
+            $exeName = $exe.BaseName # Lấy tên file không có đuôi .exe
+            
+            # Tìm và tắt tất cả tiến trình đang chạy từ chính đường dẫn file này
+            Get-Process -Name $exeName -ErrorAction SilentlyContinue | Where-Object {
+                try {
+                    # Kiểm tra xem Path của tiến trình có nằm trong thư mục publish không
+                    $_.Path -like "*publish-output*"
+                } catch { $false }
+            } | Stop-Process -Force -ErrorAction SilentlyContinue
+            
+            Write-Log "🎯 Đã giải phóng file khóa: $($exe.Name)" "Yellow"
+        }
+    }
+    
+    Start-Sleep -Milliseconds 800
 }
 
 # Hàm Clean tối ưu (Gộp cả 2 hàm cũ thành 1)
