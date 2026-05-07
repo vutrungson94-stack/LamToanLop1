@@ -29,6 +29,89 @@ $C_Header = "Magenta"; $C_Info = "Cyan"; $C_Warn = "Yellow"; $C_Err = "Red"; $C_
 # [SECTION 2] HÀM BỔ TRỢ (HELPERS)
 # ==================================================================================================
 
+# ==================================================================================================
+# HÀM TÌM KIẾM .NET SDK THÔNG MINH
+# ==================================================================================================
+function Get-SmartDotnetPath {
+    Write-Host "🔍 Đang kiểm tra SDK .NET cài sẵn (dotnet trong PATH)..." -ForegroundColor Cyan
+
+    # 1. Ưu tiên dotnet hệ thống có SDK
+    if (Get-Command "dotnet" -ErrorAction SilentlyContinue) {
+        $sdkCheck = & dotnet --list-sdks 2>&1
+        if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
+            Write-Host "✅ Sử dụng dotnet từ PATH (có SDK)." -ForegroundColor Green
+            return (Get-Command dotnet).Source
+        } else {
+            Write-Host "⚠️ dotnet trong PATH không có SDK, bỏ qua." -ForegroundColor Yellow
+        }
+    }
+
+    Write-Host "⚙️ Đang quét nhanh thư mục dự án..." -ForegroundColor Cyan
+
+    # 2. Quét nhanh thư mục chứa script và thư mục hiện tại (độ sâu 4)
+    $quickPaths = @($PSScriptRoot, (Get-Location).Path)
+    foreach ($qPath in $quickPaths) {
+        $sdks = @(Get-ChildItem -Path $qPath -Directory -Recurse -Depth 4 -Filter '.sdk' -ErrorAction SilentlyContinue)
+        foreach ($sdkDir in $sdks) {
+            $dotnetExe = Join-Path $sdkDir.FullName "dotnet.exe"
+            if (Test-Path $dotnetExe) {
+                $sdkCheck = & $dotnetExe --list-sdks 2>&1
+                if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
+                    Write-Host "✅ Đã tìm thấy SDK local gần dự án: $($sdkDir.FullName)" -ForegroundColor Green
+                    $env:DOTNET_ROOT = $sdkDir.FullName
+                    $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $sdkDir.FullName
+                    $env:DOTNET_MULTILEVEL_LOOKUP = "0"
+                    $env:PATH = "$($sdkDir.FullName);" + $env:PATH
+                    return $dotnetExe
+                }
+            }
+        }
+    }
+
+    Write-Host "⚙️ Đang quét toàn bộ ổ đĩa (cả USB nếu có) tìm SDK local..." -ForegroundColor Cyan
+
+    # 3. Lấy danh sách ổ cứng cố định và USB
+    $allDrives = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=2 or DriveType=3" | Select-Object -ExpandProperty DeviceID)
+    if ($null -eq $allDrives -or $allDrives.Count -eq 0) {
+        $allDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $null -ne $_.Used } | Select-Object -ExpandProperty Root
+    }
+
+    foreach ($drive in $allDrives) {
+        $root = $drive + "\"
+        Write-Host "   Đang quét ổ $root ..." -ForegroundColor DarkGray
+        try {
+            # Tìm tất cả thư mục .sdk không giới hạn độ sâu, dùng -Filter để tối ưu
+            $sdks = @(Get-ChildItem -Path $root -Directory -Recurse -Filter '.sdk' -ErrorAction SilentlyContinue)
+            foreach ($sdkDir in $sdks) {
+                $dotnetExe = Join-Path $sdkDir.FullName "dotnet.exe"
+                if (Test-Path $dotnetExe) {
+                    $sdkCheck = & $dotnetExe --list-sdks 2>&1
+                    if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
+                        Write-Host "✅ Đã tìm thấy SDK local tại: $($sdkDir.FullName)" -ForegroundColor Green
+                        $env:DOTNET_ROOT = $sdkDir.FullName
+                        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $sdkDir.FullName
+                        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
+                        $env:PATH = "$($sdkDir.FullName);" + $env:PATH
+                        return $dotnetExe
+                    }
+                }
+            }
+        } catch {
+            # ổ đĩa không truy cập được
+        }
+    }
+
+    Write-Host "❌ Không tìm thấy bất kỳ SDK .NET nào." -ForegroundColor Red
+    return $null
+}
+
+# Khởi tạo biến $dotnetCmd để sử dụng cho toàn bộ quá trình build phía sau
+$global:dotnetCmd = Get-SmartDotnetPath
+if (-not $global:dotnetCmd) {
+    Write-Host "❌ Không có SDK .NET, không thể tiếp tục." -ForegroundColor Red
+    exit 1
+}
+
 # 1. Hàm ghi log
 function Write-Log([string]$msg, [string]$color = "White") {
     $time = Get-Date -Format "HH:mm:ss"
@@ -53,10 +136,13 @@ function Get-AndroidSdkPath {
     Write-Log "🔍 Đang săn tìm Android SDK..." $C_Gray
     $searchList = @(
         (Join-Path $PSScriptRoot ".sdk\android-sdk"),
+        (Join-Path $PSScriptRoot "..\.sdk\android-sdk"),
+        (Join-Path (Get-Location) ".sdk\android-sdk"),
         $env:ANDROID_HOME,
         $env:ANDROID_SDK_ROOT,
         (Join-Path $env:LOCALAPPDATA "Android\Sdk"),
-        "C:\Program Files (x86)\Android\android-sdk"
+        "C:\Program Files (x86)\Android\android-sdk",
+        "C:\Android\android-sdk"
     )
     foreach ($p in $searchList) {
         if ($p -and (Test-Path $p)) {
@@ -65,47 +151,67 @@ function Get-AndroidSdkPath {
             return Get-SafePath $found
         }
     }
+
+    # Nếu chưa tìm thấy, quét các ổ cứng cố định với độ sâu 3, tìm thư mục có tên "android-sdk" hoặc chứa "platform-tools\adb.exe"
+    Write-Log "⚙️ Đang quét ổ cứng tìm Android SDK..." $C_Gray
+    $fixedDrives = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object -ExpandProperty DeviceID
+    foreach ($drive in $fixedDrives) {
+        $root = $drive + "\"
+        $androidDirs = Get-ChildItem -Path $root -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Name -eq "android-sdk" -or (Test-Path (Join-Path $_.FullName "platform-tools\adb.exe")) }
+        if ($androidDirs) {
+            $found = $androidDirs[0].FullName
+            Write-Log "✅ Đã thấy Android SDK: $found" $C_Succ
+            return Get-SafePath $found
+        }
+    }
+
+    # Không tìm thấy
+    Write-Log "❌ Không tìm thấy Android SDK." $C_Err
     return $null
 }
 
 # 4. Tìm Java JDK
 function Get-JavaSdkPath {
-    $localJdk = Join-Path $PSScriptRoot ".sdk\jdk"
-    if (Test-Path (Join-Path $localJdk "bin\javac.exe")) { return Get-SafePath $localJdk }
-    if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME "bin\javac.exe"))) { return Get-SafePath $env:JAVA_HOME }
-    return $null
-}
-
-# 5. Phân giải Dotnet Exe (System > Local .sdk)
-function Resolve-DotnetExe {
-    Write-Log "🔍 Đang kiểm tra .NET SDK..." $C_Gray
-    # Ưu tiên 1: System
-    $sysDotnet = Get-Command dotnet -ErrorAction SilentlyContinue
-    if ($sysDotnet) {
-        $sdks = & $sysDotnet.Source --list-sdks 2>&1
-        if ($LASTEXITCODE -eq 0 -and $sdks) {
-            Write-Log "🚀 Sử dụng .NET SDK hệ thống." $C_Info
-            return $sysDotnet.Source
+    # 1. Kiểm tra các vị trí ưu tiên (gần script, biến môi trường)
+    $searchList = @(
+        (Join-Path $PSScriptRoot ".sdk\jdk"),
+        (Join-Path $PSScriptRoot "..\.sdk\jdk"),
+        (Join-Path $PSScriptRoot "..\..\..\.sdk\jdk"),
+        (Join-Path (Get-Location) ".sdk\jdk"),
+        $env:JAVA_HOME
+    )
+    foreach ($p in $searchList) {
+        if ($p -and (Test-Path (Join-Path $p "bin\javac.exe"))) {
+            Write-Log "✅ Đã tìm thấy Java SDK: $p" $C_Succ
+            return Get-SafePath $p
         }
     }
-    # Ưu tiên 2: Local
-    $localDir = Join-Path $PSScriptRoot ".sdk"
-    $localExe = Join-Path $localDir "dotnet.exe"
-    if (Test-Path $localExe) {
-        $sdkRoot = Get-SafePath $localDir
-        $exePath = Join-Path $sdkRoot (Split-Path $localExe -Leaf)
-        Write-Log "📦 Kích hoạt SDK Local tại: $sdkRoot" $C_Warn
-        $env:DOTNET_ROOT = $sdkRoot
-        ${env:DOTNET_ROOT(x86)} = $sdkRoot
-        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
-        $env:PATH = "$sdkRoot$([IO.Path]::PathSeparator)$env:PATH"
-        return $exePath
+
+    # 2. Quét các ổ đĩa cục bộ tìm thư mục chứa `bin\javac.exe` (độ sâu 5, ưu tiên thư mục tên jdk)
+    Write-Log "⚙️ Đang quét ổ đĩa tìm Java SDK..." $C_Gray
+    $fixedDrives = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object -ExpandProperty DeviceID
+    foreach ($drive in $fixedDrives) {
+        $root = $drive + "\"
+        # Tìm `javac.exe` với độ sâu 5 (đủ cho `.sdk/jdk/bin` hoặc `Common/.sdk/jdk/bin`)
+        $javacCandidates = @(Get-ChildItem -Path $root -Filter "javac.exe" -Recurse -Depth 5 -ErrorAction SilentlyContinue)
+        foreach ($javac in $javacCandidates) {
+            $binDir = $javac.Directory
+            $jdkDir = $binDir.Parent.FullName
+            # Kiểm tra cấu trúc thư mục `jdk/bin/javac.exe` và có `java.exe`
+            if ((Test-Path (Join-Path $jdkDir "bin\javac.exe")) -and (Test-Path (Join-Path $jdkDir "bin\java.exe"))) {
+                Write-Log "✅ Đã tìm thấy Java SDK: $jdkDir" $C_Succ
+                return Get-SafePath $jdkDir
+            }
+        }
     }
-    Write-Log "❌ Không tìm thấy .NET SDK!" $C_Err
+
+    # 3. Không tìm thấy
+    Write-Log "❌ Không tìm thấy Java JDK. Hãy đặt JDK vào thư mục '.sdk\jdk' gần script hoặc cài đặt JDK." $C_Err
     return $null
 }
 
-# 6. Đọc TFMs
+# 5. Đọc TFMs
 function Get-CsprojTfms {
     param([string]$projPath)
     if (-not (Test-Path $projPath)) { return @() }
@@ -120,7 +226,7 @@ function Get-CsprojTfms {
     return $tfms | Sort-Object -Unique
 }
 
-# 7. Tìm project MAUI
+# 6. Tìm project MAUI
 function Get-MauiCsproj {
     Write-Log "📂 Đang quét tìm file project..." $C_Gray
     $files = Get-ChildItem . -Recurse -Filter *.csproj -File |
@@ -138,7 +244,7 @@ function Get-MauiCsproj {
     return $null
 }
 
-# 8. Quản lý Keystore
+# 7. Quản lý Keystore
 function Find-AndroidKeystore([string]$projectDir) {
     Write-Log "🔐 Đang tìm kiếm Keystore để ký..." $C_Gray
     $propsFile = Join-Path $projectDir 'signing.properties'
@@ -304,19 +410,24 @@ function Invoke-DeviceDebug {
     $confirm = Read-Host "`n❓ Bạn có muốn bắt đầu gỡ lỗi trên thiết bị này không? (Y/N)"
     if ($confirm -ne 'y' -and $confirm -ne 'Y') { return }
     
-    $dotnet = Resolve-DotnetExe
     $androidSdk = Get-AndroidSdkPath
     $javaSdk = Get-JavaSdkPath
     Write-Log "🚀 Đang triển khai app lên thiết bị..." $C_Succ
-    & $dotnet build -t:Run -f $Tfm `
+    & $global:dotnetCmd build $Project -t:Run -f $Tfm `
         "-p:AndroidSdkDirectory=$androidSdk" `
         "-p:JavaSdkDirectory=$javaSdk" `
         (Get-SafePath $Project)
 }
 
 function Invoke-AutoDeploy {
-    param([string]$ApkPath, [string]$AppId)
-    $sdk = Get-AndroidSdkPath
+    param(
+        [string]$ApkPath, 
+        [string]$AppId,
+        [string]$AndroidSdkPath
+    )
+
+    $sdk = $AndroidSdkPath
+    if (-not $sdk) { $sdk = Get-AndroidSdkPath }  # fallback nếu không truyền
     $adb = if ($sdk) { Join-Path $sdk "platform-tools\adb.exe" } else { "adb" }
     if (-not (Test-Path $adb) -and $adb -ne "adb") { return }
     
@@ -355,50 +466,90 @@ function Invoke-AutoDeploy {
 
 function ProcessBuildAndShow {
     param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
-    
-    # 🔥 SỬ DỤNG HÀM CLEAN TỐI ƯU
+
     $projectDir = Split-Path $Project -Parent
     Invoke-SmartClean -ProjectDir $projectDir
     Start-Sleep -Seconds 1
 
     # Làm sạch folder output
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
-    if (Test-Path $rawOut) { Remove-Item $rawOut -Recurse -Force -EA SilentlyContinue }
+    if (Test-Path $rawOut) { Remove-Item $rawOut -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force -Path $rawOut | Out-Null
 
-    $safeProj = Get-SafePath $Project
-    $safeOut  = Get-SafePath $rawOut
-    $dotnet = Resolve-DotnetExe
-    if (-not $dotnet) { Write-Log "❌ Không tìm thấy SDK .NET!" $C_Err; exit 1 }
+    # Đảm bảo dùng đường dẫn tuyệt đối của dotnet.exe
+    $dotnetExe = $global:dotnetCmd
+    if (-not $dotnetExe) {
+        Write-Log "❌ KHÔNG TÌM THẤY SDK .NET!" $C_Err
+        exit 1
+    }
 
+    Write-Log "🐞 Sử dụng dotnet: $dotnetExe" $C_Gray
+    Write-Log "🐞 TFM: $Tfm | Output: $rawOut" $C_Gray
+
+    # Xác định nền tảng trước để dùng cho kiểm tra
+    $isAndroidPlatform = $Tfm -match 'android'
+    $isApplePlatform   = $Tfm -match '(ios|maccatalyst)'
+    $isWindowsPlatform = $Tfm -match 'windows'
+    $isWebPlatform     = -not ($isAndroidPlatform -or $isApplePlatform -or $isWindowsPlatform)
+
+    # Tìm Android SDK và Java SDK
     $androidSdk = Get-AndroidSdkPath
     $javaSdk    = Get-JavaSdkPath
 
-    # Build params
+    # Kiểm tra nếu build Android mà không có Android SDK thì dừng sớm
+    if ($isAndroidPlatform -and (-not $androidSdk)) {
+        Write-Log "❌ Không tìm thấy Android SDK. Hãy đặt SDK vào thư mục '.sdk\android-sdk' gần script hoặc cài Android SDK." $C_Err
+        exit 1
+    }
+
+    if ($isAndroidPlatform -and (-not $javaSdk)) {
+        Write-Log "❌ Không tìm thấy Java JDK. Hãy đặt JDK vào thư mục '.sdk\jdk' gần script hoặc cài đặt JDK." $C_Err
+        exit 1
+    }
+
+    # Escape đường dẫn output (an toàn với khoảng trắng)
     $params = @(
-        "publish", $safeProj,
+        "publish", $Project,
         "-f", $Tfm,
         "-c", "Release",
-        "--output", $safeOut,
-        "-r", "win-x64",
-        "--self-contained", "true",
-        "-p:PublishSingleFile=true",
-        "-p:IncludeAllContentForSelfExtract=true",
-        "-p:UseMaui=true",
-        "-p:SingleProject=true",
-        "-p:BuildInParallel=true",
-        "-m"
+        "--output", $rawOut
     )
-    
-    if ($Tfm -match "android") {
+
+    # Thêm tham số riêng cho từng nền tảng
+    if ($isAndroidPlatform -or $isApplePlatform) {
+        if ($isAndroidPlatform) {
+            $params += @(
+                "-p:AndroidUseSharedRuntime=false",
+                "-p:EmbedAssembliesIntoApk=true"
+            )
+        }
+    }
+    elseif ($isWindowsPlatform) {
+        $params += @("--self-contained", "true")
+    }
+    elseif ($isWebPlatform) {
         $params += @(
-            "-p:AndroidUseSharedRuntime=false",
-            "-p:EmbedAssembliesIntoApk=true"
+            "-r", "win-x64",
+            "--self-contained", "true",
+            "-p:PublishSingleFile=true",
+            "-p:IncludeAllContentForSelfExtract=true"
         )
     }
-    
+
+    $csprojContent = Get-Content $Project -Raw -EA SilentlyContinue
+    if ($csprojContent -match '<UseMaui>\s*true\s*</UseMaui>') {
+        $params += @(
+            "-p:UseMaui=true",
+            "-p:SingleProject=true"
+        )
+    }
+    $params += @("-p:BuildInParallel=true", "-m")
+    $params += "-v", "normal"
+    # $params += "-v", "detailed"
+
     if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
     if ($javaSdk)    { $params += "-p:JavaSdkDirectory=$javaSdk" }
+
     if ($BuildArgs)  { $params += $BuildArgs }
 
     Write-Host ("`n" + "┌" + ("─" * 58) + "┐") -ForegroundColor $C_Gray
@@ -406,23 +557,33 @@ function ProcessBuildAndShow {
     Write-Host ("└" + ("─" * 58) + "┘") -ForegroundColor $C_Gray
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    & $dotnet $params
-    if ($LASTEXITCODE -ne 0) { Write-Log "❌ BUILD THẤT BẠI (Mã lỗi: $LASTEXITCODE)" $C_Err; exit 1 }
+    $output = & $dotnetExe $params 2>&1 | ForEach-Object {
+        $line = $_ 
+        Write-Host "    $line" -ForegroundColor DarkGray
+        $line
+    }
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -ne 0) {
+        Write-Log "❌ BUILD THẤT BẠI (Mã lỗi: $exitCode)" $C_Err
+        Write-Host "--- Chi tiết lỗi từ dotnet ---" -ForegroundColor $C_Err
+        Write-Host $output -ForegroundColor $C_Err
+        Write-Host "-----------------------------" -ForegroundColor $C_Err
+        exit 1
+    }
     $sw.Stop()
-    
+
     Write-Log "✅ THÀNH CÔNG TRONG $($sw.Elapsed.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
 
     # Auto Deploy
-    if ($Tfm -match "android" -and $OutputSubDir -eq "apk") {
+    if ($isAndroidPlatform -and $OutputSubDir -eq "apk") {
         $apkFile = Get-ChildItem $rawOut -Filter "*Signed*.apk" -Recurse | Select-Object -First 1
         if (-not $apkFile) { $apkFile = Get-ChildItem $rawOut -Filter "*.apk" -Recurse | Select-Object -First 1 }
-        
         if ($apkFile) {
-            $csprojContent = Get-Content $safeProj -Raw -EA SilentlyContinue
-            $appIdMatch    = [regex]::Match($csprojContent, '<ApplicationId>([^<]+)</ApplicationId>')
-            $appId         = if ($appIdMatch.Success) { $appIdMatch.Groups[1].Value.Trim() } else { "com.companyname.app" }
+            $appIdMatch = [regex]::Match($csprojContent, '<ApplicationId>([^<]+)</ApplicationId>')
+            $appId      = if ($appIdMatch.Success) { $appIdMatch.Groups[1].Value.Trim() } else { "com.companyname.app" }
             Write-Host "`n" -NoNewline
-            Invoke-AutoDeploy -ApkPath $apkFile.FullName -AppId $appId
+            Invoke-AutoDeploy -ApkPath $apkFile.FullName -AppId $appId -AndroidSdkPath $androidSdk
         } else {
             Write-Log "⚠️ Không tìm thấy APK để deploy." $C_Warn
             if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
@@ -448,21 +609,32 @@ function Invoke-GitHubBuild([string]$PackageFormat) {
 # ==================================================================================================
 # [SECTION 4] MAIN FLOW
 # ==================================================================================================
-# --------------------------------------------------------------------------------------------------
-# [PHẦN MỚI] HÀM TỰ ĐỘNG NHẬN DIỆN .NET SDK MỚI NHẤT TRÊN MÁY
-# --------------------------------------------------------------------------------------------------
+
+# ==================================================================================================
+# HÀM LẤY TARGET FRAMEWORK (TFM) CAO NHẤT
+# ==================================================================================================
 function Get-LatestInstalledTfm {
-    # Lấy danh sách SDK từ hệ thống
-    $sdks = & dotnet --list-sdks 2>$null
-    if ($sdks) {
-        # Lấy dòng cuối cùng (phiên bản cao nhất), ví dụ: "10.0.100 [C:\...]"
-        $latestLine = $sdks[-1]
-        if ($latestLine -match '^(\d+)\.(\d+)') {
-            # Trả về định dạng net10.0 hoặc net9.0
-            return "net$($Matches[1]).$($Matches[2])"
+    Write-Host "🔍 Đang xác định Target Framework (TFM) cao nhất..." -ForegroundColor DarkGray
+    try {
+        # Sử dụng $global:dotnetCmd để đảm bảo đọc đúng SDK Local hoặc System
+        $sdks = & $global:dotnetCmd --list-sdks
+        if ($sdks) {
+            # Lấy dòng cuối cùng (list-sdks thường sắp xếp từ thấp đến cao)
+            $latest = $sdks[-1] 
+            
+            # Cắt lấy phần major.minor version (vd: "10.0.100 [C:\...]" -> "10.0")
+            if ($latest -match "^(\d+\.\d+)") {
+                $tfm = "net$($matches[1])"
+                Write-Host "✅ TFM tự động chọn: $tfm" -ForegroundColor Green
+                return $tfm
+            }
         }
+    } catch {
+        Write-Host "⚠️ Cảnh báo: Không thể đọc danh sách SDK. Sử dụng mặc định." -ForegroundColor Yellow
     }
-    return "net8.0" # Giá trị dự phòng (Fallback)
+    
+    # Fallback an toàn (Vì dự án AI Orchestrator của bạn đang chạy .NET 10)
+    return "net10.0" 
 }
 
 # Khởi tạo phiên bản TFM hiện tại của máy
@@ -478,9 +650,8 @@ Write-Host @"
 "@ -ForegroundColor $C_Header
 
 # 1. Quản lý global.json và SDK
-$dotnetExe = Resolve-DotnetExe
-if ($dotnetExe) {
-    $sdks = & $dotnetExe --list-sdks
+if ($global:dotnetCmd) { 
+    $sdks = & $global:dotnetCmd --list-sdks
     if ($sdks) {
         $latestSdk = ($sdks[-1] -split ' ')[0]
         $gJsonPath = Join-Path $PSScriptRoot "global.json"
@@ -582,19 +753,22 @@ switch ($choice) {
     }
     '7' {
         if ($isWebProject) {
-            # 1. Thực hiện Build
-            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web"
+            # 1. Thực hiện Build - Tắt SingleFile để tránh lỗi manifest trên Web
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web" -BuildArgs @(
+                "-p:PublishSingleFile=false"
+            )
             
-            # 2. Xác định đường dẫn file EXE sau khi build
-            $exePath = Join-Path $PSScriptRoot "publish-output\web\MultiAiAgent.exe"
+            # 2. Tự động lấy tên file EXE dựa theo tên Project (Không fix cứng MultiAiAgent nữa)
+            $exeName = [System.IO.Path]::GetFileNameWithoutExtension($projPath) + ".exe"
+            $webOutDir = Join-Path $PSScriptRoot "publish-output\web"
+            $exePath = Join-Path $webOutDir $exeName
             $url = "http://localhost:5000"
 
             if (Test-Path $exePath) {
                 Write-Log "🚀 Đang khởi chạy ứng dụng ngầm tại $url..." "Green"
                 
-                # 3. Chạy EXE ngầm (WindowStyle Hidden)
-                # Dùng Start-Process để khi tắt Terminal hoặc tắt trình duyệt, bạn có thể quản lý riêng
-                $appProcess = Start-Process $exePath -ArgumentList "--urls=$url" -WindowStyle Hidden -PassThru
+                # 3. Chạy EXE ngầm (QUAN TRỌNG: Phải có -WorkingDirectory để Blazor nhận diện wwwroot và CSS)
+                $appProcess = Start-Process -FilePath $exePath -ArgumentList "--urls=$url" -WorkingDirectory $webOutDir -WindowStyle Hidden -PassThru
                 
                 # 4. Đợi 1 chút để server khởi động rồi tự mở trang web
                 Start-Sleep -Seconds 2
@@ -602,10 +776,12 @@ switch ($choice) {
                 
                 Write-Log "✅ Đã xong! App đang chạy ẩn. Nhấn phím bất kỳ để tắt cả App và Web." "Yellow"
                 
-                # 5. Cơ chế tự tắt: Đợi người dùng nhấn phím rồi kill process
+                # 5. Cơ chế tự tắt
                 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
                 Stop-Process -Id $appProcess.Id -Force
                 Write-Log "🛑 Đã đóng ứng dụng ngầm." "Red"
+            } else {
+                Write-Log "❌ Không tìm thấy file $exeName tại $webOutDir!" "Red"
             }
         }
     }
