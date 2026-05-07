@@ -753,12 +753,9 @@ switch ($choice) {
     }
     '7' {
         if ($isWebProject) {
-            # 1. Thực hiện Build - Tắt SingleFile để tránh lỗi manifest trên Web
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web" -BuildArgs @(
                 "-p:PublishSingleFile=false"
             )
-            
-            # 2. Tự động lấy tên file EXE dựa theo tên Project (Không fix cứng MultiAiAgent nữa)
             $exeName = [System.IO.Path]::GetFileNameWithoutExtension($projPath) + ".exe"
             $webOutDir = Join-Path $PSScriptRoot "publish-output\web"
             $exePath = Join-Path $webOutDir $exeName
@@ -766,20 +763,13 @@ switch ($choice) {
 
             if (Test-Path $exePath) {
                 Write-Log "🚀 Đang khởi chạy ứng dụng ngầm tại $url..." "Green"
-                
-                # 3. Chạy EXE ngầm (QUAN TRỌNG: Phải có -WorkingDirectory để Blazor nhận diện wwwroot và CSS)
                 $appProcess = Start-Process -FilePath $exePath -ArgumentList "--urls=$url" -WorkingDirectory $webOutDir -WindowStyle Hidden -PassThru
-                
-                # 4. Đợi 1 chút để server khởi động rồi tự mở trang web
                 Start-Sleep -Seconds 2
                 Start-Process $url
-                
-                Write-Log "✅ Đã xong! App đang chạy ẩn. Nhấn phím bất kỳ để tắt cả App và Web." "Yellow"
-                
-                # 5. Cơ chế tự tắt
-                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-                Stop-Process -Id $appProcess.Id -Force
-                Write-Log "🛑 Đã đóng ứng dụng ngầm." "Red"
+                Write-Log "✅ Đã xong! App đang chạy độc lập. Script sẽ tự thoát." "Yellow"
+                Write-Log "💡 Cách tắt app:" "Cyan"
+                Write-Log "   1. Nhấn vào icon Tray trên thanh tác vụ Windows -> Exit" "Cyan"
+                Write-Log "   2. Hoặc đóng toàn bộ cửa sổ ứng dụng/trình duyệt." "Cyan"
             } else {
                 Write-Log "❌ Không tìm thấy file $exeName tại $webOutDir!" "Red"
             }
