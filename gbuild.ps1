@@ -1,9 +1,20 @@
 #!/usr/bin/env pwsh
 # ==================================================================================================
 #  FILE NAME: gbuild.ps1
-#  VERSION: 4.1.0 (OPTIMIZED & CLEAN)
+#  VERSION: 4.2.0 (PATH SAFETY: Unicode + Spaces Hardened)
 #  DESCRIPTION: Build MAUI locally + Deploy + GitHub Actions.
-#  FIX: Consolidated clean functions, removed redundant logic, optimized speed.
+#  CHANGES v4.2.0:
+#    [FIX] UTF-8 console encoding toàn cục (chcp 65001 + OutputEncoding) để mọi tool
+#          nhận đúng Unicode argument.
+#    [FIX] Get-SafePath nâng cấp 3 tầng: kernel32 GetShortPathNameW → FSO → fallback
+#          (không còn phụ thuộc FSO-only vốn thất bại khi 8.3 names bị tắt).
+#    [FIX] Di chuyển Get-SafePath lên TRƯỚC Get-SmartDotnetPath để hàm đó dùng được.
+#    [FIX] $env:PATH, DOTNET_ROOT, ANDROID_HOME, JAVA_HOME luôn nhận short/safe path.
+#    [FIX] Start-Process explorer.exe quote đúng path có khoảng trắng.
+#    [FIX] Invoke-DeviceDebug bỏ tham số Project bị truyền 2 lần (bug cũ).
+#    [FIX] Keystore path trong signing args đi qua Get-SafePath.
+#    [FIX] MSBuild -p: props cho Android/Java SDK dùng safe path.
+#    [FIX] robocopy sử dụng & operator để PS tự quote path đúng cách.
 # ==================================================================================================
 # --------------------------------------------------------------------------------------------------
 # [SECTION 0] KHAI BÁO THAM SỐ
@@ -24,6 +35,93 @@ $Global:StartTime = Get-Date
 
 # Bảng màu log
 $C_Header = "Magenta"; $C_Info = "Cyan"; $C_Warn = "Yellow"; $C_Err = "Red"; $C_Succ = "Green"; $C_Gray = "DarkGray"
+
+# --------------------------------------------------------------------------------------------------
+# [SECTION 1.5] UTF-8 & PATH SAFETY SETUP — PHẢI ĐẶT TRƯỚC MỌI HÀM KHÁC
+# --------------------------------------------------------------------------------------------------
+
+# [FIX v4.2.0] Thiết lập UTF-8 toàn cục để mọi external process (dotnet, adb, git...)
+# nhận và xuất Unicode đúng. Thiếu bước này thì mọi trick path đều vô nghĩa.
+if ($IsWindows) {
+    try { & chcp 65001 | Out-Null } catch {}
+}
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+
+# [FIX v4.2.0] Get-SafePath — 3 tầng bảo vệ
+#   Tầng 1: kernel32 GetShortPathNameW (P/Invoke trực tiếp, không qua COM)
+#            → xử lý được cả spaces lẫn Unicode nếu 8.3 names còn bật
+#   Tầng 2: FSO ShortPath (fallback COM legacy)
+#   Tầng 3: Trả về path tuyệt đối chuẩn hóa, dựa vào UTF-8 encoding đã set
+function Get-SafePath {
+    param([string]$path)
+
+    if ([string]::IsNullOrWhiteSpace($path)) { return $path }
+
+    # Trên non-Windows (macOS/Linux): resolve thành absolute path là đủ
+    if (-not $IsWindows) {
+        try { return (Resolve-Path -LiteralPath $path -ErrorAction Stop).ProviderPath }
+        catch { return $path }
+    }
+
+    # Path không tồn tại → trả về nguyên (có thể là path sẽ được tạo sau)
+    if (-not (Test-Path -LiteralPath $path -ErrorAction SilentlyContinue)) { return $path }
+
+    # Normalize về absolute path (loại bỏ .., symlink v.v.)
+    $absPath = try {
+        (Get-Item -LiteralPath $path -ErrorAction Stop).FullName
+    } catch { $path }
+    if ([string]::IsNullOrWhiteSpace($absPath)) { return $path }
+
+    # Nếu path đã an toàn (không có space, không có ký tự non-ASCII) → dùng luôn
+    if ($absPath -notmatch '[\s\u0080-\uFFFF]') { return $absPath }
+
+    # ── TẦNG 1: kernel32 GetShortPathNameW (P/Invoke) ─────────────────────────
+    try {
+        # Đăng ký type một lần duy nhất trong session (idempotent)
+        if (-not ('GBuild.PathHelper' -as [type])) {
+            Add-Type -Namespace 'GBuild' -Name 'PathHelper' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport(
+    "kernel32.dll",
+    CharSet     = System.Runtime.InteropServices.CharSet.Unicode,
+    SetLastError= true)]
+public static extern uint GetShortPathName(
+    string lpszLongPath,
+    System.Text.StringBuilder lpszShortPath,
+    uint cchBuffer);
+'@ -ErrorAction Stop
+        }
+        $sb  = [System.Text.StringBuilder]::new(32767)
+        $len = [GBuild.PathHelper]::GetShortPathName($absPath, $sb, 32767)
+        if ($len -gt 0 -and $len -lt 32767) {
+            $shortPath = $sb.ToString(0, [int]$len)
+            # Chỉ dùng nếu kết quả thực sự loại bỏ được ký tự nguy hiểm
+            if ($shortPath -and ($shortPath -notmatch '[\s\u0080-\uFFFF]')) {
+                return $shortPath
+            }
+        }
+    } catch {}
+
+    # ── TẦNG 2: FSO ShortPath (COM, legacy fallback) ──────────────────────────
+    try {
+        $fso       = New-Object -ComObject Scripting.FileSystemObject -ErrorAction Stop
+        $shortPath = if (Test-Path -LiteralPath $absPath -PathType Container) {
+            $fso.GetFolder($absPath).ShortPath
+        } else {
+            $fso.GetFile($absPath).ShortPath
+        }
+        if ($shortPath -and ($shortPath -notmatch '[\s\u0080-\uFFFF]')) {
+            return $shortPath
+        }
+    } catch {}
+
+    # ── TẦNG 3: Trả về absolute path chuẩn hóa ────────────────────────────────
+    # Khi 8.3 names bị tắt hoàn toàn, không còn cách tạo short path.
+    # Script đã set chcp 65001 + UTF-8 encoding ở trên nên external tools
+    # nhận Unicode args qua W-API của PowerShell & operator.
+    return $absPath
+}
 
 # ==================================================================================================
 # [SECTION 2] HÀM BỔ TRỢ (HELPERS)
@@ -58,11 +156,14 @@ function Get-SmartDotnetPath {
                 $sdkCheck = & $dotnetExe --list-sdks 2>&1
                 if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
                     Write-Host "✅ Đã tìm thấy SDK local gần dự án: $($sdkDir.FullName)" -ForegroundColor Green
-                    $env:DOTNET_ROOT = $sdkDir.FullName
-                    $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $sdkDir.FullName
-                    $env:DOTNET_MULTILEVEL_LOOKUP = "0"
-                    $env:PATH = "$($sdkDir.FullName);" + $env:PATH
-                    return $dotnetExe
+                    # [FIX v4.2.0] Dùng Get-SafePath trước khi set vào env vars
+                    $safeSdkPath = Get-SafePath $sdkDir.FullName
+                    $env:DOTNET_ROOT                           = $safeSdkPath
+                    $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR  = $safeSdkPath
+                    $env:DOTNET_MULTILEVEL_LOOKUP              = "0"
+                    # [FIX v4.2.0] Thêm safe path vào PATH thay vì path gốc
+                    $env:PATH = "$safeSdkPath;" + $env:PATH
+                    return Get-SafePath $dotnetExe
                 }
             }
         }
@@ -88,11 +189,14 @@ function Get-SmartDotnetPath {
                     $sdkCheck = & $dotnetExe --list-sdks 2>&1
                     if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
                         Write-Host "✅ Đã tìm thấy SDK local tại: $($sdkDir.FullName)" -ForegroundColor Green
-                        $env:DOTNET_ROOT = $sdkDir.FullName
-                        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $sdkDir.FullName
-                        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
-                        $env:PATH = "$($sdkDir.FullName);" + $env:PATH
-                        return $dotnetExe
+                        # [FIX v4.2.0] Dùng Get-SafePath trước khi set vào env vars
+                        $safeSdkPath = Get-SafePath $sdkDir.FullName
+                        $env:DOTNET_ROOT                           = $safeSdkPath
+                        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR  = $safeSdkPath
+                        $env:DOTNET_MULTILEVEL_LOOKUP              = "0"
+                        # [FIX v4.2.0] Thêm safe path vào PATH thay vì path gốc
+                        $env:PATH = "$safeSdkPath;" + $env:PATH
+                        return Get-SafePath $dotnetExe
                     }
                 }
             }
@@ -119,19 +223,7 @@ function Write-Log([string]$msg, [string]$color = "White") {
     Write-Host $msg -ForegroundColor $color
 }
 
-# 2. Hàm Resolve đường dẫn tuyệt đối (Xử lý khoảng trắng)
-function Get-SafePath {
-    param([string]$path)
-    if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path $path)) { return $path }
-    if (-not $IsWindows) { return $path }
-    try {
-        $fso = New-Object -ComObject Scripting.FileSystemObject
-        if (Test-Path $path -PathType Container) { return $fso.GetFolder($path).ShortPath }
-        return $fso.GetFile($path).ShortPath
-    } catch { return $path }
-}
-
-# 3. Tìm Android SDK
+# 2. Tìm Android SDK
 function Get-AndroidSdkPath {
     Write-Log "🔍 Đang săn tìm Android SDK..." $C_Gray
     $searchList = @(
@@ -146,13 +238,17 @@ function Get-AndroidSdkPath {
     )
     foreach ($p in $searchList) {
         if ($p -and (Test-Path $p)) {
-            $found = (Get-Item $p).FullName.TrimEnd('\')
+            $found = (Get-Item -LiteralPath $p).FullName.TrimEnd('\')
             Write-Log "✅ Đã thấy Android SDK: $found" $C_Succ
-            return Get-SafePath $found
+            $safePath = Get-SafePath $found
+            # [FIX v4.2.0] Set ANDROID_HOME với safe path để child processes dùng được
+            $env:ANDROID_HOME     = $safePath
+            $env:ANDROID_SDK_ROOT = $safePath
+            return $safePath
         }
     }
 
-    # Nếu chưa tìm thấy, quét các ổ cứng cố định với độ sâu 3, tìm thư mục có tên "android-sdk" hoặc chứa "platform-tools\adb.exe"
+    # Nếu chưa tìm thấy, quét các ổ cứng cố định với độ sâu 3
     Write-Log "⚙️ Đang quét ổ cứng tìm Android SDK..." $C_Gray
     $fixedDrives = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object -ExpandProperty DeviceID
     foreach ($drive in $fixedDrives) {
@@ -162,16 +258,18 @@ function Get-AndroidSdkPath {
         if ($androidDirs) {
             $found = $androidDirs[0].FullName
             Write-Log "✅ Đã thấy Android SDK: $found" $C_Succ
-            return Get-SafePath $found
+            $safePath = Get-SafePath $found
+            $env:ANDROID_HOME     = $safePath
+            $env:ANDROID_SDK_ROOT = $safePath
+            return $safePath
         }
     }
 
-    # Không tìm thấy
     Write-Log "❌ Không tìm thấy Android SDK." $C_Err
     return $null
 }
 
-# 4. Tìm Java JDK
+# 3. Tìm Java JDK
 function Get-JavaSdkPath {
     # 1. Kiểm tra các vị trí ưu tiên (gần script, biến môi trường)
     $searchList = @(
@@ -184,11 +282,14 @@ function Get-JavaSdkPath {
     foreach ($p in $searchList) {
         if ($p -and (Test-Path (Join-Path $p "bin\javac.exe"))) {
             Write-Log "✅ Đã tìm thấy Java SDK: $p" $C_Succ
-            return Get-SafePath $p
+            $safePath = Get-SafePath $p
+            # [FIX v4.2.0] Set JAVA_HOME với safe path
+            $env:JAVA_HOME = $safePath
+            return $safePath
         }
     }
 
-    # 2. Quét các ổ đĩa cục bộ tìm thư mục chứa `bin\javac.exe` (độ sâu 5, ưu tiên thư mục tên jdk)
+    # 2. Quét các ổ đĩa cục bộ tìm thư mục chứa `bin\javac.exe` (độ sâu 5)
     Write-Log "⚙️ Đang quét ổ đĩa tìm Java SDK..." $C_Gray
     $fixedDrives = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object -ExpandProperty DeviceID
     foreach ($drive in $fixedDrives) {
@@ -201,7 +302,9 @@ function Get-JavaSdkPath {
             # Kiểm tra cấu trúc thư mục `jdk/bin/javac.exe` và có `java.exe`
             if ((Test-Path (Join-Path $jdkDir "bin\javac.exe")) -and (Test-Path (Join-Path $jdkDir "bin\java.exe"))) {
                 Write-Log "✅ Đã tìm thấy Java SDK: $jdkDir" $C_Succ
-                return Get-SafePath $jdkDir
+                $safePath = Get-SafePath $jdkDir
+                $env:JAVA_HOME = $safePath
+                return $safePath
             }
         }
     }
@@ -211,7 +314,7 @@ function Get-JavaSdkPath {
     return $null
 }
 
-# 5. Đọc TFMs
+# 4. Đọc TFMs
 function Get-CsprojTfms {
     param([string]$projPath)
     if (-not (Test-Path $projPath)) { return @() }
@@ -226,7 +329,7 @@ function Get-CsprojTfms {
     return $tfms | Sort-Object -Unique
 }
 
-# 6. Tìm project MAUI
+# 5. Tìm project MAUI
 function Get-MauiCsproj {
     Write-Log "📂 Đang quét tìm file project..." $C_Gray
     $files = Get-ChildItem . -Recurse -Filter *.csproj -File |
@@ -244,7 +347,7 @@ function Get-MauiCsproj {
     return $null
 }
 
-# 7. Quản lý Keystore
+# 6. Quản lý Keystore
 function Find-AndroidKeystore([string]$projectDir) {
     Write-Log "🔐 Đang tìm kiếm Keystore để ký..." $C_Gray
     $propsFile = Join-Path $projectDir 'signing.properties'
@@ -309,18 +412,15 @@ function Invoke-KillBuildProcesses {
     }
 
     # 2. Tự động xác định tên file .exe mục tiêu dựa trên cấu trúc thư mục publish
-    # Chúng ta quét trong thư mục publish-output để xem có file .exe nào không
     $outputPath = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
     if (Test-Path $outputPath) {
         $targetExes = Get-ChildItem -Path $outputPath -Filter "*.exe" -Recurse
         
         foreach ($exe in $targetExes) {
-            $exeName = $exe.BaseName # Lấy tên file không có đuôi .exe
+            $exeName = $exe.BaseName
             
-            # Tìm và tắt tất cả tiến trình đang chạy từ chính đường dẫn file này
             Get-Process -Name $exeName -ErrorAction SilentlyContinue | Where-Object {
                 try {
-                    # Kiểm tra xem Path của tiến trình có nằm trong thư mục publish không
                     $_.Path -like "*publish-output*"
                 } catch { $false }
             } | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -332,7 +432,7 @@ function Invoke-KillBuildProcesses {
     Start-Sleep -Milliseconds 800
 }
 
-# Hàm Clean tối ưu (Gộp cả 2 hàm cũ thành 1)
+# Hàm Clean tối ưu
 function Invoke-SmartClean {
     param([string]$ProjectDir)
     Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
@@ -354,13 +454,14 @@ function Invoke-SmartClean {
             $deleted = $false
             while (-not $deleted -and $retryCount -lt $maxRetries) {
                 try {
-                    # Dùng robocopy để xóa nhanh hơn trên Windows
                     if ($IsWindows) {
                         $emptyDir = Join-Path $env:TEMP "empty_dir_$(Get-Random)"
                         New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-                        robocopy $emptyDir $folder /MIR /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
-                        Remove-Item $folder -Force -ErrorAction SilentlyContinue
-                        Remove-Item $emptyDir -Force -ErrorAction SilentlyContinue
+                        # [FIX v4.2.0] Dùng & operator để PowerShell tự xử lý quoting
+                        # cho path có khoảng trắng/unicode (không qua cmd.exe)
+                        & robocopy $emptyDir $folder /MIR /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+                        Remove-Item -LiteralPath $folder  -Force -ErrorAction SilentlyContinue
+                        Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
                     } else {
                         Remove-Item -Path $folder -Recurse -Force -ErrorAction Stop
                     }
@@ -411,12 +512,25 @@ function Invoke-DeviceDebug {
     if ($confirm -ne 'y' -and $confirm -ne 'Y') { return }
     
     $androidSdk = Get-AndroidSdkPath
-    $javaSdk = Get-JavaSdkPath
+    $javaSdk    = Get-JavaSdkPath
+
+    # [FIX v4.2.0] Lấy safe path cho project và các SDK
+    $safeProject    = Get-SafePath $Project
+    $safeAndroidSdk = Get-SafePath $androidSdk
+    $safeJavaSdk    = Get-SafePath $javaSdk
+
     Write-Log "🚀 Đang triển khai app lên thiết bị..." $C_Succ
-    & $global:dotnetCmd build $Project -t:Run -f $Tfm `
-        "-p:AndroidSdkDirectory=$androidSdk" `
-        "-p:JavaSdkDirectory=$javaSdk" `
-        (Get-SafePath $Project)
+
+    # [FIX v4.2.0] Bỏ bug cũ: $Project bị truyền 2 lần (lần 2 là (Get-SafePath $Project))
+    # Dùng array để PS tự quote đúng từng argument
+    $debugParams = @(
+        "build", $safeProject,
+        "-t:Run",
+        "-f", $Tfm,
+        "-p:AndroidSdkDirectory=$safeAndroidSdk",
+        "-p:JavaSdkDirectory=$safeJavaSdk"
+    )
+    & $global:dotnetCmd @debugParams
 }
 
 function Invoke-AutoDeploy {
@@ -432,6 +546,9 @@ function Invoke-AutoDeploy {
     if (-not (Test-Path $adb) -and $adb -ne "adb") { return }
     
     if (-not (Test-Path $ApkPath)) { return }
+
+    # [FIX v4.2.0] Đảm bảo APK path an toàn trước khi truyền cho adb
+    $safeApkPath = Get-SafePath $ApkPath
     
     $rawList = @(& $adb devices 2>&1)
     $allDevices = @($rawList | Where-Object { $_ -match "\tdevice$" } | ForEach-Object { ($_ -split "\t")[0].Trim() })
@@ -446,7 +563,8 @@ function Invoke-AutoDeploy {
     Start-Sleep -Milliseconds 800
     
     Write-Log "📦 Đang cài APK..." $C_Info
-    $installOut = & $adb -s $targetDevice install -r -d -t -g --no-streaming $ApkPath 2>&1
+    # [FIX v4.2.0] Dùng $safeApkPath thay vì $ApkPath trực tiếp
+    $installOut = & $adb -s $targetDevice install -r -d -t -g --no-streaming $safeApkPath 2>&1
     
     if ($installOut -match "Success") {
         Write-Log "✅ Cài đặt thành công!" $C_Succ
@@ -473,7 +591,7 @@ function ProcessBuildAndShow {
 
     # Làm sạch folder output
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
-    if (Test-Path $rawOut) { Remove-Item $rawOut -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $rawOut) { Remove-Item -LiteralPath $rawOut -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force -Path $rawOut | Out-Null
 
     # Đảm bảo dùng đường dẫn tuyệt đối của dotnet.exe
@@ -482,6 +600,10 @@ function ProcessBuildAndShow {
         Write-Log "❌ KHÔNG TÌM THẤY SDK .NET!" $C_Err
         exit 1
     }
+
+    # [FIX v4.2.0] Lấy safe path cho output dir, project và dotnet
+    $safeRawOut = Get-SafePath $rawOut
+    $safeProject = Get-SafePath $Project
 
     Write-Log "🐞 Sử dụng dotnet: $dotnetExe" $C_Gray
     Write-Log "🐞 TFM: $Tfm | Output: $rawOut" $C_Gray
@@ -492,7 +614,7 @@ function ProcessBuildAndShow {
     $isWindowsPlatform = $Tfm -match 'windows'
     $isWebPlatform     = -not ($isAndroidPlatform -or $isApplePlatform -or $isWindowsPlatform)
 
-    # Tìm Android SDK và Java SDK
+    # Tìm Android SDK và Java SDK (trả về safe path)
     $androidSdk = Get-AndroidSdkPath
     $javaSdk    = Get-JavaSdkPath
 
@@ -507,12 +629,13 @@ function ProcessBuildAndShow {
         exit 1
     }
 
-    # Escape đường dẫn output (an toàn với khoảng trắng)
+    # [FIX v4.2.0] Dùng $safeProject và $safeRawOut trong params
+    # PS & operator tự quote từng element của array — không cần ghép chuỗi thủ công
     $params = @(
-        "publish", $Project,
+        "publish", $safeProject,
         "-f", $Tfm,
         "-c", "Release",
-        "--output", $rawOut
+        "--output", $safeRawOut
     )
 
     # Thêm tham số riêng cho từng nền tảng
@@ -547,6 +670,7 @@ function ProcessBuildAndShow {
     $params += "-v", "normal"
     # $params += "-v", "detailed"
 
+    # [FIX v4.2.0] androidSdk và javaSdk đã là safe path (từ Get-AndroidSdkPath / Get-JavaSdkPath)
     if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
     if ($javaSdk)    { $params += "-p:JavaSdkDirectory=$javaSdk" }
 
@@ -557,7 +681,7 @@ function ProcessBuildAndShow {
     Write-Host ("└" + ("─" * 58) + "┘") -ForegroundColor $C_Gray
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $output = & $dotnetExe $params 2>&1 | ForEach-Object {
+    $output = & $dotnetExe @params 2>&1 | ForEach-Object {
         $line = $_ 
         Write-Host "    $line" -ForegroundColor DarkGray
         $line
@@ -586,10 +710,12 @@ function ProcessBuildAndShow {
             Invoke-AutoDeploy -ApkPath $apkFile.FullName -AppId $appId -AndroidSdkPath $androidSdk
         } else {
             Write-Log "⚠️ Không tìm thấy APK để deploy." $C_Warn
-            if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
+            # [FIX v4.2.0] Quote path để Explorer mở đúng khi có khoảng trắng/unicode
+            if ($IsWindows) { Start-Process explorer.exe -ArgumentList "`"$rawOut`"" }
         }
     } else {
-        if ($IsWindows) { Start-Process explorer.exe -ArgumentList $rawOut }
+        # [FIX v4.2.0] Quote path để Explorer mở đúng khi có khoảng trắng/unicode
+        if ($IsWindows) { Start-Process explorer.exe -ArgumentList "`"$rawOut`"" }
     }
 }
 
@@ -607,22 +733,14 @@ function Invoke-GitHubBuild([string]$PackageFormat) {
 }
 
 # ==================================================================================================
-# [SECTION 4] MAIN FLOW
-# ==================================================================================================
-
-# ==================================================================================================
 # HÀM LẤY TARGET FRAMEWORK (TFM) CAO NHẤT
 # ==================================================================================================
 function Get-LatestInstalledTfm {
     Write-Host "🔍 Đang xác định Target Framework (TFM) cao nhất..." -ForegroundColor DarkGray
     try {
-        # Sử dụng $global:dotnetCmd để đảm bảo đọc đúng SDK Local hoặc System
         $sdks = & $global:dotnetCmd --list-sdks
         if ($sdks) {
-            # Lấy dòng cuối cùng (list-sdks thường sắp xếp từ thấp đến cao)
             $latest = $sdks[-1] 
-            
-            # Cắt lấy phần major.minor version (vd: "10.0.100 [C:\...]" -> "10.0")
             if ($latest -match "^(\d+\.\d+)") {
                 $tfm = "net$($matches[1])"
                 Write-Host "✅ TFM tự động chọn: $tfm" -ForegroundColor Green
@@ -632,10 +750,12 @@ function Get-LatestInstalledTfm {
     } catch {
         Write-Host "⚠️ Cảnh báo: Không thể đọc danh sách SDK. Sử dụng mặc định." -ForegroundColor Yellow
     }
-    
-    # Fallback an toàn (Vì dự án AI Orchestrator của bạn đang chạy .NET 10)
     return "net10.0" 
 }
+
+# ==================================================================================================
+# [SECTION 4] MAIN FLOW
+# ==================================================================================================
 
 # Khởi tạo phiên bản TFM hiện tại của máy
 $currentTfm = Get-LatestInstalledTfm
@@ -685,7 +805,7 @@ $winTfm     = $tfms | Where-Object { $_ -match 'windows' } | Select-Object -Firs
 $iosTfm     = $tfms | Where-Object { $_ -match 'ios' } | Select-Object -First 1
 $macTfm     = $tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -First 1
 
-# 4. Hiển thị Menu lựa chọn tăng dần
+# 4. Hiển thị Menu lựa chọn
 $choice = '0'
 if ($GitHub -or $NonInteractive) { $choice = '1' }
 else {
@@ -702,7 +822,7 @@ else {
     if ($iosTfm -and $IsMacOS) { Write-Host "  [4] Xuất bản iOS IPA" -ForegroundColor "Magenta" }
     if ($macTfm -and $IsMacOS) { Write-Host "  [5] Xuất bản Mac Catalyst" -ForegroundColor "Magenta" }
     
-    # Nhóm Windows & Web (Dành cho AI Orchestrator)
+    # Nhóm Windows & Web
     if ($winTfm -or $isWebProject) {
         Write-Host "  [6] Xuất bản Windows MSIX (Đóng gói cài đặt)" -ForegroundColor "DarkYellow"
     }
@@ -732,7 +852,9 @@ switch ($choice) {
         if ($ks) {
             $p = Read-Host "🔑 Nhập Keystore Password để ký AAB"
             if ($p) {
-                $bArgs += "-p:AndroidSigningKeyStore=$($ks.Path)"
+                # [FIX v4.2.0] Keystore path qua Get-SafePath để xử lý khoảng trắng/unicode
+                $safeKsPath = Get-SafePath $ks.Path
+                $bArgs += "-p:AndroidSigningKeyStore=$safeKsPath"
                 $bArgs += "-p:AndroidSigningStorePass=$p"
                 $bArgs += "-p:AndroidSigningKeyAlias=key0"
                 $bArgs += "-p:AndroidSigningKeyPass=$p"
@@ -743,7 +865,6 @@ switch ($choice) {
     '4' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") }
     '5' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" }
     '6' {
-        # Tự động ghép nối phiên bản .NET hiện tại với Windows SDK
         $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows10.0.19041.0" }
         ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @(
             "-p:WindowsPackageType=None", 
@@ -763,7 +884,10 @@ switch ($choice) {
 
             if (Test-Path $exePath) {
                 Write-Log "🚀 Đang khởi chạy ứng dụng ngầm tại $url..." "Green"
-                $appProcess = Start-Process -FilePath $exePath -ArgumentList "--urls=$url" -WorkingDirectory $webOutDir -WindowStyle Hidden -PassThru
+                # [FIX v4.2.0] FilePath và WorkingDirectory dùng safe path
+                $safeExePath   = Get-SafePath $exePath
+                $safeWebOutDir = Get-SafePath $webOutDir
+                Start-Process -FilePath $safeExePath -ArgumentList "--urls=$url" -WorkingDirectory $safeWebOutDir -WindowStyle Hidden -PassThru | Out-Null
                 Start-Sleep -Seconds 2
                 Start-Process $url
                 Write-Log "✅ Đã xong! App đang chạy độc lập. Script sẽ tự thoát." "Yellow"
