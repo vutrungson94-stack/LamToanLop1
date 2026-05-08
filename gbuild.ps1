@@ -436,11 +436,11 @@ function Invoke-KillBuildProcesses {
 function Invoke-SmartClean {
     param([string]$ProjectDir)
     Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
-    
-    # BƯỚC 1: Kill process
-    Invoke-KillBuildProcesses -ProjectDir $ProjectDir
 
-    # BƯỚC 2: Xóa bin/obj/.vs
+    # BƯỚC 1: Kill process mạnh mẽ hơn
+    Invoke-KillBuildProcesses -ProjectDir $ProjectDir
+    Start-Sleep -Milliseconds 800
+
     $foldersToClean = @(
         (Join-Path $ProjectDir "bin"),
         (Join-Path $ProjectDir "obj"),
@@ -448,29 +448,50 @@ function Invoke-SmartClean {
     )
 
     foreach ($folder in $foldersToClean) {
-        if (Test-Path $folder) {
-            $retryCount = 0
-            $maxRetries = 5
-            $deleted = $false
-            while (-not $deleted -and $retryCount -lt $maxRetries) {
-                try {
-                    if ($IsWindows) {
-                        $emptyDir = Join-Path $env:TEMP "empty_dir_$(Get-Random)"
-                        New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-                        # [FIX v4.2.0] Dùng & operator để PowerShell tự xử lý quoting
-                        # cho path có khoảng trắng/unicode (không qua cmd.exe)
-                        & robocopy $emptyDir $folder /MIR /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
-                        Remove-Item -LiteralPath $folder  -Force -ErrorAction SilentlyContinue
-                        Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
-                    } else {
-                        Remove-Item -Path $folder -Recurse -Force -ErrorAction Stop
-                    }
+        if (-not (Test-Path $folder)) { continue }
+
+        $retryCount = 0
+        $maxRetries = 4
+        $deleted = $false
+
+        while (-not $deleted -and $retryCount -lt $maxRetries) {
+            try {
+                $emptyDir = Join-Path $env:TEMP "empty_dir_$(Get-Random)"
+                New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+
+                # 🔧 FIX: Dùng Start-Process + quote path để tránh lỗi khoảng trắng/unicode
+                $proc = Start-Process -FilePath "robocopy" -ArgumentList "`"$emptyDir`" `"$folder`" /MIR /NFL /NDL /NJH /NJS /nc /ns /np" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $null -RedirectStandardError $null
+                
+                # Robocopy exit code 0 hoặc 1 là thành công
+                if ($proc.ExitCode -le 1) {
+                    Remove-Item -LiteralPath $folder -Force -ErrorAction Stop
                     $deleted = $true
-                    Write-Log "   ✅ Đã xóa: $folder" $C_Gray
-                } catch {
-                    $retryCount++
-                    Start-Sleep -Milliseconds ($retryCount * 300)
-                    if ($retryCount -eq 3) { Invoke-KillBuildProcesses -ProjectDir $ProjectDir }
+                } else {
+                    throw "Robocopy failed with exit code $($proc.ExitCode)"
+                }
+
+                Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
+                Write-Log "   ✅ Đã xóa: $folder" $C_Gray
+            } catch {
+                $retryCount++
+                Write-Log "   ⚠️ Không xóa được $folder, đang thử lại ($retryCount/$maxRetries)..." $C_Warn
+                Start-Sleep -Milliseconds 500
+                
+                # 🔧 FIX: Kill lại process nếu retry >= 2
+                if ($retryCount -ge 2) {
+                    Invoke-KillBuildProcesses -ProjectDir $ProjectDir
+                    Start-Sleep -Milliseconds 600
+                }
+                
+                # Fallback cuối cùng nếu robocopy vẫn lỗi
+                if ($retryCount -eq $maxRetries) {
+                    try {
+                        Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction Stop
+                        $deleted = $true
+                        Write-Log "   ✅ Đã xóa (Fallback): $folder" $C_Gray
+                    } catch {
+                        Write-Log "   ❌ Không thể xóa $folder. Cần đóng IDE hoặc xóa thủ công." $C_Err
+                    }
                 }
             }
         }
@@ -481,10 +502,9 @@ function Invoke-SmartClean {
     if (Test-Path $androidCache) {
         try {
             Get-ChildItem $androidCache -Recurse -Include "*.stamp","res.zip.*","__environment__.txt" -EA SilentlyContinue |
-                Remove-Item -Force -EA SilentlyContinue
+            Remove-Item -Force -EA SilentlyContinue
         } catch {}
     }
-    
     Write-Log "✅ Dọn dẹp hoàn tất!" $C_Succ
 }
 
