@@ -216,14 +216,14 @@ if (-not $global:dotnetCmd) {
     exit 1
 }
 
-# 1. Hàm ghi log
+# Hàm ghi log
 function Write-Log([string]$msg, [string]$color = "White") {
     $time = Get-Date -Format "HH:mm:ss"
     Write-Host "[$time] " -NoNewline -ForegroundColor $C_Gray
     Write-Host $msg -ForegroundColor $color
 }
 
-# 2. Tìm Android SDK
+# Tìm Android SDK
 function Get-AndroidSdkPath {
     Write-Log "🔍 Đang săn tìm Android SDK..." $C_Gray
     $searchList = @(
@@ -269,7 +269,7 @@ function Get-AndroidSdkPath {
     return $null
 }
 
-# 3. Tìm Java JDK
+# Tìm Java JDK
 function Get-JavaSdkPath {
     # 1. Kiểm tra các vị trí ưu tiên (gần script, biến môi trường)
     $searchList = @(
@@ -314,7 +314,7 @@ function Get-JavaSdkPath {
     return $null
 }
 
-# 4. Đọc TFMs
+# Đọc TFMs
 function Get-CsprojTfms {
     param([string]$projPath)
     if (-not (Test-Path $projPath)) { return @() }
@@ -329,25 +329,64 @@ function Get-CsprojTfms {
     return $tfms | Sort-Object -Unique
 }
 
-# 5. Tìm project MAUI
-function Get-MauiCsproj {
+# Tìm project
+function Find-Project {
     Write-Log "📂 Đang quét tìm file project..." $C_Gray
-    $files = Get-ChildItem . -Recurse -Filter *.csproj -File |
-        Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|.sdk)[\\/]' }
-    
-    foreach ($f in $files) {
-        $content = Get-Content $f.FullName -Raw -EA SilentlyContinue
-        # Chấp nhận cả project MAUI truyền thống và project Web SDK
-        if ($content -match '<UseMaui>\s*true\s*</UseMaui>' -or 
-            $content -match 'net\d+(\.\d+)?-(android|ios|windows)' -or
-            $content -match 'Sdk="Microsoft\.NET\.Sdk\.Web"') {
-            return $f
-        }
+    $allProjects = @(Get-ChildItem -Path . -Recurse -Filter *.csproj -File |
+        Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|\.sdk)[\\/]' } |
+        Sort-Object FullName)
+
+    if ($allProjects.Count -eq 0) {
+        return $null
     }
-    return $null
+    if ($allProjects.Count -eq 1) {
+        return $allProjects[0]
+    }
+
+    # Ưu tiên project cùng thư mục với script
+    $scriptDirProjects = @($allProjects | Where-Object { $_.DirectoryName -eq $PSScriptRoot })
+    if ($scriptDirProjects.Count -eq 1) {
+        return $scriptDirProjects[0]
+    }
+
+    # Nếu nhiều project, cho người dùng chọn
+    Write-Host "`n📋 Tìm thấy nhiều project:" -ForegroundColor Cyan
+    for ($i=0; $i -lt $allProjects.Count; $i++) {
+        Write-Host "  [$i] $($allProjects[$i].FullName)" -ForegroundColor DarkGray
+    }
+    $sel = Read-Host "⌨  Nhập số thứ tự (hoặc Enter để chọn 0)"
+    if ([string]::IsNullOrWhiteSpace($sel)) { $sel = 0 }
+    $idx = [int]$sel
+    if ($idx -lt 0 -or $idx -ge $allProjects.Count) { $idx = 0 }
+    return $allProjects[$idx]
 }
 
-# 6. Quản lý Keystore
+# Phân loại project
+function Get-ProjectType {
+    param([string]$csprojPath)
+    if (-not (Test-Path $csprojPath)) { return "Unknown" }
+
+    $content = Get-Content $csprojPath -Raw -EA SilentlyContinue
+    if (-not $content) { return "Unknown" }
+
+    if ($content -match '<UseMaui>\s*true\s*</UseMaui>') { return "MAUI" }
+    if ($content -match 'Sdk\s*=\s*"Microsoft\.NET\.Sdk\.Web"') { return "Web" }
+    if ($content -match 'Sdk\s*=\s*"Microsoft\.NET\.Sdk\.BlazorWebAssembly"') { return "BlazorWasm" }
+
+    if ($content -match '<UseWindowsForms>\s*true\s*</UseWindowsForms>') { return "WinForms" }
+    if ($content -match '<UseWPF>\s*true\s*</UseWPF>') { return "WPF" }
+    if ($content -match '<OutputType>\s*Exe\s*</OutputType>') { return "Console" }
+    if ($content -match '<OutputType>\s*WinExe\s*</OutputType>') {
+        if ($content -match 'Sdk\s*=\s*"Microsoft\.NET\.Sdk\.WindowsDesktop"') {
+            return "WinForms"  # hoặc WPF nhưng an toàn mặc định WinForms
+        }
+        return "WinExe"
+    }
+
+    return "Library"
+}
+
+# Quản lý Keystore
 function Find-AndroidKeystore([string]$projectDir) {
     Write-Log "🔐 Đang tìm kiếm Keystore để ký..." $C_Gray
     $propsFile = Join-Path $projectDir 'signing.properties'
@@ -435,12 +474,27 @@ function Invoke-KillBuildProcesses {
 # Hàm Clean tối ưu
 function Invoke-SmartClean {
     param([string]$ProjectDir)
-    Write-Log "🧹 Đang dọn dẹp build artifacts cũ..." $C_Gray
+    Write-Log "🧹 Đang dọn dẹp build artifacts cũ (an toàn, không kill IDE)..." $C_Gray
 
-    # BƯỚC 1: Kill process mạnh mẽ hơn
-    Invoke-KillBuildProcesses -ProjectDir $ProjectDir
-    Start-Sleep -Milliseconds 800
+    # ============================================================
+    # BƯỚC 0: KILL CÁC TIẾN TRÌNH BUILD & COMPILER (KHÔNG KILL IDE)
+    # ============================================================
+    Write-Log "   🔫 Đang dừng tiến trình build/compiler (dotnet, msbuild, csc, vbcscompiler)..." $C_Gray
+    $buildProcs = @(
+        'dotnet', 'msbuild', 'csc', 'vbcscompiler',
+        'VBCSCompiler', 'MSBuild',
+        'ServiceHub.RoslynCodeAnalysisService',
+        'Microsoft.ServiceHub.Controller',
+        'conhost'   # đôi khi giữ console của tiến trình cũ
+    )
+    foreach ($procName in $buildProcs) {
+        Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2   # chờ handle được giải phóng
 
+    # ============================================================
+    # BƯỚC 1: XÓA THƯ MỤC VỚI RETRY LINH HOẠT (TỐI ĐA 25 GIÂY)
+    # ============================================================
     $foldersToClean = @(
         (Join-Path $ProjectDir "bin"),
         (Join-Path $ProjectDir "obj"),
@@ -450,62 +504,72 @@ function Invoke-SmartClean {
     foreach ($folder in $foldersToClean) {
         if (-not (Test-Path $folder)) { continue }
 
-        $retryCount = 0
-        $maxRetries = 4
+        $maxWaitSeconds = 20
+        $retryDelay = 1
+        $totalWait = 0
         $deleted = $false
 
-        while (-not $deleted -and $retryCount -lt $maxRetries) {
+        while (-not $deleted -and $totalWait -lt $maxWaitSeconds) {
             try {
-                $emptyDir = Join-Path $env:TEMP "empty_dir_$(Get-Random)"
-                New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-
-                # 🔧 FIX: Dùng Start-Process + quote path để tránh lỗi khoảng trắng/unicode
-                $proc = Start-Process -FilePath "robocopy" -ArgumentList "`"$emptyDir`" `"$folder`" /MIR /NFL /NDL /NJH /NJS /nc /ns /np" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $null -RedirectStandardError $null
-                
-                # Robocopy exit code 0 hoặc 1 là thành công
-                if ($proc.ExitCode -le 1) {
-                    Remove-Item -LiteralPath $folder -Force -ErrorAction Stop
-                    $deleted = $true
-                } else {
-                    throw "Robocopy failed with exit code $($proc.ExitCode)"
-                }
-
-                Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
-                Write-Log "   ✅ Đã xóa: $folder" $C_Gray
+                Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction Stop
+                $deleted = $true
+                Write-Log "   ✅ Đã xóa (Remove-Item): $folder" $C_Gray
             } catch {
-                $retryCount++
-                Write-Log "   ⚠️ Không xóa được $folder, đang thử lại ($retryCount/$maxRetries)..." $C_Warn
-                Start-Sleep -Milliseconds 500
-                
-                # 🔧 FIX: Kill lại process nếu retry >= 2
-                if ($retryCount -ge 2) {
-                    Invoke-KillBuildProcesses -ProjectDir $ProjectDir
-                    Start-Sleep -Milliseconds 600
-                }
-                
-                # Fallback cuối cùng nếu robocopy vẫn lỗi
-                if ($retryCount -eq $maxRetries) {
-                    try {
-                        Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction Stop
+                # Fallback dùng robocopy
+                try {
+                    $emptyDir = Join-Path $env:TEMP "empty_dir_$(Get-Random)"
+                    New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+                    $robocopyArgs = "`"$emptyDir`" `"$folder`" /MIR /NFL /NDL /NJH /NJS /nc /ns /np"
+                    $proc = Start-Process -FilePath "robocopy" -ArgumentList $robocopyArgs -NoNewWindow -Wait -PassThru
+                    if ($proc.ExitCode -le 7) {
+                        Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
                         $deleted = $true
-                        Write-Log "   ✅ Đã xóa (Fallback): $folder" $C_Gray
-                    } catch {
-                        Write-Log "   ❌ Không thể xóa $folder. Cần đóng IDE hoặc xóa thủ công." $C_Err
+                        Write-Log "   ✅ Đã xóa (robocopy): $folder" $C_Gray
+                    } else {
+                        throw "robocopy exit code $($proc.ExitCode)"
                     }
+                    Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
+                } catch {
+                    # Kill lại các tiến trình build và chờ
+                    Write-Log "   ⚠️ Không xóa được $folder, kill lại tiến trình build..." $C_Warn
+                    foreach ($procName in $buildProcs) {
+                        Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
+                    }
+                    # Dọn thêm tiến trình đang giữ file trong thư mục (ngoại trừ IDE)
+                    Get-Process | Where-Object {
+                        try { $_.Modules.FileName -like "$folder*" } catch { $false }
+                    } | Where-Object { $_.Name -notin @('Code', 'devenv') } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+                    Start-Sleep -Seconds $retryDelay
+                    $totalWait += $retryDelay
+                    $retryDelay = [Math]::Min($retryDelay * 2, 5)
+                    Write-Log "   ⏳ Chờ thêm $retryDelay giây (tổng đã chờ $totalWait giây)..." $C_Gray
                 }
+            }
+        }
+
+        if (-not $deleted) {
+            Write-Log "   ❌ KHÔNG THỂ XÓA: $folder (sau $maxWaitSeconds giây)." $C_Err
+            Write-Log "      Vui lòng đóng tất cả IDE/terminal đang mở project này rồi thử lại." $C_Err
+            $continue = Read-Host "   Bạn có muốn tiếp tục build mà không xóa thư mục này? (y/n)"
+            if ($continue -ne 'y') {
+                Write-Log "❌ Hủy build theo yêu cầu." $C_Err
+                exit 1
             }
         }
     }
 
-    # BƯỚC 3: Clean Android Cache (chọn lọc để tăng tốc)
+    # ============================================================
+    # BƯỚC 2: CLEAN ANDROID CACHE
+    # ============================================================
     $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
     if (Test-Path $androidCache) {
         try {
             Get-ChildItem $androidCache -Recurse -Include "*.stamp","res.zip.*","__environment__.txt" -EA SilentlyContinue |
-            Remove-Item -Force -EA SilentlyContinue
+                Remove-Item -Force -EA SilentlyContinue
         } catch {}
     }
-    Write-Log "✅ Dọn dẹp hoàn tất!" $C_Succ
+    Write-Log "✅ Dọn dẹp hoàn tất." $C_Succ
 }
 
 # ==================================================================================================
@@ -603,54 +667,57 @@ function Invoke-AutoDeploy {
 }
 
 function ProcessBuildAndShow {
-    param([string]$Project, [string]$Tfm, [string]$OutputSubDir, [string[]]$BuildArgs)
+    param(
+        [string]$Project, 
+        [string]$Tfm, 
+        [string]$OutputSubDir, 
+        [string[]]$BuildArgs,
+        [string]$ProjectType
+    )
 
     $projectDir = Split-Path $Project -Parent
     Invoke-SmartClean -ProjectDir $projectDir
     Start-Sleep -Seconds 1
 
-    # Làm sạch folder output
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
+    $csprojContent = Get-Content $Project -Raw -EA SilentlyContinue
+
+    # Kill process cũ trong output
+    Get-Process | Where-Object {
+        try { $_.Path -like "$rawOut\*" } catch { $false }
+    } | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
     if (Test-Path $rawOut) { Remove-Item -LiteralPath $rawOut -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force -Path $rawOut | Out-Null
 
-    # Đảm bảo dùng đường dẫn tuyệt đối của dotnet.exe
     $dotnetExe = $global:dotnetCmd
     if (-not $dotnetExe) {
         Write-Log "❌ KHÔNG TÌM THẤY SDK .NET!" $C_Err
         exit 1
     }
 
-    # [FIX v4.2.0] Lấy safe path cho output dir, project và dotnet
+    # Lấy safe path cho output dir, project và dotnet
     $safeRawOut = Get-SafePath $rawOut
     $safeProject = Get-SafePath $Project
 
     Write-Log "🐞 Sử dụng dotnet: $dotnetExe" $C_Gray
     Write-Log "🐞 TFM: $Tfm | Output: $rawOut" $C_Gray
+    Write-Log "🐞 Loại dự án: $ProjectType" $C_Gray
 
     # Xác định nền tảng trước để dùng cho kiểm tra
     $isAndroidPlatform = $Tfm -match 'android'
     $isApplePlatform   = $Tfm -match '(ios|maccatalyst)'
     $isWindowsPlatform = $Tfm -match 'windows'
-    $isWebPlatform     = -not ($isAndroidPlatform -or $isApplePlatform -or $isWindowsPlatform)
-
-    # Tìm Android SDK và Java SDK (trả về safe path)
-    $androidSdk = Get-AndroidSdkPath
-    $javaSdk    = Get-JavaSdkPath
-
-    # Kiểm tra nếu build Android mà không có Android SDK thì dừng sớm
-    if ($isAndroidPlatform -and (-not $androidSdk)) {
-        Write-Log "❌ Không tìm thấy Android SDK. Hãy đặt SDK vào thư mục '.sdk\android-sdk' gần script hoặc cài Android SDK." $C_Err
-        exit 1
+    
+    $androidSdk = $null; $javaSdk = $null
+    if ($isAndroidPlatform) {
+        $androidSdk = Get-AndroidSdkPath
+        $javaSdk    = Get-JavaSdkPath
+        if (-not $androidSdk) { Write-Log "❌ Thiếu Android SDK!" $C_Err; exit 1 }
+        if (-not $javaSdk)    { Write-Log "❌ Thiếu Java JDK!" $C_Err; exit 1 }
     }
 
-    if ($isAndroidPlatform -and (-not $javaSdk)) {
-        Write-Log "❌ Không tìm thấy Java JDK. Hãy đặt JDK vào thư mục '.sdk\jdk' gần script hoặc cài đặt JDK." $C_Err
-        exit 1
-    }
-
-    # [FIX v4.2.0] Dùng $safeProject và $safeRawOut trong params
-    # PS & operator tự quote từng element của array — không cần ghép chuỗi thủ công
+    # Xây dựng tham số publish cơ bản
     $params = @(
         "publish", $safeProject,
         "-f", $Tfm,
@@ -658,43 +725,53 @@ function ProcessBuildAndShow {
         "--output", $safeRawOut
     )
 
-    # Thêm tham số riêng cho từng nền tảng
-    if ($isAndroidPlatform -or $isApplePlatform) {
-        if ($isAndroidPlatform) {
-            $params += @(
-                "-p:AndroidUseSharedRuntime=false",
-                "-p:EmbedAssembliesIntoApk=true"
+    # Thêm tham số đặc thù theo loại dự án và platform
+    switch ($ProjectType) {
+        'MAUI' {
+            if ($isAndroidPlatform) {
+                $params += @("-p:AndroidUseSharedRuntime=false", "-p:EmbedAssembliesIntoApk=true")
+            }
+        }
+        'Web' {
+            if (-not $isWindowsPlatform -and -not $isAndroidPlatform -and -not $isApplePlatform) {
+                $params += @("-r", "win-x64", "--self-contained", "true")
+                if ($BuildArgs -notcontains "-p:PublishSingleFile=false") {
+                    $params += @("-p:PublishSingleFile=true", "-p:IncludeAllContentForSelfExtract=true")
+                }
+            }
+        }
+        { $_ -in @('WinForms', 'WPF', 'Console', 'WinExe') } {
+            $params += @("--self-contained", "true")
+            if (-not $isWindowsPlatform) {
+                $params += @("-r", "win-x64")
+            }
+        }
+        'BlazorWasm' {
+            $params += @("-r", "browser-wasm")
+        }
+        'Library' {
+            Write-Log "⚠️ Dự án dạng Library, chuyển sang build thay vì publish." $C_Warn
+            # Xóa bỏ tham số publish, thay bằng build
+            $params = @(
+                "build", $safeProject,
+                "-f", $Tfm,
+                "-c", "Release"
             )
+            # Không có --output, không tự mở thư mục
+        }
+        default {
+            Write-Log "⚠️ Loại dự án không xác định, dùng publish mặc định." $C_Warn
         }
     }
-    elseif ($isWindowsPlatform) {
-        $params += @("--self-contained", "true")
-    }
-    elseif ($isWebPlatform) {
-        $params += @(
-            "-r", "win-x64",
-            "--self-contained", "true",
-            "-p:PublishSingleFile=true",
-            "-p:IncludeAllContentForSelfExtract=true"
-        )
+
+    if ($isAndroidPlatform) {
+        if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
+        if ($javaSdk)    { $params += "-p:JavaSdkDirectory=$javaSdk" }
     }
 
-    $csprojContent = Get-Content $Project -Raw -EA SilentlyContinue
-    if ($csprojContent -match '<UseMaui>\s*true\s*</UseMaui>') {
-        $params += @(
-            "-p:UseMaui=true",
-            "-p:SingleProject=true"
-        )
-    }
+    if ($BuildArgs) { $params += $BuildArgs }
     $params += @("-p:BuildInParallel=true", "-m")
     $params += "-v", "normal"
-    # $params += "-v", "detailed"
-
-    # [FIX v4.2.0] androidSdk và javaSdk đã là safe path (từ Get-AndroidSdkPath / Get-JavaSdkPath)
-    if ($androidSdk) { $params += "-p:AndroidSdkDirectory=$androidSdk" }
-    if ($javaSdk)    { $params += "-p:JavaSdkDirectory=$javaSdk" }
-
-    if ($BuildArgs)  { $params += $BuildArgs }
 
     Write-Host ("`n" + "┌" + ("─" * 58) + "┐") -ForegroundColor $C_Gray
     Write-Log " 🚀 ĐANG TIẾN HÀNH BUILD: $Tfm" $C_Info
@@ -702,7 +779,7 @@ function ProcessBuildAndShow {
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $output = & $dotnetExe @params 2>&1 | ForEach-Object {
-        $line = $_ 
+        $line = $_
         Write-Host "    $line" -ForegroundColor DarkGray
         $line
     }
@@ -716,10 +793,14 @@ function ProcessBuildAndShow {
         exit 1
     }
     $sw.Stop()
-
     Write-Log "✅ THÀNH CÔNG TRONG $($sw.Elapsed.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
 
-    # Auto Deploy
+    # Tự động mở thư mục output (trừ Library)
+    if ($IsWindows -and $ProjectType -ne 'Library') {
+        Start-Process explorer.exe -ArgumentList "`"$rawOut`""
+    }
+
+    # Auto Deploy cho Android APK
     if ($isAndroidPlatform -and $OutputSubDir -eq "apk") {
         $apkFile = Get-ChildItem $rawOut -Filter "*Signed*.apk" -Recurse | Select-Object -First 1
         if (-not $apkFile) { $apkFile = Get-ChildItem $rawOut -Filter "*.apk" -Recurse | Select-Object -First 1 }
@@ -730,12 +811,8 @@ function ProcessBuildAndShow {
             Invoke-AutoDeploy -ApkPath $apkFile.FullName -AppId $appId -AndroidSdkPath $androidSdk
         } else {
             Write-Log "⚠️ Không tìm thấy APK để deploy." $C_Warn
-            # [FIX v4.2.0] Quote path để Explorer mở đúng khi có khoảng trắng/unicode
             if ($IsWindows) { Start-Process explorer.exe -ArgumentList "`"$rawOut`"" }
         }
-    } else {
-        # [FIX v4.2.0] Quote path để Explorer mở đúng khi có khoảng trắng/unicode
-        if ($IsWindows) { Start-Process explorer.exe -ArgumentList "`"$rawOut`"" }
     }
 }
 
@@ -784,7 +861,7 @@ Write-Log "🔍 Đã nhận diện TFM mục tiêu: $currentTfm" "Cyan"
 
 Write-Host @"
 `n╔════════════════════════════════════════════════════════════════════╗
-║         🚀  MAUI & WEB BUILD TOOL — VIP PRO MAX V2                 ║
+║         🚀 MULTI-PURPOSE BUILD TOOL — VIP PRO MAX                  ║
 ║      (Optimized: No Duplicates, Fast Clean, Auto Deploy)           ║
 ╚════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
@@ -810,13 +887,15 @@ if ($global:dotnetCmd) {
     }
 }
 
-# 2. Tìm Project (Tự động nhận diện MAUI hoặc Web)
-$csproj = Get-MauiCsproj
-if (-not $csproj) { Write-Log "❌ Không tìm thấy project hợp lệ!" $C_Err; exit 1 }
+# 2. Tìm Project (Tự động nhận diện mọi loại)
+$csproj = Find-Project
+if (-not $csproj) {
+    Write-Log "❌ Không tìm thấy project hợp lệ!" $C_Err
+    exit 1
+}
 $projPath = $csproj.FullName
-$csprojContent = Get-Content $projPath -Raw
-$isWebProject = $csprojContent -match 'Sdk="Microsoft\.NET\.Sdk\.Web"'
-Write-Log "📄 Project mục tiêu: $($csproj.Name)" $C_Info
+$projectType = Get-ProjectType -csprojPath $projPath
+Write-Log "📄 Project mục tiêu: $($csproj.Name) (Loại: $projectType)" $C_Info
 
 # 3. Xử lý TFMs (Target Frameworks)
 $tfms = @(Get-CsprojTfms -projPath $projPath)
@@ -825,34 +904,52 @@ $winTfm     = $tfms | Where-Object { $_ -match 'windows' } | Select-Object -Firs
 $iosTfm     = $tfms | Where-Object { $_ -match 'ios' } | Select-Object -First 1
 $macTfm     = $tfms | Where-Object { $_ -match 'maccatalyst' } | Select-Object -First 1
 
-# 4. Hiển thị Menu lựa chọn
+# 4. Hiển thị Menu thông minh
 $choice = '0'
 if ($GitHub -or $NonInteractive) { $choice = '1' }
 else {
-    Write-Host "`n👉 CHỌN NỀN TẢNG MUỐN XUẤT BẢN:" -ForegroundColor White
-    
-    # Nhóm Android
-    if ($androidTfm) {
-        Write-Host "  [1] Debug trực tiếp trên thiết bị Android" -ForegroundColor $C_Gray
-        Write-Host "  [2] Xuất bản Android APK (Cài đặt nhanh)" -ForegroundColor $C_Info
-        Write-Host "  [3] Xuất bản Android AAB (Google Play)" -ForegroundColor $C_Info
-    }
-    
-    # Nhóm Apple
-    if ($iosTfm -and $IsMacOS) { Write-Host "  [4] Xuất bản iOS IPA" -ForegroundColor "Magenta" }
-    if ($macTfm -and $IsMacOS) { Write-Host "  [5] Xuất bản Mac Catalyst" -ForegroundColor "Magenta" }
-    
-    # Nhóm Windows & Web
-    if ($winTfm -or $isWebProject) {
-        Write-Host "  [6] Xuất bản Windows MSIX (Đóng gói cài đặt)" -ForegroundColor "DarkYellow"
-    }
-    if ($isWebProject) {
-        Write-Host "  [7] Xuất bản Web UI (Bản chạy trình duyệt)" -ForegroundColor "Cyan"
+    Write-Host "`n👉 CHỌN HÀNH ĐỘNG:" -ForegroundColor White
+
+    switch ($projectType) {
+        'MAUI' {
+            if ($androidTfm) {
+                Write-Host "  [1] Debug trực tiếp trên thiết bị Android" -ForegroundColor $C_Gray
+                Write-Host "  [2] Xuất bản Android APK (Cài đặt nhanh)" -ForegroundColor $C_Info
+                Write-Host "  [3] Xuất bản Android AAB (Google Play)" -ForegroundColor $C_Info
+            }
+            if ($iosTfm -and $IsMacOS) { Write-Host "  [4] Xuất bản iOS IPA" -ForegroundColor "Magenta" }
+            if ($macTfm -and $IsMacOS) { Write-Host "  [5] Xuất bản Mac Catalyst" -ForegroundColor "Magenta" }
+            if ($winTfm) { Write-Host "  [6] Xuất bản Windows MSIX" -ForegroundColor "DarkYellow" }
+        }
+        'Web' {
+            Write-Host "  [7] Xuất bản Web UI (EXE)" -ForegroundColor "Cyan"
+        }
+        'BlazorWasm' {
+            Write-Host "  [7] Xuất bản Blazor WASM" -ForegroundColor "Cyan"
+        }
+        'WinForms' {
+            Write-Host "  [8] Xuất bản WinForms App" -ForegroundColor "DarkYellow"
+        }
+        'WPF' {
+            Write-Host "  [9] Xuất bản WPF App" -ForegroundColor "DarkYellow"
+        }
+        'Console' {
+            Write-Host "  [10] Xuất bản Console App" -ForegroundColor "DarkYellow"
+        }
+        'Library' {
+            Write-Host "  [11] Build Library" -ForegroundColor "DarkYellow"
+        }
+        'WinExe' {
+            Write-Host "  [8] Xuất bản Windows App" -ForegroundColor "DarkYellow"
+        }
+        default {
+            Write-Host "  [12] Build mặc định (không xác định loại dự án)" -ForegroundColor "DarkYellow"
+        }
     }
 
-    Write-Host "  [8] GitHub Cloud Build (Trình tự động hóa)" -ForegroundColor $C_Succ
-    Write-Host "  [0] Thoát" -ForegroundColor $C_Gray
-    
+    Write-Host "  [13] GitHub Cloud Build" -ForegroundColor $C_Succ
+    Write-Host "  [0]  Thoát" -ForegroundColor $C_Gray
+
     $choice = Read-Host "`n⌨  Nhập số"
     if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
 }
@@ -860,11 +957,11 @@ else {
 # 5. Thực thi theo lựa chọn
 switch ($choice) {
     '1' {
-        if (!$androidTfm) { Write-Log "❌ Project không hỗ trợ Android!" $C_Err; exit 1 }
+        if (!$androidTfm -or $projectType -ne 'MAUI') { Write-Log "❌ Không hỗ trợ!" $C_Err; exit 1 }
         Invoke-DeviceDebug -Project $projPath -Tfm $androidTfm
     }
     '2' {
-        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk")
+        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk") -ProjectType $projectType
     }
     '3' {
         $ks = Find-AndroidKeystore (Split-Path $projPath)
@@ -872,7 +969,6 @@ switch ($choice) {
         if ($ks) {
             $p = Read-Host "🔑 Nhập Keystore Password để ký AAB"
             if ($p) {
-                # [FIX v4.2.0] Keystore path qua Get-SafePath để xử lý khoảng trắng/unicode
                 $safeKsPath = Get-SafePath $ks.Path
                 $bArgs += "-p:AndroidSigningKeyStore=$safeKsPath"
                 $bArgs += "-p:AndroidSigningStorePass=$p"
@@ -880,23 +976,21 @@ switch ($choice) {
                 $bArgs += "-p:AndroidSigningKeyPass=$p"
             }
         }
-        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "aab" -BuildArgs $bArgs
+        ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "aab" -BuildArgs $bArgs -ProjectType $projectType
     }
-    '4' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") }
-    '5' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" }
+    '4' { ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") -ProjectType $projectType }
+    '5' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" -ProjectType $projectType }
     '6' {
-        $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows10.0.19041.0" }
-        ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @(
-            "-p:WindowsPackageType=None", 
-            "-p:PublishSingleFile=false",
-            "--self-contained", "true"
-        )
+        if ($projectType -eq 'MAUI') {
+            $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows10.0.19041.0" }
+            ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=None", "-p:PublishSingleFile=false", "--self-contained", "true") -ProjectType $projectType
+        } else {
+            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
+        }
     }
     '7' {
-        if ($isWebProject) {
-            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web" -BuildArgs @(
-                "-p:PublishSingleFile=false"
-            )
+        if ($projectType -eq 'Web') {
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web" -BuildArgs @("-p:PublishSingleFile=false") -ProjectType $projectType
             $exeName = [System.IO.Path]::GetFileNameWithoutExtension($projPath) + ".exe"
             $webOutDir = Join-Path $PSScriptRoot "publish-output\web"
             $exePath = Join-Path $webOutDir $exeName
@@ -904,7 +998,6 @@ switch ($choice) {
 
             if (Test-Path $exePath) {
                 Write-Log "🚀 Đang khởi chạy ứng dụng ngầm tại $url..." "Green"
-                # [FIX v4.2.0] FilePath và WorkingDirectory dùng safe path
                 $safeExePath   = Get-SafePath $exePath
                 $safeWebOutDir = Get-SafePath $webOutDir
                 Start-Process -FilePath $safeExePath -ArgumentList "--urls=$url" -WorkingDirectory $safeWebOutDir -WindowStyle Hidden -PassThru | Out-Null
@@ -917,9 +1010,49 @@ switch ($choice) {
             } else {
                 Write-Log "❌ Không tìm thấy file $exeName tại $webOutDir!" "Red"
             }
+        } elseif ($projectType -eq 'BlazorWasm') {
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "blazorwasm" -BuildArgs @("-r", "browser-wasm") -ProjectType $projectType
+        } else {
+            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
         }
     }
     '8' {
+        if ($projectType -in @('WinForms', 'WinExe')) {
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "winforms" -BuildArgs @("-r", "win-x64", "--self-contained", "true") -ProjectType $projectType
+        } elseif ($projectType -eq 'MAUI' -and $winTfm) {
+            # MAUI cũng có thể build Windows app riêng
+            $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows10.0.19041.0" }
+            ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=None", "-p:PublishSingleFile=false", "--self-contained", "true") -ProjectType $projectType
+        } else {
+            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
+        }
+    }
+    '9' {
+        if ($projectType -eq 'WPF') {
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "wpf" -BuildArgs @("-r", "win-x64", "--self-contained", "true") -ProjectType $projectType
+        } else {
+            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
+        }
+    }
+    '10' {
+        if ($projectType -eq 'Console') {
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "console" -BuildArgs @("-r", "win-x64", "--self-contained", "true") -ProjectType $projectType
+        } else {
+            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
+        }
+    }
+    '11' {
+        if ($projectType -eq 'Library') {
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "lib" -ProjectType $projectType
+        } else {
+            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
+        }
+    }
+    '12' {
+        # Build mặc định (dành cho Unknown hoặc bất kỳ dự án nào muốn build nhanh)
+        ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "default" -ProjectType $projectType
+    }
+    '13' {
         $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath (Join-Path $PSScriptRoot "gh.exe") }
         if ($gh -eq "gh" -or (Test-Path $gh)) { 
             & $gh workflow run build.yml -f "package_format=apk" 
