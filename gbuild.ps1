@@ -477,23 +477,52 @@ function Invoke-SmartClean {
     Write-Log "🧹 Đang dọn dẹp build artifacts cũ (an toàn, không kill IDE)..." $C_Gray
 
     # ============================================================
-    # BƯỚC 0: KILL CÁC TIẾN TRÌNH BUILD & COMPILER (KHÔNG KILL IDE)
+    # BƯỚC 0: KILL TIẾN TRÌNH BUILD SYSTEM (giữ nguyên)
     # ============================================================
-    Write-Log "   🔫 Đang dừng tiến trình build/compiler (dotnet, msbuild, csc, vbcscompiler)..." $C_Gray
+    Write-Log "   🔫 Đang dừng tiến trình build/compiler/analyzer..." $C_Gray
     $buildProcs = @(
         'dotnet', 'msbuild', 'csc', 'vbcscompiler',
         'VBCSCompiler', 'MSBuild',
+        'OmniSharp', 'OmniSharp.exe',
+        'Razor', 'RazorLanguageServer',
         'ServiceHub.RoslynCodeAnalysisService',
-        'Microsoft.ServiceHub.Controller',
-        'conhost'   # đôi khi giữ console của tiến trình cũ
+        'Microsoft.ServiceHub.Controller'
     )
     foreach ($procName in $buildProcs) {
         Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
     }
-    Start-Sleep -Seconds 2   # chờ handle được giải phóng
+    Start-Sleep -Seconds 3
 
     # ============================================================
-    # BƯỚC 1: XÓA THƯ MỤC VỚI RETRY LINH HOẠT (TỐI ĐA 25 GIÂY)
+    # BƯỚC 0.5: QUÉT VÀ KILL MỌI TIẾN TRÌNH ĐANG GIỮ FILE
+    #          TRONG bin, obj, .vs (ĐA NĂNG)
+    # ============================================================
+    Write-Log "   🔍 Đang quét tiến trình khóa file trong bin/obj/.vs..." $C_Gray
+    $folderPatterns = @(
+        "$ProjectDir\bin",
+        "$ProjectDir\obj",
+        "$ProjectDir\.vs"
+    )
+    Get-Process | ForEach-Object {
+        $proc = $_
+        $shouldKill = $false
+        try {
+            foreach ($mod in $proc.Modules) {
+                if ($mod.FileName -and ($folderPatterns | Where-Object { $mod.FileName.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) })) {
+                    $shouldKill = $true
+                    break
+                }
+            }
+        } catch {}
+        if ($shouldKill -and $proc.Name -notin @('Code', 'devenv', 'explorer', 'svchost', 'System', 'Idle')) {
+            Write-Log "      🎯 Kill process: $($proc.Name) (ID: $($proc.Id))" $C_Gray
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Start-Sleep -Seconds 1
+
+    # ============================================================
+    # BƯỚC 1: XÓA TỪNG THƯ MỤC VỚI RETRY (giữ nguyên logic cũ)
     # ============================================================
     $foldersToClean = @(
         (Join-Path $ProjectDir "bin"),
@@ -504,7 +533,7 @@ function Invoke-SmartClean {
     foreach ($folder in $foldersToClean) {
         if (-not (Test-Path $folder)) { continue }
 
-        $maxWaitSeconds = 20
+        $maxWaitSeconds = 25
         $retryDelay = 1
         $totalWait = 0
         $deleted = $false
@@ -515,7 +544,6 @@ function Invoke-SmartClean {
                 $deleted = $true
                 Write-Log "   ✅ Đã xóa (Remove-Item): $folder" $C_Gray
             } catch {
-                # Fallback dùng robocopy
                 try {
                     $emptyDir = Join-Path $env:TEMP "empty_dir_$(Get-Random)"
                     New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
@@ -530,27 +558,33 @@ function Invoke-SmartClean {
                     }
                     Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
                 } catch {
-                    # Kill lại các tiến trình build và chờ
-                    Write-Log "   ⚠️ Không xóa được $folder, kill lại tiến trình build..." $C_Warn
+                    Write-Log "   ⚠️ Không xóa được $folder, kill lại tiến trình..." $C_Warn
                     foreach ($procName in $buildProcs) {
                         Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
                     }
-                    # Dọn thêm tiến trình đang giữ file trong thư mục (ngoại trừ IDE)
-                    Get-Process | Where-Object {
-                        try { $_.Modules.FileName -like "$folder*" } catch { $false }
-                    } | Where-Object { $_.Name -notin @('Code', 'devenv') } | Stop-Process -Force -ErrorAction SilentlyContinue
-
+                    # Quét lần nữa các process đang giữ file trong thư mục này
+                    Get-Process | ForEach-Object {
+                        $p = $_
+                        try {
+                            foreach ($mod in $p.Modules) {
+                                if ($mod.FileName -like "$folder*") {
+                                    if ($p.Name -notin @('Code', 'devenv', 'explorer')) {
+                                        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                                    }
+                                    break
+                                }
+                            }
+                        } catch {}
+                    }
                     Start-Sleep -Seconds $retryDelay
                     $totalWait += $retryDelay
                     $retryDelay = [Math]::Min($retryDelay * 2, 5)
-                    Write-Log "   ⏳ Chờ thêm $retryDelay giây (tổng đã chờ $totalWait giây)..." $C_Gray
                 }
             }
         }
 
         if (-not $deleted) {
             Write-Log "   ❌ KHÔNG THỂ XÓA: $folder (sau $maxWaitSeconds giây)." $C_Err
-            Write-Log "      Vui lòng đóng tất cả IDE/terminal đang mở project này rồi thử lại." $C_Err
             $continue = Read-Host "   Bạn có muốn tiếp tục build mà không xóa thư mục này? (y/n)"
             if ($continue -ne 'y') {
                 Write-Log "❌ Hủy build theo yêu cầu." $C_Err
@@ -559,9 +593,7 @@ function Invoke-SmartClean {
         }
     }
 
-    # ============================================================
-    # BƯỚC 2: CLEAN ANDROID CACHE
-    # ============================================================
+    # Clean Android cache
     $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
     if (Test-Path $androidCache) {
         try {
@@ -682,11 +714,21 @@ function ProcessBuildAndShow {
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
     $csprojContent = Get-Content $Project -Raw -EA SilentlyContinue
 
-    # Kill process cũ trong output
+    # -----------------------------------------------
+    # KILL TẤT CẢ TIẾN TRÌNH TRONG THƯ MỤC OUTPUT CŨ
+    # -----------------------------------------------
+    Write-Log "🔍 Đang dừng tiến trình cũ trong $rawOut..." $C_Gray
     Get-Process | Where-Object {
-        try { $_.Path -like "$rawOut\*" } catch { $false }
+        try {
+            foreach ($mod in $_.Modules) {
+                if ($mod.FileName -like "$rawOut\*") { return $true }
+            }
+        } catch {}
+        return $false
     } | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
+
+    # Xóa thư mục output cũ
     if (Test-Path $rawOut) { Remove-Item -LiteralPath $rawOut -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force -Path $rawOut | Out-Null
 
