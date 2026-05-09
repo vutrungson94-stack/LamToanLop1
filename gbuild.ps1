@@ -131,22 +131,51 @@ public static extern uint GetShortPathName(
 # HÀM TÌM KIẾM .NET SDK THÔNG MINH
 # ==================================================================================================
 function Get-SmartDotnetPath {
-    Write-Host "🔍 Đang kiểm tra SDK .NET cài sẵn (dotnet trong PATH)..." -ForegroundColor Cyan
+    Write-Host "🔍 Đang kiểm tra cache SDK .NET..." -ForegroundColor Cyan
+    $cacheFile = Join-Path $PSScriptRoot ".sdkcache.json"
 
-    # 1. Ưu tiên dotnet hệ thống có SDK
+    # Thử dùng cache
+    if (Test-Path $cacheFile) {
+        try {
+            $cacheData = Get-Content $cacheFile -Raw | ConvertFrom-Json
+            if ($cacheData.Path) {
+                $cachedFolder = $cacheData.Path
+                $dotnetExe = Join-Path $cachedFolder "dotnet.exe"
+                if (Test-Path $dotnetExe) {
+                    $sdkCheck = & $dotnetExe --list-sdks 2>&1
+                    if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
+                        Write-Host "✅ Sử dụng SDK từ cache: $cachedFolder" -ForegroundColor Green
+                        $safeSdkPath = Get-SafePath $cachedFolder
+                        $env:DOTNET_ROOT = $safeSdkPath
+                        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $safeSdkPath
+                        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
+                        $env:PATH = "$safeSdkPath;" + $env:PATH
+                        return $dotnetExe   # <-- Trả về đường dẫn EXE
+                    }
+                }
+                Write-Host "⚠️ Cache SDK không hợp lệ, sẽ quét lại..." -ForegroundColor Yellow
+            }
+        } catch {}
+    }
+
+    # --- Quét theo cách thông thường ---
+    Write-Host "🔍 Đang kiểm tra SDK .NET cài sẵn (dotnet trong PATH)..." -ForegroundColor Cyan
     if (Get-Command "dotnet" -ErrorAction SilentlyContinue) {
         $sdkCheck = & dotnet --list-sdks 2>&1
         if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
+            $dotnetExe = (Get-Command dotnet).Source
             Write-Host "✅ Sử dụng dotnet từ PATH (có SDK)." -ForegroundColor Green
-            return (Get-Command dotnet).Source
+            # Lưu thư mục chứa dotnet.exe vào cache
+            $sdkFolder = Split-Path $dotnetExe -Parent
+            @{ Path = $sdkFolder } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
+            return $dotnetExe
         } else {
             Write-Host "⚠️ dotnet trong PATH không có SDK, bỏ qua." -ForegroundColor Yellow
         }
     }
 
+    # Quét nhanh thư mục dự án
     Write-Host "⚙️ Đang quét nhanh thư mục dự án..." -ForegroundColor Cyan
-
-    # 2. Quét nhanh thư mục chứa script và thư mục hiện tại (độ sâu 4)
     $quickPaths = @($PSScriptRoot, (Get-Location).Path)
     foreach ($qPath in $quickPaths) {
         $sdks = @(Get-ChildItem -Path $qPath -Directory -Recurse -Depth 4 -Filter '.sdk' -ErrorAction SilentlyContinue)
@@ -155,23 +184,22 @@ function Get-SmartDotnetPath {
             if (Test-Path $dotnetExe) {
                 $sdkCheck = & $dotnetExe --list-sdks 2>&1
                 if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
-                    Write-Host "✅ Đã tìm thấy SDK local gần dự án: $($sdkDir.FullName)" -ForegroundColor Green
-                    # [FIX v4.2.0] Dùng Get-SafePath trước khi set vào env vars
-                    $safeSdkPath = Get-SafePath $sdkDir.FullName
-                    $env:DOTNET_ROOT                           = $safeSdkPath
-                    $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR  = $safeSdkPath
-                    $env:DOTNET_MULTILEVEL_LOOKUP              = "0"
-                    # [FIX v4.2.0] Thêm safe path vào PATH thay vì path gốc
+                    $foundPath = $sdkDir.FullName
+                    Write-Host "✅ Đã tìm thấy SDK local gần dự án: $foundPath" -ForegroundColor Green
+                    $safeSdkPath = Get-SafePath $foundPath
+                    $env:DOTNET_ROOT = $safeSdkPath
+                    $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $safeSdkPath
+                    $env:DOTNET_MULTILEVEL_LOOKUP = "0"
                     $env:PATH = "$safeSdkPath;" + $env:PATH
-                    return Get-SafePath $dotnetExe
+                    @{ Path = $foundPath } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
+                    return $dotnetExe
                 }
             }
         }
     }
 
-    Write-Host "⚙️ Đang quét toàn bộ ổ đĩa (cả USB nếu có) tìm SDK local..." -ForegroundColor Cyan
-
-    # 3. Lấy danh sách ổ cứng cố định và USB
+    # Quét toàn bộ ổ đĩa
+    Write-Host "⚙️ Đang quét toàn bộ ổ đĩa tìm SDK local..." -ForegroundColor Cyan
     $allDrives = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=2 or DriveType=3" | Select-Object -ExpandProperty DeviceID)
     if ($null -eq $allDrives -or $allDrives.Count -eq 0) {
         $allDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $null -ne $_.Used } | Select-Object -ExpandProperty Root
@@ -181,28 +209,25 @@ function Get-SmartDotnetPath {
         $root = $drive + "\"
         Write-Host "   Đang quét ổ $root ..." -ForegroundColor DarkGray
         try {
-            # Tìm tất cả thư mục .sdk không giới hạn độ sâu, dùng -Filter để tối ưu
             $sdks = @(Get-ChildItem -Path $root -Directory -Recurse -Filter '.sdk' -ErrorAction SilentlyContinue)
             foreach ($sdkDir in $sdks) {
                 $dotnetExe = Join-Path $sdkDir.FullName "dotnet.exe"
                 if (Test-Path $dotnetExe) {
                     $sdkCheck = & $dotnetExe --list-sdks 2>&1
                     if ($sdkCheck -and $sdkCheck -match '\d+\.\d+\.\d+') {
-                        Write-Host "✅ Đã tìm thấy SDK local tại: $($sdkDir.FullName)" -ForegroundColor Green
-                        # [FIX v4.2.0] Dùng Get-SafePath trước khi set vào env vars
-                        $safeSdkPath = Get-SafePath $sdkDir.FullName
-                        $env:DOTNET_ROOT                           = $safeSdkPath
-                        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR  = $safeSdkPath
-                        $env:DOTNET_MULTILEVEL_LOOKUP              = "0"
-                        # [FIX v4.2.0] Thêm safe path vào PATH thay vì path gốc
+                        $foundPath = $sdkDir.FullName
+                        Write-Host "✅ Đã tìm thấy SDK local tại: $foundPath" -ForegroundColor Green
+                        $safeSdkPath = Get-SafePath $foundPath
+                        $env:DOTNET_ROOT = $safeSdkPath
+                        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $safeSdkPath
+                        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
                         $env:PATH = "$safeSdkPath;" + $env:PATH
-                        return Get-SafePath $dotnetExe
+                        @{ Path = $foundPath } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
+                        return $dotnetExe
                     }
                 }
             }
-        } catch {
-            # ổ đĩa không truy cập được
-        }
+        } catch {}
     }
 
     Write-Host "❌ Không tìm thấy bất kỳ SDK .NET nào." -ForegroundColor Red
