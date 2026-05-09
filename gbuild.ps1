@@ -1,20 +1,6 @@
 #!/usr/bin/env pwsh
 # ==================================================================================================
 #  FILE NAME: gbuild.ps1
-#  VERSION: 4.2.0 (PATH SAFETY: Unicode + Spaces Hardened)
-#  DESCRIPTION: Build MAUI locally + Deploy + GitHub Actions.
-#  CHANGES v4.2.0:
-#    [FIX] UTF-8 console encoding toàn cục (chcp 65001 + OutputEncoding) để mọi tool
-#          nhận đúng Unicode argument.
-#    [FIX] Get-SafePath nâng cấp 3 tầng: kernel32 GetShortPathNameW → FSO → fallback
-#          (không còn phụ thuộc FSO-only vốn thất bại khi 8.3 names bị tắt).
-#    [FIX] Di chuyển Get-SafePath lên TRƯỚC Get-SmartDotnetPath để hàm đó dùng được.
-#    [FIX] $env:PATH, DOTNET_ROOT, ANDROID_HOME, JAVA_HOME luôn nhận short/safe path.
-#    [FIX] Start-Process explorer.exe quote đúng path có khoảng trắng.
-#    [FIX] Invoke-DeviceDebug bỏ tham số Project bị truyền 2 lần (bug cũ).
-#    [FIX] Keystore path trong signing args đi qua Get-SafePath.
-#    [FIX] MSBuild -p: props cho Android/Java SDK dùng safe path.
-#    [FIX] robocopy sử dụng & operator để PS tự quote path đúng cách.
 # ==================================================================================================
 # --------------------------------------------------------------------------------------------------
 # [SECTION 0] KHAI BÁO THAM SỐ
@@ -49,11 +35,6 @@ $OutputEncoding           = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
 
-# [FIX v4.2.0] Get-SafePath — 3 tầng bảo vệ
-#   Tầng 1: kernel32 GetShortPathNameW (P/Invoke trực tiếp, không qua COM)
-#            → xử lý được cả spaces lẫn Unicode nếu 8.3 names còn bật
-#   Tầng 2: FSO ShortPath (fallback COM legacy)
-#   Tầng 3: Trả về path tuyệt đối chuẩn hóa, dựa vào UTF-8 encoding đã set
 function Get-SafePath {
     param([string]$path)
 
@@ -126,7 +107,24 @@ public static extern uint GetShortPathName(
 # ==================================================================================================
 # [SECTION 2] HÀM BỔ TRỢ (HELPERS)
 # ==================================================================================================
-
+# Hàm lấy Port đầu tiên từ cấu hình dự án
+function Get-ProjectPort {
+    param([string]$ProjectDir)
+    $port = 5000 # Mặc định nếu không tìm thấy gì
+    $lsPath = Join-Path $ProjectDir "Properties\launchSettings.json"
+    if (Test-Path $lsPath) {
+        try {
+            $ls = Get-Content $lsPath -Raw | ConvertFrom-Json
+            # Lấy port đầu tiên từ bất kỳ profile nào có applicationUrl
+            foreach ($userProfile in $ls.profiles.PSObject.Properties.Value) {
+                if ($userProfile.applicationUrl -match ':(\d+)') {
+                    return [int]$matches[1]
+                }
+            }
+        } catch {}
+    }
+    return $port
+}
 # ==================================================================================================
 # HÀM TÌM KIẾM .NET SDK THÔNG MINH
 # ==================================================================================================
@@ -439,8 +437,11 @@ function Read-KeystoreInteractive([hashtable]$ks) {
         $ks.StorePass = $sp
     }
     if (-not $ks.Alias) {
-        $ka = Read-Host "🔑 Nhập Key Alias (Mặc định: key0)"
-        $ks.Alias = if ($ka) { $ka } else { 'key0' }
+        $ka = Read-Host "🔑 Nhập Key Alias (Ví dụ: key0)"
+        if ([string]::IsNullOrWhiteSpace($ka)) {
+            Write-Log "⚠️ Cảnh báo: Sử dụng alias mặc định 'key0'" $C_Warn
+            $ks.Alias = 'key0'
+        } else { $ks.Alias = $ka }
     }
     if (-not $ks.KeyPass) {
         $kp = Read-Host "🔑 Nhập Key Password (Để trống = giống Store Pass)"
@@ -450,104 +451,124 @@ function Read-KeystoreInteractive([hashtable]$ks) {
 }
 
 # ==================================================================================================
-# [SECTION 2.1] CLEAN & KILL OPTIMIZED — CHỐNG LOCK FILE & TỐI ƯU TỐC ĐỘ
+# [SECTION 2.1] CLEAN & KILL UNIFIED — MẠNH NHẤT, CHỐNG LOCK FILE TOÀN DIỆN
+#   Tích hợp Invoke-KillBuildProcesses vào Invoke-SmartClean thành một hàm duy nhất.
+#   Luồng xử lý 4 bước theo mức độ leo thang (escalation):
+#     Bước 0   → Kill build system (dotnet, msbuild, compiler, language server)
+#     Bước 0.5 → Kill process giữ file trong bin/obj/.vs của project nguồn
+#     Bước 0.7 → Kill EXE publish cũ đang chạy trong publish-output (từ lần build trước)
+#     Bước 1   → Xóa bin/obj/.vs với retry + robocopy fallback + escalation kill lại nếu cần
+#     Bước 2   → Dọn cache phụ (Xamarin/Android)
 # ==================================================================================================
 
-# Hàm kiểm tra file lock
-function Test-FileLocked {
-    param([string]$FilePath)
-    try {
-        $file = [System.IO.File]::Open($FilePath, 'Open', 'Read', 'ReadWrite')
-        $file.Close()
-        return $false
-    } catch { return $true }
-}
-
-# Hàm Kill Process an toàn
-function Invoke-KillBuildProcesses {
+# Hàm Kill & Clean tổng hợp — thay thế cả Invoke-KillBuildProcesses lẫn Invoke-SmartClean cũ
+function Invoke-SmartClean {
     param(
         [string]$ProjectDir,
-        [string]$OutputSubDir
+        [string]$OutputSubDir = ""   # tuỳ chọn: nếu có → kill EXE cũ trong publish-output/<OutputSubDir>
     )
-    # 1. Các tiến trình hệ thống hỗ trợ build (luôn cần tắt)
-    $buildSystemProcs = @('dotnet', 'msbuild', 'vbcscompiler', 'csc')
-    foreach ($proc in $buildSystemProcs) {
-        Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
-    }
 
-    # 2. Tự động xác định tên file .exe mục tiêu dựa trên cấu trúc thư mục publish
-    $outputPath = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
-    if (Test-Path $outputPath) {
-        $targetExes = Get-ChildItem -Path $outputPath -Filter "*.exe" -Recurse
-        
-        foreach ($exe in $targetExes) {
-            $exeName = $exe.BaseName
-            
-            Get-Process -Name $exeName -ErrorAction SilentlyContinue | Where-Object {
-                try {
-                    $_.Path -like "*publish-output*"
-                } catch { $false }
-            } | Stop-Process -Force -ErrorAction SilentlyContinue
-            
-            Write-Log "🎯 Đã giải phóng file khóa: $($exe.Name)" "Yellow"
+    # Danh sách process IDE / hệ thống tuyệt đối KHÔNG ĐƯỢC KILL
+    $safeList = @(
+        'Code', 'devenv', 'rider', 'fleet',
+        'explorer', 'svchost', 'System', 'Idle',
+        'csrss', 'winlogon', 'services', 'lsass',
+        'smss', 'wininit', 'taskhostw', 'dwm', 'conhost', 'powershell', 'pwsh'
+    )
+
+    # Danh sách build tools cần kill (dùng lại ở Bước 1 khi escalate)
+    $buildProcs = @(
+        'dotnet', 'msbuild', 'csc', 'vbcscompiler', 'VBCSCompiler', 'MSBuild',
+        'OmniSharp', 'RazorLanguageServer',
+        'ServiceHub.RoslynCodeAnalysisService', 'Microsoft.ServiceHub.Controller'
+    )
+
+    Write-Log "🧹 [SmartClean] Bắt đầu dọn dẹp toàn diện..." $C_Info
+
+    # ============================================================
+    # BƯỚC 0: KILL BUILD SYSTEM & ANALYZER
+    # ============================================================
+    Write-Log "   🔫 [Bước 0] Kill build system / compiler / language server..." $C_Gray
+    foreach ($procName in $buildProcs) {
+        $procs = @(Get-Process -Name $procName -ErrorAction SilentlyContinue)
+        if ($procs.Count -gt 0) {
+            $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Log "      ✂️  $procName × $($procs.Count)" $C_Gray
         }
     }
-    
-    Start-Sleep -Milliseconds 800
-}
-
-# Hàm Clean tối ưu
-function Invoke-SmartClean {
-    param([string]$ProjectDir)
-    Write-Log "🧹 Đang dọn dẹp build artifacts cũ (an toàn, không kill IDE)..." $C_Gray
+    Start-Sleep -Seconds 2
 
     # ============================================================
-    # BƯỚC 0: KILL TIẾN TRÌNH BUILD SYSTEM (giữ nguyên)
+    # BƯỚC 0.5: KILL TIẾN TRÌNH GIỮ FILE TRONG bin / obj / .vs
     # ============================================================
-    Write-Log "   🔫 Đang dừng tiến trình build/compiler/analyzer..." $C_Gray
-    $buildProcs = @(
-        'dotnet', 'msbuild', 'csc', 'vbcscompiler',
-        'VBCSCompiler', 'MSBuild',
-        'OmniSharp', 'OmniSharp.exe',
-        'Razor', 'RazorLanguageServer',
-        'ServiceHub.RoslynCodeAnalysisService',
-        'Microsoft.ServiceHub.Controller'
-    )
-    foreach ($procName in $buildProcs) {
-        Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
-    }
-    Start-Sleep -Seconds 3
-
-    # ============================================================
-    # BƯỚC 0.5: QUÉT VÀ KILL MỌI TIẾN TRÌNH ĐANG GIỮ FILE
-    #          TRONG bin, obj, .vs (ĐA NĂNG)
-    # ============================================================
-    Write-Log "   🔍 Đang quét tiến trình khóa file trong bin/obj/.vs..." $C_Gray
-    $folderPatterns = @(
+    Write-Log "   🔍 [Bước 0.5] Quét process khóa file bin/obj/.vs..." $C_Gray
+    $srcFolders = @(
         "$ProjectDir\bin",
         "$ProjectDir\obj",
         "$ProjectDir\.vs"
     )
     Get-Process | ForEach-Object {
         $proc = $_
-        $shouldKill = $false
+        if ($proc.Name -in $safeList) { return }
+        $hit = $false
         try {
             foreach ($mod in $proc.Modules) {
-                if ($mod.FileName -and ($folderPatterns | Where-Object { $mod.FileName.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) })) {
-                    $shouldKill = $true
-                    break
-                }
+                if ($mod.FileName -and (
+                    $srcFolders | Where-Object { $mod.FileName.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) }
+                )) { $hit = $true; break }
             }
         } catch {}
-        if ($shouldKill -and $proc.Name -notin @('Code', 'devenv', 'explorer', 'svchost', 'System', 'Idle')) {
-            Write-Log "      🎯 Kill process: $($proc.Name) (ID: $($proc.Id))" $C_Gray
+        if ($hit) {
+            Write-Log "      🎯 Kill (bin/obj lock): $($proc.Name) PID=$($proc.Id)" $C_Gray
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         }
     }
-    Start-Sleep -Seconds 1
+    Start-Sleep -Milliseconds 800
 
     # ============================================================
-    # BƯỚC 1: XÓA TỪNG THƯ MỤC VỚI RETRY (giữ nguyên logic cũ)
+    # BƯỚC 0.7: KILL EXE PUBLISH CŨ ĐANG CHẠY
+    #   — quét tất cả *.exe trong publish-output/<OutputSubDir>
+    #   — kill theo BaseName (Get-Process không dùng .exe)
+    #   — belt-and-suspenders: kill theo đường dẫn
+    # ============================================================
+    if (-not [string]::IsNullOrWhiteSpace($OutputSubDir)) {
+        $publishOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
+        if (Test-Path $publishOut) {
+            Write-Log "   🔫 [Bước 0.7] Kill EXE publish cũ trong: $publishOut..." $C_Gray
+            $exeFiles = @(Get-ChildItem -Path $publishOut -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue)
+            foreach ($exe in $exeFiles) {
+                # Kill theo tên process (BaseName, không có .exe)
+                $running = @(
+                    Get-Process -Name $exe.BaseName -ErrorAction SilentlyContinue | Where-Object {
+                        try { $_.Path -and $_.Path.StartsWith($publishOut, [System.StringComparison]::OrdinalIgnoreCase) }
+                        catch { $false }
+                    }
+                )
+                if ($running.Count -gt 0) {
+                    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+                    Write-Log "      🎯 Kill EXE cũ: $($exe.Name) (PID: $($running.Id -join ', '))" $C_Warn
+                }
+            }
+            # Belt-and-suspenders: bất kỳ process nào path bắt đầu bằng $publishOut
+            Get-Process | ForEach-Object {
+                $p = $_
+                if ($p.Name -in $safeList) { return }
+                try {
+                    if ($p.Path -and $p.Path.StartsWith($publishOut, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        Write-Log "      🎯 Kill by path: $($p.Name) PID=$($p.Id)" $C_Gray
+                        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                    }
+                } catch {}
+            }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+
+    # ============================================================
+    # BƯỚC 1: XÓA bin / obj / .vs VỚI RETRY + ESCALATION
+    #   Tầng 1: Remove-Item trực tiếp
+    #   Tầng 2: robocopy /MIR empty → xóa (phá lock OS)
+    #   Tầng 3: Escalate kill lại → retry (tối đa 25 giây)
     # ============================================================
     $foldersToClean = @(
         (Join-Path $ProjectDir "bin"),
@@ -558,67 +579,72 @@ function Invoke-SmartClean {
     foreach ($folder in $foldersToClean) {
         if (-not (Test-Path $folder)) { continue }
 
-        $maxWaitSeconds = 25
+        $maxWaitSec = 25
         $retryDelay = 1
-        $totalWait = 0
-        $deleted = $false
+        $totalWait  = 0
+        $deleted    = $false
 
-        while (-not $deleted -and $totalWait -lt $maxWaitSeconds) {
+        while (-not $deleted -and $totalWait -lt $maxWaitSec) {
+
+            # ── Tầng 1: Remove-Item ──────────────────────────────
             try {
                 Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction Stop
                 $deleted = $true
                 Write-Log "   ✅ Đã xóa (Remove-Item): $folder" $C_Gray
-            } catch {
-                try {
-                    $emptyDir = Join-Path $env:TEMP "empty_dir_$(Get-Random)"
-                    New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-                    $robocopyArgs = "`"$emptyDir`" `"$folder`" /MIR /NFL /NDL /NJH /NJS /nc /ns /np"
-                    $proc = Start-Process -FilePath "robocopy" -ArgumentList $robocopyArgs -NoNewWindow -Wait -PassThru
-                    if ($proc.ExitCode -le 7) {
-                        Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
-                        $deleted = $true
-                        Write-Log "   ✅ Đã xóa (robocopy): $folder" $C_Gray
-                    } else {
-                        throw "robocopy exit code $($proc.ExitCode)"
-                    }
-                    Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
-                } catch {
-                    Write-Log "   ⚠️ Không xóa được $folder, kill lại tiến trình..." $C_Warn
-                    foreach ($procName in $buildProcs) {
-                        Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
-                    }
-                    # Quét lần nữa các process đang giữ file trong thư mục này
-                    Get-Process | ForEach-Object {
-                        $p = $_
-                        try {
-                            foreach ($mod in $p.Modules) {
-                                if ($mod.FileName -like "$folder*") {
-                                    if ($p.Name -notin @('Code', 'devenv', 'explorer')) {
-                                        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-                                    }
-                                    break
-                                }
-                            }
-                        } catch {}
-                    }
-                    Start-Sleep -Seconds $retryDelay
-                    $totalWait += $retryDelay
-                    $retryDelay = [Math]::Min($retryDelay * 2, 5)
+                continue
+            } catch {}
+
+            # ── Tầng 2: robocopy /MIR ───────────────────────────
+            try {
+                $emptyDir = Join-Path $env:TEMP "gbuild_empty_$(Get-Random)"
+                New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+                $rArgs = "`"$emptyDir`" `"$folder`" /MIR /NFL /NDL /NJH /NJS /nc /ns /np"
+                $rp = Start-Process -FilePath "robocopy" -ArgumentList $rArgs -NoNewWindow -Wait -PassThru
+                Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
+                if ($rp.ExitCode -le 7) {
+                    Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+                    $deleted = $true
+                    Write-Log "   ✅ Đã xóa (robocopy): $folder" $C_Gray
+                    continue
                 }
+            } catch {}
+
+            # ── Tầng 3: Escalate kill → sẽ retry vòng lặp ──────
+            Write-Log "   ⚠️ Không xóa được $folder → escalate kill (đã chờ ${totalWait}s)..." $C_Warn
+            foreach ($procName in $buildProcs) {
+                Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
             }
+            Get-Process | ForEach-Object {
+                $p = $_
+                if ($p.Name -in $safeList) { return }
+                try {
+                    foreach ($mod in $p.Modules) {
+                        if ($mod.FileName -and $mod.FileName.StartsWith($folder, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            Write-Log "      🎯 Escalate kill: $($p.Name) PID=$($p.Id)" $C_Gray
+                            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                            break
+                        }
+                    }
+                } catch {}
+            }
+            Start-Sleep -Seconds $retryDelay
+            $totalWait += $retryDelay
+            $retryDelay = [Math]::Min($retryDelay * 2, 5)
         }
 
         if (-not $deleted) {
-            Write-Log "   ❌ KHÔNG THỂ XÓA: $folder (sau $maxWaitSeconds giây)." $C_Err
-            $continue = Read-Host "   Bạn có muốn tiếp tục build mà không xóa thư mục này? (y/n)"
-            if ($continue -ne 'y') {
+            Write-Log "   ❌ KHÔNG THỂ XÓA: $folder (sau $maxWaitSec giây)." $C_Err
+            $userChoice = Read-Host "   Tiếp tục build mà không xóa thư mục này? (y/n)"
+            if ($userChoice -ne 'y') {
                 Write-Log "❌ Hủy build theo yêu cầu." $C_Err
                 exit 1
             }
         }
     }
 
-    # Clean Android cache
+    # ============================================================
+    # BƯỚC 2: DỌN CACHE PHỤ (Xamarin / Android)
+    # ============================================================
     $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
     if (Test-Path $androidCache) {
         try {
@@ -626,7 +652,8 @@ function Invoke-SmartClean {
                 Remove-Item -Force -EA SilentlyContinue
         } catch {}
     }
-    Write-Log "✅ Dọn dẹp hoàn tất." $C_Succ
+
+    Write-Log "✅ [SmartClean] Hoàn tất." $C_Succ
 }
 
 # ==================================================================================================
@@ -723,6 +750,85 @@ function Invoke-AutoDeploy {
     }
 }
 
+# ✅ Hàm kill port thông minh — chỉ chạy khi là Web project, tự tìm port
+function Invoke-KillByPort {
+    param([string]$ProjectDir, [string]$ProjectType)
+
+    # Chỉ áp dụng cho Web/Blazor, các loại khác bỏ qua
+    if ($ProjectType -notin @('Web', 'BlazorWasm')) {
+        return
+    }
+
+    # Thu thập port từ nhiều nguồn
+    $portsToKill = [System.Collections.Generic.HashSet[int]]::new()
+
+    # --- Nguồn 1: launchSettings.json (chính xác nhất) ---
+    $launchSettings = Join-Path $ProjectDir "Properties\launchSettings.json"
+    if (Test-Path $launchSettings) {
+        try {
+            $ls = Get-Content $launchSettings -Raw | ConvertFrom-Json
+            # Duyệt tất cả profiles
+            $ls.profiles.PSObject.Properties.Value | ForEach-Object {
+                $rawUrls = $_.applicationUrl
+                if ($rawUrls) {
+                    $rawUrls -split ';' | ForEach-Object {
+                        if ($_ -match ':(\d+)') {
+                            [void]$portsToKill.Add([int]$matches[1])
+                        }
+                    }
+                }
+            }
+            Write-Log "   📋 Tìm thấy port từ launchSettings.json: $($portsToKill -join ', ')" $C_Gray
+        } catch {
+            Write-Log "   ⚠️ Không đọc được launchSettings.json" $C_Warn
+        }
+    }
+
+    # --- Nguồn 2: appsettings.json (Kestrel config) ---
+    foreach ($appSettings in @("appsettings.json", "appsettings.Production.json")) {
+        $appSettingsPath = Join-Path $ProjectDir $appSettings
+        if (Test-Path $appSettingsPath) {
+            try {
+                $cfg = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
+                $urls = $cfg.Kestrel?.Endpoints?.PSObject.Properties.Value.Url
+                if ($urls) {
+                    $urls | ForEach-Object {
+                        if ($_ -match ':(\d+)') {
+                            [void]$portsToKill.Add([int]$matches[1])
+                        }
+                    }
+                }
+                # Đọc cả "Urls" key
+                if ($cfg.Urls) {
+                    $cfg.Urls -split ';' | ForEach-Object {
+                        if ($_ -match ':(\d+)') { [void]$portsToKill.Add([int]$matches[1]) }
+                    }
+                }
+            } catch {}
+        }
+    }
+
+    # --- Nguồn 3: Fallback mặc định ASP.NET nếu không tìm thấy gì ---
+    if ($portsToKill.Count -eq 0) {
+        Write-Log "   ℹ️ Không tìm thấy port trong config, dùng mặc định ASP.NET (5000, 5001)" $C_Gray
+        [void]$portsToKill.Add(5000)
+        [void]$portsToKill.Add(5001)
+    }
+
+    # --- Kill tất cả process đang giữ các port tìm được ---
+    foreach ($port in $portsToKill) {
+        try {
+            $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+            foreach ($conn in $conns) {
+                if ($conn.OwningProcess -gt 0) {
+                    Write-Log "   🔌 Giải phóng port $port (PID $($conn.OwningProcess))..." $C_Gray
+                    Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {}
+    }
+}
+
 function ProcessBuildAndShow {
     param(
         [string]$Project, 
@@ -733,29 +839,92 @@ function ProcessBuildAndShow {
     )
 
     $projectDir = Split-Path $Project -Parent
-    Invoke-SmartClean -ProjectDir $projectDir
-    Start-Sleep -Seconds 1
+    # OutputSubDir truyền vào để SmartClean kill luôn EXE publish cũ (Bước 0.7)
+    Invoke-SmartClean -ProjectDir $projectDir -OutputSubDir $OutputSubDir
 
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
     $csprojContent = Get-Content $Project -Raw -EA SilentlyContinue
+    # Kill theo port (chỉ áp dụng với Web/BlazorWasm)
+    Invoke-KillByPort -ProjectDir $projectDir -ProjectType $ProjectType
 
-    # -----------------------------------------------
-    # KILL TẤT CẢ TIẾN TRÌNH TRONG THƯ MỤC OUTPUT CŨ
-    # -----------------------------------------------
+    # ------------------------------------------------------------
+    # KILL TIẾN TRÌNH CŨ + XÓA TOÀN BỘ THƯ MỤC OUTPUT (BẮT BUỘC)
+    # ------------------------------------------------------------
     Write-Log "🔍 Đang dừng tiến trình cũ trong $rawOut..." $C_Gray
-    Get-Process | Where-Object {
-        try {
-            foreach ($mod in $_.Modules) {
-                if ($mod.FileName -like "$rawOut\*") { return $true }
-            }
-        } catch {}
-        return $false
-    } | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
 
-    # Xóa thư mục output cũ
-    if (Test-Path $rawOut) { Remove-Item -LiteralPath $rawOut -Recurse -Force -ErrorAction SilentlyContinue }
+    $exeBaseName = [System.IO.Path]::GetFileNameWithoutExtension($Project)  # dùng cho Get-Process
+    $maxAttempts = 5
+    $attempt = 0
+    $outputDeleted = $false
+
+    while (-not $outputDeleted -and $attempt -lt $maxAttempts) {
+        # Kill theo tên
+        Get-Process -Name $exeBaseName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process | Where-Object {
+            try { $_.Path -like "$rawOut\*" } catch { $false }
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+        Start-Sleep -Seconds 2
+
+        # Thử xóa thư mục
+        if (Test-Path $rawOut) {
+            try {
+                Remove-Item -LiteralPath $rawOut -Recurse -Force -ErrorAction Stop
+                $outputDeleted = $true
+                Write-Log "   ✅ Đã xóa output cũ (Remove-Item): $rawOut" $C_Gray
+            } catch {
+                Write-Log "   ⚠️ Không xóa được, thử robocopy..." $C_Warn
+                try {
+                    $emptyDir = Join-Path $env:TEMP "empty_out_$(Get-Random)"
+                    New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+                    & robocopy $emptyDir $rawOut /MIR /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+                    if ($LASTEXITCODE -le 7) {
+                        Remove-Item -LiteralPath $rawOut -Recurse -Force -ErrorAction SilentlyContinue
+                        $outputDeleted = $true
+                        Write-Log "   ✅ Đã xóa output cũ (robocopy): $rawOut" $C_Gray
+                    } else {
+                        Write-Log "   ⚠️ Robocopy exit code $LASTEXITCODE." $C_Warn
+                    }
+                    Remove-Item -LiteralPath $emptyDir -Force -ErrorAction SilentlyContinue
+                } catch {
+                    Write-Log "   ⚠️ Robocopy thất bại." $C_Warn
+                }
+            }
+        } else {
+            $outputDeleted = $true  # không tồn tại, coi như đã xóa
+        }
+
+        if (-not $outputDeleted) {
+            # Tìm và kill tiến trình đang giữ file trong thư mục (bắt buộc)
+            Write-Log "   🔍 Đang quét tiến trình khóa file trong $rawOut..." $C_Gray
+            $lockedProcs = Get-Process | Where-Object {
+                try {
+                    foreach ($mod in $_.Modules) {
+                        if ($mod.FileName -like "$rawOut\*") { return $true }
+                    }
+                } catch {}
+                return $false
+            }
+            if ($lockedProcs) {
+                $lockedProcs | Where-Object { $_.Name -notin @('Idle','System','svchost','csrss','winlogon','services','lsass') } |
+                    Stop-Process -Force -ErrorAction SilentlyContinue
+                Write-Log "   🎯 Đã kill tiến trình khóa file." $C_Warn
+            } else {
+                Write-Log "   ℹ️ Không tìm thấy tiến trình khóa file. Có thể file bị hệ thống giữ." $C_Gray
+            }
+            $attempt++
+            Write-Log "   🔁 Lần thử $attempt/$maxAttempts..." $C_Gray
+            Start-Sleep -Seconds 1
+        }
+    }
+
+    if (-not $outputDeleted) {
+        Write-Log "❌ KHÔNG THỂ XÓA THƯ MỤC OUTPUT SAU $maxAttempts LẦN. Hãy đóng ứng dụng cũ và thử lại." $C_Err
+        exit 1
+    }
+
     New-Item -ItemType Directory -Force -Path $rawOut | Out-Null
+    Write-Log "   ✅ Thư mục output đã sẵn sàng." $C_Gray
 
     $dotnetExe = $global:dotnetCmd
     if (-not $dotnetExe) {
@@ -899,12 +1068,11 @@ function Invoke-GitHubBuild([string]$PackageFormat) {
 # ==================================================================================================
 # HÀM LẤY TARGET FRAMEWORK (TFM) CAO NHẤT
 # ==================================================================================================
-function Get-LatestInstalledTfm {
+function Get-LatestInstalledTfm([string[]]$SdksList) {
     Write-Host "🔍 Đang xác định Target Framework (TFM) cao nhất..." -ForegroundColor DarkGray
     try {
-        $sdks = & $global:dotnetCmd --list-sdks
-        if ($sdks) {
-            $latest = $sdks[-1] 
+        if ($SdksList) {
+            $latest = $SdksList[-1] 
             if ($latest -match "^(\d+\.\d+)") {
                 $tfm = "net$($matches[1])"
                 Write-Host "✅ TFM tự động chọn: $tfm" -ForegroundColor Green
@@ -920,9 +1088,14 @@ function Get-LatestInstalledTfm {
 # ==================================================================================================
 # [SECTION 4] MAIN FLOW
 # ==================================================================================================
+# 0. Gọi lệnh list-sdks ĐÚNG 1 LẦN duy nhất
+$globalSdksList = $null
+if ($global:dotnetCmd) {
+    $globalSdksList = @(& $global:dotnetCmd --list-sdks)
+}
 
 # Khởi tạo phiên bản TFM hiện tại của máy
-$currentTfm = Get-LatestInstalledTfm
+$currentTfm = Get-LatestInstalledTfm -SdksList $globalSdksList
 Write-Log "🔍 Đã nhận diện TFM mục tiêu: $currentTfm" "Cyan"
 
 
@@ -934,10 +1107,9 @@ Write-Host @"
 "@ -ForegroundColor $C_Header
 
 # 1. Quản lý global.json và SDK
-if ($global:dotnetCmd) { 
-    $sdks = & $global:dotnetCmd --list-sdks
-    if ($sdks) {
-        $latestSdk = ($sdks[-1] -split ' ')[0]
+if ($globalSdksList) { 
+    if ($globalSdksList) {
+        $latestSdk = ($globalSdksList[-1] -split ' ')[0]
         $gJsonPath = Join-Path $PSScriptRoot "global.json"
         $needsUpdate = $true
         if (Test-Path $gJsonPath) {
@@ -1021,7 +1193,9 @@ else {
     if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
 }
 
-# 5. Thực thi theo lựa chọn
+# --------------------------------------------------------------------------------------------------
+# [SECTION 5] THỰC THI THEO LỰA CHỌN 
+# --------------------------------------------------------------------------------------------------
 switch ($choice) {
     '1' {
         if (!$androidTfm -or $projectType -ne 'MAUI') { Write-Log "❌ Không hỗ trợ!" $C_Err; exit 1 }
@@ -1034,13 +1208,13 @@ switch ($choice) {
         $ks = Find-AndroidKeystore (Split-Path $projPath)
         $bArgs = @("-p:AndroidPackageFormat=aab")
         if ($ks) {
-            $p = Read-Host "🔑 Nhập Keystore Password để ký AAB"
-            if ($p) {
+            $ks = Read-KeystoreInteractive -ks $ks
+            if ($ks -and $ks.StorePass) {
                 $safeKsPath = Get-SafePath $ks.Path
                 $bArgs += "-p:AndroidSigningKeyStore=$safeKsPath"
-                $bArgs += "-p:AndroidSigningStorePass=$p"
-                $bArgs += "-p:AndroidSigningKeyAlias=key0"
-                $bArgs += "-p:AndroidSigningKeyPass=$p"
+                $bArgs += "-p:AndroidSigningStorePass=$($ks.StorePass)"
+                $bArgs += "-p:AndroidSigningKeyAlias=$($ks.Alias)"
+                $bArgs += "-p:AndroidSigningKeyPass=$($ks.KeyPass)"
             }
         }
         ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "aab" -BuildArgs $bArgs -ProjectType $projectType
@@ -1049,38 +1223,42 @@ switch ($choice) {
     '5' { ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" -ProjectType $projectType }
     '6' {
         if ($projectType -eq 'MAUI') {
-            $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows10.0.19041.0" }
+            $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows" }
             ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=None", "-p:PublishSingleFile=false", "--self-contained", "true") -ProjectType $projectType
-        } else {
-            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
         }
     }
     '7' {
         if ($projectType -eq 'Web') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web" -BuildArgs @("-p:PublishSingleFile=false") -ProjectType $projectType
-            $exeName = [System.IO.Path]::GetFileNameWithoutExtension($projPath) + ".exe"
             $webOutDir = Join-Path $PSScriptRoot "publish-output\web"
-            $exePath = Join-Path $webOutDir $exeName
-            $url = "http://localhost:5000"
+            $exePath = Join-Path $webOutDir ([System.IO.Path]::GetFileNameWithoutExtension($projPath) + ".exe")
+            $actualProjectDir = Split-Path $projPath
+            $dynamicPort = Get-ProjectPort -ProjectDir $actualProjectDir
+            $url = "http://localhost:$dynamicPort"
 
             if (Test-Path $exePath) {
                 Write-Log "🚀 Đang khởi chạy ứng dụng ngầm tại $url..." "Green"
                 $safeExePath   = Get-SafePath $exePath
                 $safeWebOutDir = Get-SafePath $webOutDir
                 Start-Process -FilePath $safeExePath -ArgumentList "--urls=$url" -WorkingDirectory $safeWebOutDir -WindowStyle Hidden -PassThru | Out-Null
-                Start-Sleep -Seconds 2
-                Start-Process $url
-                Write-Log "✅ Đã xong! App đang chạy độc lập. Script sẽ tự thoát." "Yellow"
-                Write-Log "💡 Cách tắt app:" "Cyan"
-                Write-Log "   1. Nhấn vào icon Tray trên thanh tác vụ Windows -> Exit" "Cyan"
-                Write-Log "   2. Hoặc đóng toàn bộ cửa sổ ứng dụng/trình duyệt." "Cyan"
-            } else {
-                Write-Log "❌ Không tìm thấy file $exeName tại $webOutDir!" "Red"
+                # Chờ app thực sự bind được port thay vì sleep cố định
+                $maxWait = 15; $waited = 0; $portReady = $false
+                while ($waited -lt $maxWait) {
+                    Start-Sleep -Seconds 1; $waited++
+                    # Dùng Get-NetTCPConnection để kiểm tra port động
+                    if (Get-NetTCPConnection -LocalPort $dynamicPort -State Listen -ErrorAction SilentlyContinue) { 
+                        $portReady = $true; break 
+                    }
+                }
+                if ($portReady) {
+                    Start-Process $url
+                    Write-Log "✅ Thành công! Đã mở trình duyệt tại port $dynamicPort." "Green"
+                } else {
+                    Write-Log "⚠️ Cảnh báo: App phản hồi chậm, vui lòng kiểm tra tại: $url" "Yellow"
+                }
             }
         } elseif ($projectType -eq 'BlazorWasm') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "blazorwasm" -BuildArgs @("-r", "browser-wasm") -ProjectType $projectType
-        } else {
-            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
         }
     }
     '8' {
@@ -1088,31 +1266,23 @@ switch ($choice) {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "winforms" -BuildArgs @("-r", "win-x64", "--self-contained", "true") -ProjectType $projectType
         } elseif ($projectType -eq 'MAUI' -and $winTfm) {
             # MAUI cũng có thể build Windows app riêng
-            $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows10.0.19041.0" }
+            $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows" }
             ProcessBuildAndShow -Project $projPath -Tfm $targetTfm -OutputSubDir "win" -BuildArgs @("-p:WindowsPackageType=None", "-p:PublishSingleFile=false", "--self-contained", "true") -ProjectType $projectType
-        } else {
-            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
-        }
+        } 
     }
     '9' {
         if ($projectType -eq 'WPF') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "wpf" -BuildArgs @("-r", "win-x64", "--self-contained", "true") -ProjectType $projectType
-        } else {
-            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
         }
     }
     '10' {
         if ($projectType -eq 'Console') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "console" -BuildArgs @("-r", "win-x64", "--self-contained", "true") -ProjectType $projectType
-        } else {
-            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
         }
     }
     '11' {
         if ($projectType -eq 'Library') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "lib" -ProjectType $projectType
-        } else {
-            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
         }
     }
     '12' {
@@ -1120,13 +1290,20 @@ switch ($choice) {
         ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "default" -ProjectType $projectType
     }
     '13' {
-        $gh = if (Get-Command gh -EA SilentlyContinue) { "gh" } else { Get-SafePath (Join-Path $PSScriptRoot "gh.exe") }
-        if ($gh -eq "gh" -or (Test-Path $gh)) { 
-            & $gh workflow run build.yml -f "package_format=apk" 
-            Write-Log "🚀 Đã gửi yêu cầu build lên GitHub!" $C_Succ
-        }
+        # Hiển thị hướng dẫn chọn số cho nhanh
+        $userInput = Read-Host "📦 Chọn định dạng GitHub (Nhập sô 1: apk [Mặc định], số 2: aab)"
+        
+        # Logic rẽ nhánh: Nếu là '2' thì lấy aab, còn lại (Enter hoặc 1) lấy apk
+        $fmt = if ($userInput -eq "2") { "aab" } else { "apk" }
+        
+        Write-Log "🚀 Đang kích hoạt GitHub Build với định dạng: $fmt" "Cyan"
+        Invoke-GitHubBuild -PackageFormat $fmt
     }
     '0' { exit 0 }
+    default {
+            Write-Log "❌ Lựa chọn không hợp lệ!" $C_Err
+            exit 1
+        }
 }
 
 Write-Log "🏁 HOÀN TẤT TRONG $([math]::Round(((Get-Date) - $Global:StartTime).TotalSeconds, 1))s." $C_Gray
