@@ -564,11 +564,11 @@ function Invoke-SmartClean {
     )
 
     # Danh sách build tools cần kill (dùng lại ở Bước 1 khi escalate)
-    $buildProcs = @(
-        'dotnet', 'msbuild', 'csc', 'vbcscompiler', 'VBCSCompiler', 'MSBuild',
-        'OmniSharp', 'RazorLanguageServer',
-        'ServiceHub.RoslynCodeAnalysisService', 'Microsoft.ServiceHub.Controller'
-    )
+    #$buildProcs = @(
+    #    'dotnet', 'msbuild', 'csc', 'vbcscompiler', 'VBCSCompiler', 'MSBuild',
+    #    'OmniSharp', 'RazorLanguageServer',
+    #    'ServiceHub.RoslynCodeAnalysisService', 'Microsoft.ServiceHub.Controller'
+    #)
 
     Write-Log "🧹 [SmartClean] Bắt đầu dọn dẹp toàn diện..." $C_Info
 
@@ -669,22 +669,28 @@ function Invoke-SmartClean {
 
             # ── Tầng 3: Escalate kill → sẽ retry vòng lặp ──────
             Write-Log "   ⚠️ Không xóa được $folder → escalate kill (đã chờ ${totalWait}s)..." $C_Warn
-            foreach ($procName in $buildProcs) {
-                Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
-            }
-            Get-Process | ForEach-Object {
-                $p = $_
-                if ($p.Name -in $safeList) { return }
-                try {
-                    foreach ($mod in $p.Modules) {
-                        if ($mod.FileName -and $mod.FileName.StartsWith($folder, [System.StringComparison]::OrdinalIgnoreCase)) {
-                            Write-Log "      🎯 Escalate kill: $($p.Name) PID=$($p.Id)" $C_Gray
-                            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-                            break
-                        }
+            
+            Get-Process | Where-Object { $_.Name -notin $safeList } | ForEach-Object {
+            $p = $_
+            try {
+                # Quét các module (file DLL/EXE) mà process đang nạp
+                $isLocked = $false
+                foreach ($mod in $p.Modules) {
+                    if ($mod.FileName -and $mod.FileName.StartsWith($folder, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $isLocked = $true
+                        break
                     }
-                } catch {}
+                }
+                
+                # Nếu phát hiện khóa, tiêu diệt chính xác process đó
+                if ($isLocked) {
+                    Write-Log "      🎯 Escalate kill chuẩn xác: $($p.Name) PID=$($p.Id)" $C_Gray
+                    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                }
+            } catch {
+                # Bỏ qua các process hệ thống không có quyền truy cập module
             }
+        }
             Start-Sleep -Seconds $retryDelay
             $totalWait += $retryDelay
             $retryDelay = [Math]::Min($retryDelay * 2, 5)

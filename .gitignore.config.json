@@ -1,0 +1,81 @@
+{
+  "ui": {
+    "largeFileThresholdMB": 90
+  },
+  "gitignore": {
+    "enabled": true,
+    "rulesToAdd": [
+      "# [SECURITY]",
+      "ssh_id",
+      "ssh_id.pub",
+      "*.pfx",
+      "*.p12",
+      "*.key",
+      "*.pem",
+      ".env*",
+      "secrets.json",
+      "# [HEAVY FOLDERS]",
+      ".sdk/",
+      ".sdkcache.json",
+      "bin/",
+      "obj/",
+      "publish/",
+      "# [IDE & TEMP]",
+      ".vs/",
+      ".vscode/",
+      "*.user",
+      "*.log",
+      ".DS_Store"
+    ]
+  },
+  "junkCleanup": {
+    "enabled": true,
+    "confirmBeforeDelete": true,
+    "patterns": ["*.tmp", "*.bak", "*.log", "Thumbs.db", "desktop.ini"],
+    "restrictToDirs": ["./bin", "./obj", "./dist", "./build", "./out", "./.temp"]
+  },
+  "largeFiles": {
+    "enabled": true,
+    "excludeDirs": [".git", ".github", "node_modules", "dist", "build", "out"]
+  },
+  "sensitive": {
+    "enabled": true,
+    "blockedPatterns": [
+      ".keystore$",
+      ".jks$",
+      ".p12$",
+      ".pfx$",
+      ".mobileprovision$",
+      "^ssh_id$",
+      "^ssh_id.pub$",
+      ".env$",
+      ".env.",
+      "signing.properties$",
+      "keystore.properties$",
+      "local.properties$",
+      "gh.exe$",
+      "local-publish[\\/]",
+      "apk-output[\\/]",
+      "publish-output[\\/]"
+    ],
+    "allowedPatterns": [
+      ".env.example$",
+      ".env.template$",
+      ".env.sample$"
+    ]
+  },
+  "artifactUnstage": {
+    "enabled": true,
+    "patterns": [
+      "\\.(apk|aab|ipa|msix|appx)$",
+      "(local-publish|apk-output|publish-output)[\\/]"
+    ],
+    "extraPatterns": []
+  },
+  "git": {
+    "remoteName": "origin",
+    "defaultBranchFallback": "main",
+    "pullConflictPolicy": "ask", 
+    "stashWhenWorkingTreeDirty": true
+  }
+}

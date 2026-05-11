@@ -154,3 +154,12 @@ coverage/
 
 # .devcontainer/
 publish-output/
+# [SECURITY]
+*.key
+*.pem
+.env*
+secrets.json
+# [HEAVY FOLDERS]
+.sdkcache.json
+# [IDE & TEMP]
+.vscode/
