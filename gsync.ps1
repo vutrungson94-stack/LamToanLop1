@@ -45,7 +45,7 @@ function Get-ConsoleWidth {
     return 80
 }
 
-function Draw-Header {
+function Show-Header {
     Write-Host @"
 `n╔══════════════════════════════════════════════════════════════════════╗
 ║           GIT SYNC VIP PRO — Đồng bộ thông minh & an toàn           ║
@@ -157,7 +157,7 @@ function Get-DefaultConfig {
     return ($json | ConvertFrom-Json)
 }
 
-function Load-Config([string]$path) {
+function Import-Config([string]$path) {
     if (-not (Test-Path $path)) {
         Write-Host "  ℹ️  Không tìm thấy '$($path | Split-Path -Leaf)'" -ForegroundColor $C_Info
         Write-Host "     → Đang tạo config mặc định đa năng..." -ForegroundColor $C_Gray
@@ -190,7 +190,7 @@ function Load-Config([string]$path) {
 # ==============================================================================
 # SSH KEY
 # ==============================================================================
-function Try-SetupSshKey {
+function Initialize-SshKey {
     $sshKeyPath = Join-Path $PSScriptRoot 'ssh_id'
     if (-not (Test-Path $sshKeyPath)) { return }
     $resolved  = (Resolve-Path $sshKeyPath).Path
@@ -202,9 +202,9 @@ function Try-SetupSshKey {
 # ==============================================================================
 # MAIN
 # ==============================================================================
-$cfg = Load-Config $ConfigPath
-Draw-Header
-Try-SetupSshKey
+$cfg = Import-Config $ConfigPath
+Show-Header
+Initialize-SshKey
 
 # Tắt git pager — tránh block terminal khi output dài (git log, git diff...)
 $env:GIT_PAGER = 'cat'
