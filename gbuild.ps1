@@ -219,6 +219,18 @@ function Get-ProjectPort {
 # ==================================================================================================
 # HÀM TÌM KIẾM .NET SDK THÔNG MINH
 # ==================================================================================================
+function Set-DotnetEnv {
+    param([string]$SdkPath)
+    # Chỉ set nếu chưa có, tránh duplicate trong PATH
+    if ($env:PATH -notlike "*$SdkPath*") {
+        $env:PATH = "$SdkPath;" + $env:PATH
+    }
+    $env:DOTNET_ROOT                        = $SdkPath
+    $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $SdkPath
+    # KHÔNG set DOTNET_MULTILEVEL_LOOKUP=0 — để dotnet vẫn tìm được SDK hệ thống
+    # nếu SDK local bị hỏng, tránh làm chết IntelliSense
+}
+
 function Get-SmartDotnetPath {
     Write-Host "🔍 Đang kiểm tra cache SDK .NET..." -ForegroundColor Cyan
     $cacheFile = Join-Path $PSScriptRoot ".sdkcache.json"
@@ -235,11 +247,7 @@ function Get-SmartDotnetPath {
                     $sdkCheck = & $dotnetExe --list-sdks 2>&1
                     if ($sdkCheck -and $sdkCheck -match '\d+\.\d+') {
                         Write-Host "✅ Sử dụng SDK từ cache: $cachedFolder" -ForegroundColor Green
-                        $safeSdkPath = Get-SafePath $cachedFolder
-                        $env:DOTNET_ROOT = $safeSdkPath
-                        $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $safeSdkPath
-                        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
-                        $env:PATH = "$safeSdkPath;" + $env:PATH
+                        Set-DotnetEnv -SdkPath (Get-SafePath $cachedFolder)
                         return $dotnetExe
                     }
                 }
@@ -260,6 +268,9 @@ function Get-SmartDotnetPath {
             $sdkFolder = Split-Path $dotnetExe -Parent
             Write-Host "✅ Sử dụng dotnet từ PATH: $sdkFolder" -ForegroundColor Green
             @{ Path = $sdkFolder } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
+            # Reset về system SDK để ghi đè bất kỳ DOTNET_ROOT sai từ session cũ
+            $env:DOTNET_ROOT                         = $sdkFolder
+            $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $sdkFolder
             return $dotnetExe
         }
     }
@@ -276,9 +287,7 @@ function Get-SmartDotnetPath {
                 if ($sdkCheck -match '\d+\.\d+') {
                     $foundPath = $sdkDir.FullName
                     Write-Host "✅ Đã tìm thấy SDK local: $foundPath" -ForegroundColor Green
-                    $safeSdkPath = Get-SafePath $foundPath
-                    $env:DOTNET_ROOT = $safeSdkPath
-                    $env:PATH = "$safeSdkPath;" + $env:PATH
+                    Set-DotnetEnv -SdkPath (Get-SafePath $foundPath)
                     @{ Path = $foundPath } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
                     return $dotnetExe
                 }
@@ -314,9 +323,7 @@ function Get-SmartDotnetPath {
                     if ($sdkCheck -match '\d+\.\d+') {
                         $foundPath = $sdkDir.FullName
                         Write-Host "✅ Đã tìm thấy SDK tại: $foundPath" -ForegroundColor Green
-                        $safeSdkPath = Get-SafePath $foundPath
-                        $env:DOTNET_ROOT = $safeSdkPath
-                        $env:PATH = "$safeSdkPath;" + $env:PATH
+                        Set-DotnetEnv -SdkPath (Get-SafePath $foundPath)
                         @{ Path = $foundPath } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
                         return $dotnetExe
                     }
@@ -328,6 +335,7 @@ function Get-SmartDotnetPath {
     Write-Host "❌ Không tìm thấy bất kỳ SDK .NET hợp lệ nào." -ForegroundColor Red
     return $null
 }
+
 # Khởi tạo biến $dotnetCmd để sử dụng cho toàn bộ quá trình build phía sau
 $global:dotnetCmd = Get-SmartDotnetPath
 if (-not $global:dotnetCmd) {
@@ -561,15 +569,15 @@ function Invoke-SmartClean {
         'Code', 'devenv', 'rider', 'fleet',
         'explorer', 'svchost', 'System', 'Idle',
         'csrss', 'winlogon', 'services', 'lsass',
-        'smss', 'wininit', 'taskhostw', 'dwm', 'conhost', 'powershell', 'pwsh'
+        'smss', 'wininit', 'taskhostw', 'dwm', 'conhost', 'powershell', 'pwsh',
+        # Language servers — KHÔNG được kill, sẽ phá IntelliSense
+        'OmniSharp', 'VBCSCompiler', 'RazorLanguageServer',
+        'ServiceHub.RoslynCodeAnalysisService',
+        'ServiceHub.IdentityHost',
+        'Microsoft.CodeAnalysis.LanguageServer',
+        'Microsoft.ServiceHub.Controller','csc',
+        'MSBuild'
     )
-
-    # Danh sách build tools cần kill (dùng lại ở Bước 1 khi escalate)
-    #$buildProcs = @(
-    #    'dotnet', 'msbuild', 'csc', 'vbcscompiler', 'VBCSCompiler', 'MSBuild',
-    #    'OmniSharp', 'RazorLanguageServer',
-    #    'ServiceHub.RoslynCodeAnalysisService', 'Microsoft.ServiceHub.Controller'
-    #)
 
     Write-Log "🧹 [SmartClean] Bắt đầu dọn dẹp toàn diện..." $C_Info
 
@@ -578,9 +586,9 @@ function Invoke-SmartClean {
     # ============================================================
     Write-Log "   🔍 [Bước 0.5] Quét process khóa file bin/obj/.vs..." $C_Gray
     $srcFolders = @(
-        "$ProjectDir\bin",
-        "$ProjectDir\obj",
-        "$ProjectDir\.vs"
+        (Join-Path $ProjectDir "bin"),
+        (Join-Path $ProjectDir "obj"),
+        (Join-Path $ProjectDir ".vs")
     )
     Get-Process | ForEach-Object {
         $proc = $_
@@ -672,26 +680,26 @@ function Invoke-SmartClean {
             Write-Log "   ⚠️ Không xóa được $folder → escalate kill (đã chờ ${totalWait}s)..." $C_Warn
             
             Get-Process | Where-Object { $_.Name -notin $safeList } | ForEach-Object {
-            $p = $_
-            try {
-                # Quét các module (file DLL/EXE) mà process đang nạp
-                $isLocked = $false
-                foreach ($mod in $p.Modules) {
-                    if ($mod.FileName -and $mod.FileName.StartsWith($folder, [System.StringComparison]::OrdinalIgnoreCase)) {
-                        $isLocked = $true
-                        break
+                $p = $_
+                try {
+                    # Quét các module (file DLL/EXE) mà process đang nạp
+                    $isLocked = $false
+                    foreach ($mod in $p.Modules) {
+                        if ($mod.FileName -and $mod.FileName.StartsWith($folder, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $isLocked = $true
+                            break
+                        }
                     }
+                    
+                    # Nếu phát hiện khóa, tiêu diệt chính xác process đó
+                    if ($isLocked) {
+                        Write-Log "      🎯 Escalate kill chuẩn xác: $($p.Name) PID=$($p.Id)" $C_Gray
+                        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                    }
+                } catch {
+                    # Bỏ qua các process hệ thống không có quyền truy cập module
                 }
-                
-                # Nếu phát hiện khóa, tiêu diệt chính xác process đó
-                if ($isLocked) {
-                    Write-Log "      🎯 Escalate kill chuẩn xác: $($p.Name) PID=$($p.Id)" $C_Gray
-                    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-                }
-            } catch {
-                # Bỏ qua các process hệ thống không có quyền truy cập module
             }
-        }
             Start-Sleep -Seconds $retryDelay
             $totalWait += $retryDelay
             $retryDelay = [Math]::Min($retryDelay * 2, 5)
@@ -1178,9 +1186,13 @@ if ($globalSdksList) {
         } catch {}
     }
     if ($needsUpdate) {
-        $jsonContent = @{ sdk = @{ version = $latestSdk; rollForward = "latestMajor"; allowPrerelease = $true } } |
-            ConvertTo-Json -Depth 3
-            [System.IO.File]::WriteAllText($gJsonPath, $jsonContent, [System.Text.UTF8Encoding]::new($false))
+        $jsonContent = @{
+            sdk = @{
+                version     = $latestSdk
+                rollForward = "latestFeature"  # latestFeature an toàn hơn latestMajor
+            }
+        } | ConvertTo-Json -Depth 3
+        [System.IO.File]::WriteAllText($gJsonPath, $jsonContent, [System.Text.UTF8Encoding]::new($false))
     }
 }
 $sw1.Stop()

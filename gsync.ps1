@@ -48,7 +48,7 @@ function Get-ConsoleWidth {
 function Show-Header {
     Write-Host @"
 `n╔══════════════════════════════════════════════════════════════════════╗
-║           GIT SYNC VIP PRO — Đồng bộ thông minh & an toàn           ║
+║           GIT SYNC VIP PRO — Đồng bộ thông minh & an toàn            ║
 ╚══════════════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $C_Header
 }
