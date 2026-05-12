@@ -40,7 +40,7 @@ function _2Col {
 }
 
 # ── Thanh tiến trình: [ XX%] ██████░░░░ ▶ Label ──────────────────────────────────
-function Draw-ProgressBar {
+function Show-ProgressBar {
     param([int]$Current, [int]$Total, [string]$Label)
     if ($Total -le 0) { $Total = 1 }
     $pct  = [int][Math]::Min([Math]::Ceiling($Current / $Total * 100), 100)
@@ -1157,7 +1157,7 @@ Write-Host @"
 # ── BƯỚC 1: Khởi tạo môi trường ──────────────────────────────────────────────────
 $StepIndex++
 $sw1 = [Diagnostics.Stopwatch]::StartNew()
-Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Khởi tạo môi trường"
+Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Khởi tạo môi trường"
 Write-SubLog "Kiểm tra .NET SDK"
 
 $globalSdksList = $null
@@ -1189,7 +1189,7 @@ Write-Done "SDK: $currentTfm  |  dotnet: $([System.IO.Path]::GetFileName($global
 # ── BƯỚC 2: Quét project ─────────────────────────────────────────────────────────
 $StepIndex++
 $sw2 = [Diagnostics.Stopwatch]::StartNew()
-Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Quét project"
+Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Quét project"
 Write-SubLog "Tìm kiếm .csproj"
 
 $csproj = Find-Project
@@ -1206,7 +1206,7 @@ Write-Done "Project: $($csproj.Name)  ($projectType)" $sw2.Elapsed.TotalSeconds
 
 # ── BƯỚC 3: Menu chọn chế độ ─────────────────────────────────────────────────────
 $StepIndex++
-Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Chọn chế độ (Input)"
+Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Chọn chế độ (Input)"
 
 $choice = '0'
 if ($GitHub -or $NonInteractive) {
@@ -1253,18 +1253,18 @@ $StepIndex++
 # ==================================================================================================
 switch ($choice) {
     '1' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Debug: Android Device"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Debug: Android Device"
         Write-StepTitle "DEBUG TRỰC TIẾP TRÊN THIẾT BỊ ANDROID"
         if (!$androidTfm -or $projectType -ne 'MAUI') { Write-Fail "Không hỗ trợ!"; exit 1 }
         Invoke-DeviceDebug -Project $projPath -Tfm $androidTfm
     }
     '2' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: ANDROID APK"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: ANDROID APK"
         Write-StepTitle "XUẤT BẢN ANDROID APK" -Color $C_Info
         ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk") -ProjectType $projectType
     }
     '3' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: ANDROID AAB"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: ANDROID AAB"
         Write-StepTitle "XUẤT BẢN ANDROID AAB (GOOGLE PLAY)" -Color "Magenta"
         $ks    = Find-AndroidKeystore (Split-Path $projPath)
         $bArgs = @("-p:AndroidPackageFormat=aab")
@@ -1281,17 +1281,17 @@ switch ($choice) {
         ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "aab" -BuildArgs $bArgs -ProjectType $projectType
     }
     '4' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: iOS"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: iOS"
         Write-StepTitle "XUẤT BẢN iOS IPA" -Color "Magenta"
         ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") -ProjectType $projectType
     }
     '5' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Mac Catalyst"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Mac Catalyst"
         Write-StepTitle "XUẤT BẢN MAC CATALYST" -Color "Magenta"
         ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" -ProjectType $projectType
     }
     '6' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Windows MSIX"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Windows MSIX"
         Write-StepTitle "XUẤT BẢN WINDOWS MSIX" -Color "DarkYellow"
         if ($projectType -eq 'MAUI') {
             $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows" }
@@ -1300,7 +1300,7 @@ switch ($choice) {
     }
     '7' {
         if ($projectType -eq 'Web') {
-            Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WEB"
+            Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WEB"
             Write-StepTitle "XUẤT BẢN WEB UI" -Color $C_Info
             $swWeb = [Diagnostics.Stopwatch]::StartNew()
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web" -BuildArgs @("-p:PublishSingleFile=false") -ProjectType $projectType
@@ -1325,13 +1325,13 @@ switch ($choice) {
                 }
             }
         } elseif ($projectType -eq 'BlazorWasm') {
-            Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Blazor WASM"
+            Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Blazor WASM"
             Write-StepTitle "XUẤT BẢN BLAZOR WASM" -Color $C_Info
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "blazorwasm" -ProjectType $projectType
         }
     }
     '8' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: DESKTOP APP"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: DESKTOP APP"
         Write-StepTitle "XUẤT BẢN DESKTOP APP" -Color "DarkYellow"
         if ($projectType -in @('WinForms','WinExe')) {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "winforms" -BuildArgs @("-r","win-x64","--self-contained","true") -ProjectType $projectType
@@ -1341,33 +1341,33 @@ switch ($choice) {
         }
     }
     '9' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WPF"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WPF"
         Write-StepTitle "XUẤT BẢN WPF APP" -Color "DarkYellow"
         if ($projectType -eq 'WPF') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "wpf" -BuildArgs @("-r","win-x64","--self-contained","true") -ProjectType $projectType
         }
     }
     '10' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: CONSOLE"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: CONSOLE"
         Write-StepTitle "XUẤT BẢN CONSOLE APP" -Color "DarkYellow"
         if ($projectType -eq 'Console') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "console" -BuildArgs @("-r","win-x64","--self-contained","true") -ProjectType $projectType
         }
     }
     '11' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Build: LIBRARY"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Build: LIBRARY"
         Write-StepTitle "BUILD LIBRARY" -Color "Gray"
         if ($projectType -eq 'Library') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "lib" -ProjectType $projectType
         }
     }
     '12' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Build: DEFAULT"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Build: DEFAULT"
         Write-StepTitle "BUILD MẶC ĐỊNH" -Color "Gray"
         ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "default" -ProjectType $projectType
     }
     '13' {
-        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "GitHub Cloud Build"
+        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "GitHub Cloud Build"
         Write-StepTitle "GỬI YÊU CẦU BUILD LÊN GITHUB" -Color $C_Succ
         $userInput = Read-Host "  📦 Định dạng (1=apk [mặc định] / 2=aab)"
         $fmt = if ($userInput -eq "2") { "aab" } else { "apk" }
