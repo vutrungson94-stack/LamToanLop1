@@ -195,7 +195,7 @@ function Initialize-SshKey {
     if (-not (Test-Path $sshKeyPath)) { return }
     $resolved  = (Resolve-Path $sshKeyPath).Path
     $escaped   = $resolved -replace '"', '\"'
-    $env:GIT_SSH_COMMAND = "ssh -i `"$escaped`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+    $env:GIT_SSH_COMMAND = "ssh -i `"$escaped`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
     Write-SubLog "SSH Key" "Đã nạp ($resolved)" $C_Succ
 }
 
@@ -221,7 +221,43 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 
 $null = & git rev-parse --is-inside-work-tree 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Thư mục hiện tại không phải Git repository." -ForegroundColor $C_Err; exit 1
+    Write-Host "⚠️ Thư mục này chưa được đồng bộ với GitHub." -ForegroundColor $C_Warn; 
+    
+    if (-not (Confirm-YesNo "Bạn có muốn khởi tạo và GHI ĐÈ dữ liệu từ GitHub về máy này không?" -Default "n")) {
+        Write-Host "❌ Đã hủy. Script yêu cầu Git repository để hoạt động." -ForegroundColor $C_Err
+        exit 1
+    }
+
+    $repoUrl = Read-Host "🔗 Nhập URL GitHub Repository (ví dụ: https://github.com/user/repo.git)"
+    if ([string]::IsNullOrWhiteSpace($repoUrl)) {
+        Write-Host "❌ URL không hợp lệ. Hủy bỏ." -ForegroundColor $C_Err; exit 1
+    }
+
+    Write-Host "🚀 Đang tiến hành thiết lập ban đầu..." -ForegroundColor $C_Info
+    & git init
+    if ($LASTEXITCODE -ne 0) { Write-Host "❌ git init thất bại." -ForegroundColor $C_Err; exit 1 }
+
+    & git remote add origin $repoUrl
+    if ($LASTEXITCODE -ne 0) { Write-Host "❌ Không thể thêm remote '$repoUrl'." -ForegroundColor $C_Err; exit 1 }
+
+    & git fetch origin --prune
+    if ($LASTEXITCODE -ne 0) { Write-Host "❌ Fetch thất bại — kiểm tra URL và kết nối mạng." -ForegroundColor $C_Err; exit 1 }
+    
+    # Xác định nhánh mặc định của remote (thường là main hoặc master)
+    $lsRemote    = (& git ls-remote --symref origin HEAD 2>$null) -join "`n"
+    $remoteBranch = "main"
+    if ($lsRemote -match "ref: refs/heads/(?<branch>\S+)\s+HEAD") {
+        $remoteBranch = $Matches.branch
+        Write-SubLog "Nhánh chính" "Phát hiện '$remoteBranch' trên GitHub" $C_Succ
+    }
+
+    Write-Host "🔥 Đang ghi đè dữ liệu từ nhánh '$remoteBranch'..." -ForegroundColor $C_Warn
+    & git checkout -B $remoteBranch "origin/$remoteBranch" -f
+    if ($LASTEXITCODE -ne 0) { Write-Host "❌ Checkout '$remoteBranch' thất bại." -ForegroundColor $C_Err; exit 1 }
+
+    & git branch --set-upstream-to="origin/$remoteBranch" "$remoteBranch"
+    
+    Write-Host "✅ Đã đồng bộ thành công! Tiếp tục quy trình gsync..." -ForegroundColor $C_Succ
 }
 
 # Xử lý file lock (index.lock) nếu có để tránh treo script
@@ -645,5 +681,5 @@ Write-StepTitle "HOÀN TẤT TRONG $($duration.TotalSeconds.ToString('F1')) GIÂ
 Write-Host ""
 
 # Dọn biến môi trường tạm — không để lại side-effect cho session
-$env:GIT_PAGER = $null
-$env:PAGER     = $null
+Remove-Item Env:GIT_PAGER -ErrorAction SilentlyContinue
+Remove-Item Env:PAGER     -ErrorAction SilentlyContinue

@@ -40,7 +40,7 @@ function _2Col {
 }
 
 # ── Thanh tiến trình: [ XX%] ██████░░░░ ▶ Label ──────────────────────────────────
-function Show-ProgressBar {
+function Draw-ProgressBar {
     param([int]$Current, [int]$Total, [string]$Label)
     if ($Total -le 0) { $Total = 1 }
     $pct  = [int][Math]::Min([Math]::Ceiling($Current / $Total * 100), 100)
@@ -188,7 +188,7 @@ function Remove-ItemForce {
     # Fallback Robocopy để phá lock OS
     $emptyDir = Join-Path $env:TEMP "gbuild_empty_$(Get-Random)"
     New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-    & robocopy "`"$emptyDir`"" "`"$TargetDir`"" /MIR /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+    & robocopy $emptyDir $TargetDir /MIR /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
     $exitCode = $LASTEXITCODE
     Remove-Item -LiteralPath $emptyDir -Force -EA SilentlyContinue
     if ($exitCode -le 7) {
@@ -222,6 +222,7 @@ function Get-ProjectPort {
 function Get-SmartDotnetPath {
     Write-Host "🔍 Đang kiểm tra cache SDK .NET..." -ForegroundColor Cyan
     $cacheFile = Join-Path $PSScriptRoot ".sdkcache.json"
+    $dotnetName = if ($IsWindows) { "dotnet.exe" } else { "dotnet" }
 
     # --- 1. ƯU TIÊN SỐ 1: KIỂM TRA CACHE (TỐC ĐỘ TỨC THÌ) ---
     if (Test-Path $cacheFile) {
@@ -229,7 +230,7 @@ function Get-SmartDotnetPath {
             $cacheData = Get-Content $cacheFile -Raw | ConvertFrom-Json
             if ($cacheData.Path) {
                 $cachedFolder = $cacheData.Path
-                $dotnetExe = Join-Path $cachedFolder "dotnet.exe"
+                $dotnetExe = Join-Path $cachedFolder $dotnetName
                 if (Test-Path $dotnetExe) {
                     $sdkCheck = & $dotnetExe --list-sdks 2>&1
                     if ($sdkCheck -and $sdkCheck -match '\d+\.\d+') {
@@ -269,7 +270,7 @@ function Get-SmartDotnetPath {
     foreach ($qPath in $quickPaths) {
         $sdks = Get-ChildItem -Path $qPath -Directory -Recurse -Depth 4 -Filter '.sdk' -ErrorAction SilentlyContinue
         foreach ($sdkDir in $sdks) {
-            $dotnetExe = Join-Path $sdkDir.FullName "dotnet.exe"
+            $dotnetExe = Join-Path $sdkDir.FullName $dotnetName
             if (Test-Path $dotnetExe) {
                 $sdkCheck = & $dotnetExe --list-sdks 2>&1
                 if ($sdkCheck -match '\d+\.\d+') {
@@ -307,7 +308,7 @@ function Get-SmartDotnetPath {
             # Quét sâu thêm 5 cấp bên trong mỗi thư mục tiềm năng (Tổng cộng 6 cấp từ gốc)
             $deepSdks = Get-ChildItem -Path $dir.FullName -Directory -Recurse -Depth 5 -Filter '.sdk' -ErrorAction SilentlyContinue
             foreach ($sdkDir in $deepSdks) {
-                $dotnetExe = Join-Path $sdkDir.FullName "dotnet.exe"
+                $dotnetExe = Join-Path $sdkDir.FullName $dotnetName
                 if (Test-Path $dotnetExe) {
                     $sdkCheck = & $dotnetExe --list-sdks 2>&1
                     if ($sdkCheck -match '\d+\.\d+') {
@@ -1156,7 +1157,7 @@ Write-Host @"
 # ── BƯỚC 1: Khởi tạo môi trường ──────────────────────────────────────────────────
 $StepIndex++
 $sw1 = [Diagnostics.Stopwatch]::StartNew()
-Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Khởi tạo môi trường"
+Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Khởi tạo môi trường"
 Write-SubLog "Kiểm tra .NET SDK"
 
 $globalSdksList = $null
@@ -1177,8 +1178,9 @@ if ($globalSdksList) {
         } catch {}
     }
     if ($needsUpdate) {
-        @{ sdk = @{ version = $latestSdk; rollForward = "latestMajor"; allowPrerelease = $true } } |
-            ConvertTo-Json -Depth 3 | Out-File $gJsonPath -Encoding utf8 -Force
+        $jsonContent = @{ sdk = @{ version = $latestSdk; rollForward = "latestMajor"; allowPrerelease = $true } } |
+            ConvertTo-Json -Depth 3
+            [System.IO.File]::WriteAllText($gJsonPath, $jsonContent, [System.Text.UTF8Encoding]::new($false))
     }
 }
 $sw1.Stop()
@@ -1187,7 +1189,7 @@ Write-Done "SDK: $currentTfm  |  dotnet: $([System.IO.Path]::GetFileName($global
 # ── BƯỚC 2: Quét project ─────────────────────────────────────────────────────────
 $StepIndex++
 $sw2 = [Diagnostics.Stopwatch]::StartNew()
-Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Quét project"
+Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Quét project"
 Write-SubLog "Tìm kiếm .csproj"
 
 $csproj = Find-Project
@@ -1204,7 +1206,7 @@ Write-Done "Project: $($csproj.Name)  ($projectType)" $sw2.Elapsed.TotalSeconds
 
 # ── BƯỚC 3: Menu chọn chế độ ─────────────────────────────────────────────────────
 $StepIndex++
-Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Chọn chế độ (Input)"
+Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Chọn chế độ (Input)"
 
 $choice = '0'
 if ($GitHub -or $NonInteractive) {
@@ -1251,18 +1253,18 @@ $StepIndex++
 # ==================================================================================================
 switch ($choice) {
     '1' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Debug: Android Device"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Debug: Android Device"
         Write-StepTitle "DEBUG TRỰC TIẾP TRÊN THIẾT BỊ ANDROID"
         if (!$androidTfm -or $projectType -ne 'MAUI') { Write-Fail "Không hỗ trợ!"; exit 1 }
         Invoke-DeviceDebug -Project $projPath -Tfm $androidTfm
     }
     '2' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: ANDROID APK"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: ANDROID APK"
         Write-StepTitle "XUẤT BẢN ANDROID APK" -Color $C_Info
         ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "apk" -BuildArgs @("-p:AndroidPackageFormat=apk") -ProjectType $projectType
     }
     '3' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: ANDROID AAB"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: ANDROID AAB"
         Write-StepTitle "XUẤT BẢN ANDROID AAB (GOOGLE PLAY)" -Color "Magenta"
         $ks    = Find-AndroidKeystore (Split-Path $projPath)
         $bArgs = @("-p:AndroidPackageFormat=aab")
@@ -1279,17 +1281,17 @@ switch ($choice) {
         ProcessBuildAndShow -Project $projPath -Tfm $androidTfm -OutputSubDir "aab" -BuildArgs $bArgs -ProjectType $projectType
     }
     '4' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: iOS"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: iOS"
         Write-StepTitle "XUẤT BẢN iOS IPA" -Color "Magenta"
         ProcessBuildAndShow -Project $projPath -Tfm $iosTfm -OutputSubDir "ios" -BuildArgs @("-p:ArchiveOnBuild=true") -ProjectType $projectType
     }
     '5' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Mac Catalyst"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Mac Catalyst"
         Write-StepTitle "XUẤT BẢN MAC CATALYST" -Color "Magenta"
         ProcessBuildAndShow -Project $projPath -Tfm $macTfm -OutputSubDir "mac" -ProjectType $projectType
     }
     '6' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Windows MSIX"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Windows MSIX"
         Write-StepTitle "XUẤT BẢN WINDOWS MSIX" -Color "DarkYellow"
         if ($projectType -eq 'MAUI') {
             $targetTfm = if ($winTfm) { $winTfm } else { "$currentTfm-windows" }
@@ -1298,7 +1300,7 @@ switch ($choice) {
     }
     '7' {
         if ($projectType -eq 'Web') {
-            Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WEB"
+            Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WEB"
             Write-StepTitle "XUẤT BẢN WEB UI" -Color $C_Info
             $swWeb = [Diagnostics.Stopwatch]::StartNew()
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "web" -BuildArgs @("-p:PublishSingleFile=false") -ProjectType $projectType
@@ -1323,13 +1325,13 @@ switch ($choice) {
                 }
             }
         } elseif ($projectType -eq 'BlazorWasm') {
-            Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Blazor WASM"
+            Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: Blazor WASM"
             Write-StepTitle "XUẤT BẢN BLAZOR WASM" -Color $C_Info
-            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "blazorwasm" -BuildArgs @("-r","browser-wasm") -ProjectType $projectType
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "blazorwasm" -ProjectType $projectType
         }
     }
     '8' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: DESKTOP APP"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: DESKTOP APP"
         Write-StepTitle "XUẤT BẢN DESKTOP APP" -Color "DarkYellow"
         if ($projectType -in @('WinForms','WinExe')) {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "winforms" -BuildArgs @("-r","win-x64","--self-contained","true") -ProjectType $projectType
@@ -1339,33 +1341,33 @@ switch ($choice) {
         }
     }
     '9' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WPF"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WPF"
         Write-StepTitle "XUẤT BẢN WPF APP" -Color "DarkYellow"
         if ($projectType -eq 'WPF') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "wpf" -BuildArgs @("-r","win-x64","--self-contained","true") -ProjectType $projectType
         }
     }
     '10' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: CONSOLE"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: CONSOLE"
         Write-StepTitle "XUẤT BẢN CONSOLE APP" -Color "DarkYellow"
         if ($projectType -eq 'Console') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "console" -BuildArgs @("-r","win-x64","--self-contained","true") -ProjectType $projectType
         }
     }
     '11' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Build: LIBRARY"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Build: LIBRARY"
         Write-StepTitle "BUILD LIBRARY" -Color "Gray"
         if ($projectType -eq 'Library') {
             ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "lib" -ProjectType $projectType
         }
     }
     '12' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Build: DEFAULT"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Build: DEFAULT"
         Write-StepTitle "BUILD MẶC ĐỊNH" -Color "Gray"
         ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "default" -ProjectType $projectType
     }
     '13' {
-        Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "GitHub Cloud Build"
+        Draw-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "GitHub Cloud Build"
         Write-StepTitle "GỬI YÊU CẦU BUILD LÊN GITHUB" -Color $C_Succ
         $userInput = Read-Host "  📦 Định dạng (1=apk [mặc định] / 2=aab)"
         $fmt = if ($userInput -eq "2") { "aab" } else { "apk" }
