@@ -563,7 +563,8 @@ function Read-KeystoreInteractive([hashtable]$ks) {
 function Invoke-SmartClean {
     param(
         [string]$ProjectDir,
-        [string]$OutputSubDir = ""   # tuỳ chọn: nếu có → kill EXE cũ trong publish-output/<OutputSubDir>
+        [string]$OutputSubDir = "",   # tuỳ chọn: nếu có → kill EXE cũ trong publish-output/<OutputSubDir>
+        [string]$CsprojPath = ""
     )
 
     # Danh sách process IDE / hệ thống tuyệt đối KHÔNG ĐƯỢC KILL
@@ -736,6 +737,13 @@ function Invoke-SmartClean {
         }
     }
 
+    if ($CsprojPath -and (Test-Path $CsprojPath)) {
+        $content = Get-Content $CsprojPath -Raw -EA SilentlyContinue
+        if ($content -match '<UseMaui>\s*true\s*</UseMaui>') {
+            # dọn cache Android
+        }
+    }
+
     Write-Log "✅ [SmartClean] Hoàn tất." $C_Succ
 }
 
@@ -903,15 +911,20 @@ function Invoke-KillByPort {
     if ($portsToKill.Count -gt 0) {
         Write-Log "   📋 Port từ cấu hình: $($portsToKill -join ', ')" $C_Gray
         foreach ($port in $portsToKill) {
-            try {
-                $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-                foreach ($conn in $conns) {
-                    if ($conn.OwningProcess -gt 0) {
-                        Write-Log "   🔌 Giải phóng port $port (PID $($conn.OwningProcess))..." $C_Gray
-                        Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
-                    }
+            $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+            foreach ($conn in $conns) {
+                if ($conn.OwningProcess -gt 0) {
+                    try {
+                        $proc = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
+                        if ($proc -and $proc.Path -and $proc.Path.StartsWith($OutputDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            Write-Log "   🔌 Giải phóng port $port (PID $($conn.OwningProcess)) trong output..." $C_Gray
+                            Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+                        } else {
+                            Write-Log "   ⚠️ Port $port bị chiếm bởi process khác ($($proc.Name)), không kill." $C_Warn
+                        }
+                    } catch {}
                 }
-            } catch {}
+            }
         }
     } else {
         # Nếu không có port cấu hình, chỉ cần kill theo tên (đã làm) là đủ
@@ -935,12 +948,19 @@ function ProcessBuildAndShow {
     $resolvedScriptRoot = try { (Get-Item -LiteralPath $PSScriptRoot -EA Stop).FullName } catch { $null }
     if (-not $resolvedProjectDir -or -not $resolvedScriptRoot -or
         -not $resolvedProjectDir.StartsWith($resolvedScriptRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        Write-Log "❌ [SAFETY] ProjectDir '$projectDir' nằm ngoài script root. Hủy để tránh xóa nhầm!" $C_Err
+        
+            $guardRoot  = $resolvedScriptRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+            $guardProj  = $resolvedProjectDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+            if (-not $resolvedProjectDir -or -not $resolvedScriptRoot -or
+                -not $guardProj.StartsWith($guardRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-Log "❌ [SAFETY] ProjectDir '$projectDir' nằm ngoài script root. Hủy để tránh xóa nhầm!" $C_Err
+                exit 1
+            }
         exit 1
     }
 
     # OutputSubDir truyền vào để SmartClean kill luôn EXE publish cũ (Bước 0.7)
-    Invoke-SmartClean -ProjectDir $projectDir -OutputSubDir $OutputSubDir
+    Invoke-SmartClean -ProjectDir $projectDir -OutputSubDir $OutputSubDir -CsprojPath $Project
 
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
     $csprojContent = Get-Content $Project -Raw -EA SilentlyContinue
