@@ -452,7 +452,9 @@ function Get-CsprojTfms {
 # Tìm project
 function Find-Project {
     Write-Log "📂 Đang quét tìm file project..." $C_Gray
-    $allProjects = @(Get-ChildItem -Path . -Recurse -Filter *.csproj -File |
+    # Tìm từ $PSScriptRoot thay vì "." để tránh quét sai khi chạy từ thư mục khác
+    $searchRoot = $PSScriptRoot
+    $allProjects = @(Get-ChildItem -Path $searchRoot -Recurse -Filter *.csproj -File |
         Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|\.sdk)[\\/]' } |
         Sort-Object FullName)
 
@@ -587,8 +589,7 @@ function Invoke-SmartClean {
     Write-Log "   🔍 [Bước 0.5] Quét process khóa file bin/obj/.vs..." $C_Gray
     $srcFolders = @(
         (Join-Path $ProjectDir "bin"),
-        (Join-Path $ProjectDir "obj"),
-        (Join-Path $ProjectDir ".vs")
+        (Join-Path $ProjectDir "obj")
     )
     Get-Process | ForEach-Object {
         $proc = $_
@@ -655,8 +656,12 @@ function Invoke-SmartClean {
     # ============================================================
     $foldersToClean = @(
         (Join-Path $ProjectDir "bin"),
-        (Join-Path $ProjectDir "obj"),
-        (Join-Path $ProjectDir ".vs")
+        (Join-Path $ProjectDir "obj")
+        # [FIX] Bỏ .vs khỏi danh sách xóa tự động.
+        # .vs thường nằm ở solution root (thư mục cha) và chứa IntelliSense DB, debugger config
+        # cho TẤT CẢ project trong solution → xóa sẽ ảnh hưởng các project khác và phá IDE.
+        # Nếu thực sự cần, chỉ xóa khi người dùng xác nhận, hoặc giới hạn đúng solution dir.
+        # (Join-Path $ProjectDir ".vs")  ← đã tắt
     )
 
     foreach ($folder in $foldersToClean) {
@@ -716,14 +721,19 @@ function Invoke-SmartClean {
     }
 
     # ============================================================
-    # BƯỚC 2: DỌN CACHE PHỤ (Xamarin / Android)
+    # BƯỚC 2: DỌN CACHE PHỤ (Xamarin / Android) — CHỈ KHI LÀ MAUI PROJECT
     # ============================================================
-    $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
-    if (Test-Path $androidCache) {
-        try {
-            Get-ChildItem $androidCache -Recurse -Include "*.stamp","res.zip.*","__environment__.txt" -EA SilentlyContinue |
-                Remove-Item -Force -EA SilentlyContinue
-        } catch {}
+    # Chỉ chạy khi thực sự build Android/MAUI, không ảnh hưởng build session khác
+    $isMauiOrAndroid = (Test-Path (Join-Path $ProjectDir "*.csproj") -EA SilentlyContinue) -and
+                       ((Get-Content (Join-Path $ProjectDir "*.csproj") -Raw -EA SilentlyContinue) -match '<UseMaui>\s*true\s*</UseMaui>')
+    if ($isMauiOrAndroid) {
+        $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
+        if (Test-Path $androidCache) {
+            try {
+                Get-ChildItem $androidCache -Recurse -Include "*.stamp","res.zip.*","__environment__.txt" -EA SilentlyContinue |
+                    Remove-Item -Force -EA SilentlyContinue
+            } catch {}
+        }
     }
 
     Write-Log "✅ [SmartClean] Hoàn tất." $C_Succ
@@ -825,11 +835,33 @@ function Invoke-AutoDeploy {
 
 # ✅ Hàm kill port thông minh — chỉ chạy khi là Web project, tự tìm port
 function Invoke-KillByPort {
-    param([string]$ProjectDir, [string]$ProjectType)
+    param(
+        [string]$ProjectDir, 
+        [string]$ProjectType,
+        [string]$ExeName,
+        [string]$OutputDir = ""
+    )
 
     # Chỉ áp dụng cho Web/Blazor, các loại khác bỏ qua
     if ($ProjectType -notin @('Web', 'BlazorWasm')) {
         return
+    }
+
+    Write-Log "🔍 Đang dừng tiến trình web cũ..." $C_Gray
+
+    # Kill theo tên exe (cách tin cậy nhất) ──
+    if (-not [string]::IsNullOrWhiteSpace($ExeName) -and -not [string]::IsNullOrWhiteSpace($OutputDir)) {
+        $procs = Get-Process -Name $ExeName -ErrorAction SilentlyContinue |
+                 Where-Object {
+                     try { $_.Path -and $_.Path.StartsWith($OutputDir, [System.StringComparison]::OrdinalIgnoreCase) }
+                     catch { $false }
+                 }
+        if ($procs) {
+            $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Log "   ✅ Đã dừng $($procs.Count) tiến trình '$ExeName' trong $OutputDir" $C_Succ
+        } else {
+            Write-Log "   ℹ️ Không có tiến trình '$ExeName' trong thư mục output." $C_Gray
+        }
     }
 
     # Thu thập port từ nhiều nguồn
@@ -842,36 +874,22 @@ function Invoke-KillByPort {
             $ls = Get-Content $launchSettings -Raw | ConvertFrom-Json
             # Duyệt tất cả profiles
             $ls.profiles.PSObject.Properties.Value | ForEach-Object {
-                $rawUrls = $_.applicationUrl
-                if ($rawUrls) {
-                    $rawUrls -split ';' | ForEach-Object {
-                        if ($_ -match ':(\d+)') {
-                            [void]$portsToKill.Add([int]$matches[1])
-                        }
-                    }
+                $_.applicationUrl -split ';' | ForEach-Object {
+                    if ($_ -match ':(\d+)') { [void]$portsToKill.Add([int]$matches[1]) }
                 }
             }
-            Write-Log "   📋 Tìm thấy port từ launchSettings.json: $($portsToKill -join ', ')" $C_Gray
-        } catch {
-            Write-Log "   ⚠️ Không đọc được launchSettings.json" $C_Warn
-        }
+        } catch { }
     }
 
     # --- Nguồn 2: appsettings.json (Kestrel config) ---
-    foreach ($appSettings in @("appsettings.json", "appsettings.Production.json")) {
-        $appSettingsPath = Join-Path $ProjectDir $appSettings
-        if (Test-Path $appSettingsPath) {
+    foreach ($cfgFile in @("appsettings.json", "appsettings.Production.json")) {
+        $cfgPath = Join-Path $ProjectDir $cfgFile
+        if (Test-Path $cfgPath) {
             try {
-                $cfg = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
-                $urls = $cfg.Kestrel?.Endpoints?.PSObject.Properties.Value.Url
-                if ($urls) {
-                    $urls | ForEach-Object {
-                        if ($_ -match ':(\d+)') {
-                            [void]$portsToKill.Add([int]$matches[1])
-                        }
-                    }
+                $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+                $cfg.Kestrel?.Endpoints?.PSObject.Properties.Value.Url | ForEach-Object {
+                    if ($_ -match ':(\d+)') { [void]$portsToKill.Add([int]$matches[1]) }
                 }
-                # Đọc cả "Urls" key
                 if ($cfg.Urls) {
                     $cfg.Urls -split ';' | ForEach-Object {
                         if ($_ -match ':(\d+)') { [void]$portsToKill.Add([int]$matches[1]) }
@@ -882,23 +900,22 @@ function Invoke-KillByPort {
     }
 
     # --- Nguồn 3: Fallback mặc định ASP.NET nếu không tìm thấy gì ---
-    if ($portsToKill.Count -eq 0) {
-        Write-Log "   ℹ️ Không tìm thấy port trong config, dùng mặc định ASP.NET (5000, 5001)" $C_Gray
-        [void]$portsToKill.Add(5000)
-        [void]$portsToKill.Add(5001)
-    }
-
-    # --- Kill tất cả process đang giữ các port tìm được ---
-    foreach ($port in $portsToKill) {
-        try {
-            $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-            foreach ($conn in $conns) {
-                if ($conn.OwningProcess -gt 0) {
-                    Write-Log "   🔌 Giải phóng port $port (PID $($conn.OwningProcess))..." $C_Gray
-                    Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+    if ($portsToKill.Count -gt 0) {
+        Write-Log "   📋 Port từ cấu hình: $($portsToKill -join ', ')" $C_Gray
+        foreach ($port in $portsToKill) {
+            try {
+                $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+                foreach ($conn in $conns) {
+                    if ($conn.OwningProcess -gt 0) {
+                        Write-Log "   🔌 Giải phóng port $port (PID $($conn.OwningProcess))..." $C_Gray
+                        Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+                    }
                 }
-            }
-        } catch {}
+            } catch {}
+        }
+    } else {
+        # Nếu không có port cấu hình, chỉ cần kill theo tên (đã làm) là đủ
+        Write-Log "   ℹ️ Không tìm thấy port cấu hình — chỉ kill theo tên exe." $C_Gray
     }
 }
 
@@ -912,13 +929,24 @@ function ProcessBuildAndShow {
     )
 
     $projectDir = Split-Path $Project -Parent
+
+    # đảm bảo $projectDir nằm trong $PSScriptRoot, tránh xóa nhầm thư mục ngoài project
+    $resolvedProjectDir = try { (Get-Item -LiteralPath $projectDir -EA Stop).FullName } catch { $null }
+    $resolvedScriptRoot = try { (Get-Item -LiteralPath $PSScriptRoot -EA Stop).FullName } catch { $null }
+    if (-not $resolvedProjectDir -or -not $resolvedScriptRoot -or
+        -not $resolvedProjectDir.StartsWith($resolvedScriptRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Log "❌ [SAFETY] ProjectDir '$projectDir' nằm ngoài script root. Hủy để tránh xóa nhầm!" $C_Err
+        exit 1
+    }
+
     # OutputSubDir truyền vào để SmartClean kill luôn EXE publish cũ (Bước 0.7)
     Invoke-SmartClean -ProjectDir $projectDir -OutputSubDir $OutputSubDir
 
     $rawOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
     $csprojContent = Get-Content $Project -Raw -EA SilentlyContinue
     # Kill theo port (chỉ áp dụng với Web/BlazorWasm)
-    Invoke-KillByPort -ProjectDir $projectDir -ProjectType $ProjectType
+    $exeBaseName = [System.IO.Path]::GetFileNameWithoutExtension($Project)
+    Invoke-KillByPort -ProjectDir $projectDir -ProjectType $ProjectType -ExeName $exeBaseName -OutputDir $rawOut
 
     # ------------------------------------------------------------
     # KILL TIẾN TRÌNH CŨ + XÓA TOÀN BỘ THƯ MỤC OUTPUT (BẮT BUỘC)
@@ -931,12 +959,10 @@ function ProcessBuildAndShow {
     $outputDeleted = $false
 
     while (-not $outputDeleted -and $attempt -lt $maxAttempts) {
-        # Kill theo tên
-        Get-Process -Name $exeBaseName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        # Chỉ kill process có Path nằm trong $rawOut — KHÔNG kill theo tên (nguy cơ kill chương trình khác)
         Get-Process | Where-Object {
-            try { $_.Path -like "$rawOut\*" } catch { $false }
+            try { $_.Path -and $_.Path.StartsWith($rawOut, [System.StringComparison]::OrdinalIgnoreCase) } catch { $false }
         } | Stop-Process -Force -ErrorAction SilentlyContinue
-
         Start-Sleep -Seconds 2
 
         # Thử xóa thư mục
@@ -957,7 +983,17 @@ function ProcessBuildAndShow {
                 return $false
             }
             if ($lockedProcs) {
-                $lockedProcs | Where-Object { $_.Name -notin @('Idle','System','svchost','csrss','winlogon','services','lsass') } |
+                # Dùng safeList đầy đủ, đồng bộ với Invoke-SmartClean
+                $fullSafeList = @(
+                    'Code','devenv','rider','fleet','explorer','svchost','System','Idle',
+                    'csrss','winlogon','services','lsass','smss','wininit','taskhostw','dwm',
+                    'conhost','powershell','pwsh',
+                    'OmniSharp','VBCSCompiler','RazorLanguageServer',
+                    'ServiceHub.RoslynCodeAnalysisService',
+                    'ServiceHub.IdentityHost','Microsoft.CodeAnalysis.LanguageServer',
+                    'Microsoft.ServiceHub.Controller','csc','MSBuild'
+)
+                $lockedProcs | Where-Object { $_.Name -notin $fullSafeList } |
                     Stop-Process -Force -ErrorAction SilentlyContinue
                 Write-Log "   🎯 Đã kill tiến trình khóa file." $C_Warn
             } else {
