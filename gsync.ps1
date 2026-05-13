@@ -16,18 +16,17 @@ param(
     [switch]$NonInteractive,
     [switch]$Yes,
     [switch]$No,
-    [string]$ConfigPath = (Join-Path $PSScriptRoot ".gitignore.config.json")
+    [string]$ConfigPath = (Join-Path (Get-Location) ".gitignore.config.json"),
+    [string]$RepoUrl = ""
 )
 
 Set-StrictMode -Version Latest
-# ✅ FIX 1: 'Stop' không ảnh hưởng native git (chỉ ảnh hưởng cmdlet), nhưng lại làm
-#    crash script nếu cmdlet như Add-Content / New-Item gặp lỗi quyền truy cập.
-#    Dùng 'Continue' để xử lý lỗi có kiểm soát qua $LASTEXITCODE và try/catch tường minh.
 $ErrorActionPreference = 'Continue'
 $Global:StartTime      = Get-Date
 
 # ── Cross-platform ─────────────────────────────────────────────────────────────
 $SEP = [IO.Path]::DirectorySeparatorChar
+$IsWindowsEnv = $env:OS -like 'Windows*'
 
 # ── Màu sắc ───────────────────────────────────────────────────────────────────
 $C_Header = "Magenta"; $C_Info = "Cyan"; $C_Warn = "Yellow"
@@ -67,9 +66,6 @@ function Write-SubLog([string]$Label, [string]$Value, [string]$Color = "White") 
 function Confirm-YesNo {
     param([string]$Question, [string]$Default = "y")
     if ($No)             { return $false }
-    # ✅ FIX 2: Logic gốc `($Default -eq "y") -or $Default -eq "n"` LUÔN = $true
-    #    vì mọi $Default đều là "y" hoặc "n" → -Yes luôn accept kể cả prompt nguy hiểm Default="n".
-    #    Hành vi đúng: -Yes = "đồng ý tất cả" → return $true vô điều kiện.
     if ($Yes)            { return $true }
     if ($NonInteractive) { return ($Default -eq "y") }
     $suffix = if ($Default -eq "y") { "(y/n) [Mặc định: y]" } else { "(y/n) [Mặc định: n]" }
@@ -82,7 +78,6 @@ function Confirm-YesNo {
 # CONFIG — TỰ ĐỘNG TẠO MẶC ĐỊNH NẾU FILE KHÔNG TỒN TẠI
 # ==============================================================================
 function Get-DefaultConfig {
-    # JSON inline — không phụ thuộc file bên ngoài, dùng được offline
     $json = @'
 {
   "_readme": "gsync config. Chỉnh sửa thoải mái. Xem: https://github.com/bạn/gsync",
@@ -163,9 +158,8 @@ function Import-Config([string]$path) {
         Write-Host "     → Đang tạo config mặc định đa năng..." -ForegroundColor $C_Gray
         $defaultCfg = Get-DefaultConfig
         try {
-            $outPath = (Join-Path (Get-Location).Path ($path | Split-Path -Leaf))
+            $outPath = $path
             $jsonOut = $defaultCfg | ConvertTo-Json -Depth 10
-            # Ghi UTF-8 không BOM — tương thích mọi editor và OS
             [System.IO.File]::WriteAllText($outPath, $jsonOut,
                 [System.Text.UTF8Encoding]::new($false))
             Write-SubLog "Config" "Đã tạo '$outPath' — hãy kiểm tra và chỉnh sửa nếu cần" $C_Succ
@@ -177,7 +171,6 @@ function Import-Config([string]$path) {
     }
 
     try {
-        # Đọc UTF-8 không BOM — tránh ConvertFrom-Json lỗi BOM trên PS 5.1
         $raw = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
         return ($raw | ConvertFrom-Json)
     } catch {
@@ -200,19 +193,102 @@ function Initialize-SshKey {
 }
 
 # ==============================================================================
+# HÀM XỬ LÝ XUNG ĐỘT KHI PULL / REBASE
+# ==============================================================================
+function Get-GitConflictType {
+    $gitDir = Join-Path (Get-Location) ".git"
+    if ((Test-Path (Join-Path $gitDir "rebase-merge")) -or (Test-Path (Join-Path $gitDir "rebase-apply"))) {
+        return "rebase"
+    }
+    if (Test-Path (Join-Path $gitDir "MERGE_HEAD")) {
+        return "merge"
+    }
+    if (Test-Path (Join-Path $gitDir "CHERRY_PICK_HEAD")) {
+        return "cherry-pick"
+    }
+    return $null
+}
+
+function Handle-GitConflict {
+    $conflictType = Get-GitConflictType
+    if (-not $conflictType) {
+        Write-Host "❌ Lỗi pull không xác định (không phải conflict). Hãy kiểm tra lại." -ForegroundColor $C_Err
+        exit 1
+    }
+
+    Write-Host "`n⚠️ Xung đột xảy ra trong quá trình ${conflictType}!" -ForegroundColor $C_Warn
+    if (Confirm-YesNo "Bạn có muốn hủy bỏ (abort) ${conflictType} này không?" -Default "y") {
+        switch ($conflictType) {
+            "merge"        { & git merge --abort }
+            "rebase"       { & git rebase --abort }
+            "cherry-pick"  { & git cherry-pick --abort }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Không thể hủy bỏ ${conflictType}. Vui lòng xử lý thủ công." -ForegroundColor $C_Err
+            exit 1
+        }
+        Write-Host "✅ Đã hủy bỏ ${conflictType}. Bạn có thể chạy lại script sau." -ForegroundColor $C_Succ
+        exit 0
+    }
+
+    # Người dùng muốn tự giải quyết
+    Write-Host "`n🔧 HƯỚNG DẪN GIẢI QUYẾT ${conflictType}:" -ForegroundColor $C_Info
+    Write-Host "   1. Xem các file bị conflict: git diff --name-only --diff-filter=U"
+    Write-Host "   2. Sửa từng file (tìm <<<<<<<, =======, >>>>>>>) rồi git add <file>"
+    if ($conflictType -eq "merge") {
+        Write-Host "   3. Khi đã giải quyết xong: git commit (hoặc git merge --continue)"
+    } else {
+        Write-Host "   3. Khi đã giải quyết xong: git ${conflictType} --continue"
+    }
+    Write-Host "   Hoặc để hủy bỏ toàn bộ: git ${conflictType} --abort"
+
+    # Hỏi xem danh sách file conflict ngay
+    if (Confirm-YesNo "`nBạn có muốn xem danh sách file conflict không?" -Default "y") {
+        $conflictFiles = & git diff --name-only --diff-filter=U 2>$null
+        if ($conflictFiles) {
+            Write-Host "`n   📄 File conflict:" -ForegroundColor $C_Warn
+            $conflictFiles | ForEach-Object { Write-Host "      $_" -ForegroundColor $C_Warn }
+        } else {
+            Write-Host "   ℹ️  Không tìm thấy file conflict (có thể đã được giải quyết?)." -ForegroundColor $C_Gray
+        }
+    }
+
+    # Hỏi mở file conflict trong editor
+    if (Confirm-YesNo "Bạn có muốn mở file conflict trong editor không?" -Default "n") {
+        if ($conflictFiles) {
+            foreach ($f in $conflictFiles) {
+                try {
+                    if ($env:EDITOR) {
+                        & $env:EDITOR $f
+                    } elseif ($IsWindowsEnv) {
+                        Start-Process notepad $f
+                    } else {
+                        & 'vi' $f
+                    }
+                } catch {
+                    Write-Host "   ⚠️  Không thể mở $f" -ForegroundColor $C_Warn
+                }
+            }
+        } else {
+            Write-Host "   ⚠️  Chưa có danh sách file conflict. Vui lòng chạy lại tùy chọn xem trước." -ForegroundColor $C_Warn
+        }
+    }
+
+    Write-Host "`n👉 Sau khi giải quyết xong, chạy lại script này." -ForegroundColor $C_Warn
+    exit 1
+}
+
+# ==============================================================================
 # MAIN
 # ==============================================================================
 $cfg = Import-Config $ConfigPath
 Show-Header
 Initialize-SshKey
 
-# Tắt git pager — tránh block terminal khi output dài (git log, git diff...)
 $env:GIT_PAGER = 'cat'
 $env:PAGER     = 'cat'
 
-# ──────────────────────────────────────────────────────────────────────────────
 # BƯỚC 0 – KIỂM TRA MÔI TRƯỜNG
-# ──────────────────────────────────────────────────────────────────────────────
 Write-StepTitle "KIỂM TRA MÔI TRƯỜNG"
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -228,7 +304,9 @@ if ($LASTEXITCODE -ne 0) {
         exit 1
     }
 
-    $repoUrl = Read-Host "🔗 Nhập URL GitHub Repository (ví dụ: https://github.com/user/repo.git)"
+    $repoUrl = if (-not [string]::IsNullOrWhiteSpace($RepoUrl)) { $RepoUrl }
+           elseif ($NonInteractive -or $Yes) { Write-Host "❌ Cần -RepoUrl khi dùng -Yes/-NonInteractive"; exit 1 }
+           else { Read-Host "🔗 Nhập URL..." }
     if ([string]::IsNullOrWhiteSpace($repoUrl)) {
         Write-Host "❌ URL không hợp lệ. Hủy bỏ." -ForegroundColor $C_Err; exit 1
     }
@@ -243,7 +321,6 @@ if ($LASTEXITCODE -ne 0) {
     & git fetch origin --prune
     if ($LASTEXITCODE -ne 0) { Write-Host "❌ Fetch thất bại — kiểm tra URL và kết nối mạng." -ForegroundColor $C_Err; exit 1 }
     
-    # Xác định nhánh mặc định của remote (thường là main hoặc master)
     $lsRemote    = (& git ls-remote --symref origin HEAD 2>$null) -join "`n"
     $remoteBranch = "main"
     if ($lsRemote -match "ref: refs/heads/(?<branch>\S+)\s+HEAD") {
@@ -260,7 +337,6 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "✅ Đã đồng bộ thành công! Tiếp tục quy trình gsync..." -ForegroundColor $C_Succ
 }
 
-# Xử lý file lock (index.lock) nếu có để tránh treo script
 $lockFile = Join-Path (Get-Location) ".git/index.lock"
 if (Test-Path $lockFile) {
   Write-Host "⚠️  Phát hiện file index.lock đang chặn Git. Đang xử lý..." -ForegroundColor $C_Warn
@@ -272,14 +348,34 @@ if (Test-Path $lockFile) {
   Write-Host "✅ Đã giải phóng Git lock thành công." -ForegroundColor $C_Succ
 }
 
-# Xác định nhánh — hỗ trợ git cũ (<2.22) và detached HEAD
+# Kiểm tra trạng thái rebase/merge/cherry-pick đang dang dở (từ lần chạy trước)
+$inProgress = Get-GitConflictType
+if ($inProgress) {
+    Write-Host "`n⚠️ Git đang trong trạng thái ${inProgress} chưa hoàn tất." -ForegroundColor $C_Warn
+    Write-Host "   Trạng thái này thường gây lỗi 'detached HEAD' hoặc không xác định được nhánh."
+    if (Confirm-YesNo "Bạn có muốn hủy bỏ (abort) ${inProgress} này không?" -Default "y") {
+        switch ($inProgress) {
+            "rebase"       { & git rebase --abort }
+            "merge"        { & git merge --abort }
+            "cherry-pick"  { & git cherry-pick --abort }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Không thể hủy bỏ ${inProgress}. Vui lòng xử lý thủ công." -ForegroundColor $C_Err
+            exit 1
+        }
+        Write-Host "✅ Đã hủy bỏ ${inProgress}. Tiếp tục script..." -ForegroundColor $C_Succ
+    } else {
+        # Gọi hàm xử lý xung đột (hiển thị hướng dẫn và thoát)
+        Handle-GitConflict
+    }
+}
+
+# Xác định nhánh
 $localBranch = (& git branch --show-current 2>$null)
 if ([string]::IsNullOrWhiteSpace($localBranch)) {
     $localBranch = (& git rev-parse --abbrev-ref HEAD 2>$null)
 }
 if ([string]::IsNullOrWhiteSpace($localBranch) -or $localBranch -eq 'HEAD') {
-    # ✅ FIX 3: File gốc silently fallback về defaultBranchFallback khi detached HEAD
-    #    → Không cảnh báo, có thể push nhầm nhánh. Phải hỏi user.
     $fallback = [string]$cfg.git.defaultBranchFallback
     Write-Host "  ⚠️  Không xác định được nhánh (detached HEAD?)." -ForegroundColor $C_Warn
     if ($NonInteractive -or $Yes) {
@@ -293,8 +389,6 @@ if ([string]::IsNullOrWhiteSpace($localBranch) -or $localBranch -eq 'HEAD') {
 
 $remoteName = [string]$cfg.git.remoteName
 
-# ✅ FIX 4: `@{u}` KHÔNG được để bare — PowerShell parse là hashtable literal → syntax error.
-#    Phải quote thành '@{u}' (single-quote) để truyền đúng cho git.
 $upstreamRaw = (& git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$null)
 $upstreamRef = if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($upstreamRaw)) {
     $upstreamRaw
@@ -303,11 +397,9 @@ $upstreamRef = if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($u
 }
 
 $remoteBranchRef   = $upstreamRef
-# Tách branch name phần sau remote/ (hỗ trợ tên có dấu / như feature/abc)
 $remoteBranchShort = ($remoteBranchRef -split '/', 2)[-1]
 if ([string]::IsNullOrWhiteSpace($remoteBranchShort)) { $remoteBranchShort = $localBranch }
 
-# Kiểm tra remote branch tồn tại chưa (branch mới chưa push lần nào)
 $null = & git rev-parse $remoteBranchRef 2>$null
 $remoteExists = ($LASTEXITCODE -eq 0)
 
@@ -317,9 +409,7 @@ if (-not $remoteExists) {
     Write-SubLog "Remote branch" "Chưa tồn tại — sẽ tạo khi push" $C_Warn
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # BƯỚC 1 – .GITIGNORE & DỌN RÁC
-# ──────────────────────────────────────────────────────────────────────────────
 Write-StepTitle "BẢO VỆ & DỌN DẸP"
 
 if ($cfg.gitignore.enabled -eq $true) {
@@ -334,7 +424,7 @@ if ($cfg.gitignore.enabled -eq $true) {
     foreach ($p in $cfg.gitignore.rulesToAdd) {
         $pStr = [string]$p
         if (-not ($currentContent -contains $pStr)) {
-            Add-Content $ignoreFile $pStr; $added++
+            Add-Content $ignoreFile $pStr -Encoding UTF8; $added++
         }
     }
     if ($added -gt 0) { Write-SubLog ".gitignore" "Đã thêm $added quy tắc" $C_Succ }
@@ -347,9 +437,6 @@ if ($cfg.junkCleanup.enabled -eq $true) {
     $confirmBefore = [bool]$cfg.junkCleanup.confirmBeforeDelete
     $gitDirPat     = [regex]::Escape("${SEP}.git")
 
-    # ✅ FIX 5: Tên biến `$matches` là AUTOMATIC VARIABLE của PowerShell (-match, -replace).
-    #    Gán vào `$matches` override biến hệ thống → hành vi không đoán trước với StrictMode.
-    #    Đổi sang `$junkFound`.
     $junkFound = @(
         foreach ($dir in $restrictDirs) {
             if (-not (Test-Path $dir)) { continue }
@@ -384,8 +471,6 @@ if ($cfg.largeFiles.enabled -eq $true) {
 
     function Test-IsExcludedPath([string]$fullPath, [string[]]$dirs) {
         foreach ($d in $dirs) {
-            # ✅ FIX 6: Gốc dùng `-like "*$d*"` → false-positive: "bin" khớp "cabin", "Robinhood"...
-            #    Dùng regex boundary với path separator để chỉ khớp đúng thư mục.
             $escaped = [regex]::Escape($d)
             if ($fullPath -match "(^|[$([regex]::Escape($SEP))/])$escaped([$([regex]::Escape($SEP))/]|$)") {
                 return $true
@@ -394,8 +479,6 @@ if ($cfg.largeFiles.enabled -eq $true) {
         return $false
     }
 
-    # ✅ FIX 7: Thiếu @() wrapper — Where-Object trả về single FileInfo khi chỉ 1 kết quả,
-    #    object đó không có .Count → crash với StrictMode. Bọc @() để đảm bảo luôn là array.
     $largeFiles = @(
         Get-ChildItem -Path . -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Length -gt $thresholdBytes -and -not (Test-IsExcludedPath $_.FullName $excludeDirs) }
@@ -413,13 +496,10 @@ if ($cfg.largeFiles.enabled -eq $true) {
     }
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # BƯỚC 2 – FETCH & AHEAD/BEHIND
-# ──────────────────────────────────────────────────────────────────────────────
 Write-StepTitle "PHÂN TÍCH THAY ĐỔI"
 Write-SubLog "Remote" "Đang fetch..." $C_Gray
 
-# ✅ FIX 8: File gốc không kiểm tra $LASTEXITCODE sau fetch → lỗi mạng bị nuốt im lặng.
 $fetchOut  = & git --no-pager fetch $remoteName 2>&1
 $fetchCode = $LASTEXITCODE
 if ($fetchCode -ne 0) {
@@ -448,10 +528,8 @@ if ($remoteExists -and $localCommit -and $remoteCommit -and ($localCommit -ne $r
 Write-SubLog "Local ahead"   "$commitsAhead commit(s)"  $(if ($commitsAhead  -gt 0) { $C_Warn } else { $C_Succ })
 Write-SubLog "Remote behind" "$commitsBehind commit(s)" $(if ($commitsBehind -gt 0) { $C_Warn } else { $C_Succ })
 
-# ──────────────────────────────────────────────────────────────────────────────
-# BƯỚC 3 – PULL (stash an toàn nếu working tree có thay đổi)
-# ──────────────────────────────────────────────────────────────────────────────
-$Script:StashName = $null   # theo dõi stash do gsync tạo ra
+# BƯỚC 3 – PULL
+$Script:StashName = $null
 
 function Invoke-StashIfDirty {
     if ($cfg.git.stashWhenWorkingTreeDirty -ne $true) { return $false }
@@ -471,8 +549,6 @@ function Invoke-StashIfDirty {
 
 function Invoke-PopStash {
     if (-not $Script:StashName) { return }
-    # ✅ FIX 9: Gốc pop stash MỚI NHẤT → có thể pop nhầm stash CŨ của user → mất data.
-    #    Tìm đúng stash theo tên gsync đã đặt, chỉ pop đúng stash đó.
     $stashLine = (& git stash list --format='%gd %s' 2>$null |
                   Where-Object { $_ -match [regex]::Escape($Script:StashName) } |
                   Select-Object -First 1)
@@ -498,8 +574,9 @@ if ($commitsBehind -gt 0) {
             Write-Host "🔄 Đang pull từ remote..." -ForegroundColor $C_Info
             & git --no-pager pull $remoteName $remoteBranchShort
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "❌ Pull thất bại — giải quyết xung đột rồi chạy lại." -ForegroundColor $C_Err
-                exit 1
+                # Pull thất bại – gọi hàm xử lý conflict
+                if ($stashed) { Invoke-PopStash }   # Trả lại thay đổi trước khi xử lý
+                Handle-GitConflict
             }
             if ($stashed) { Invoke-PopStash }
             Write-SubLog "Pull" "Thành công!" $C_Succ
@@ -511,9 +588,7 @@ if ($commitsBehind -gt 0) {
     Write-SubLog "Remote" "Không có thay đổi mới" $C_Gray
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
-# BƯỚC 4 – QUÉT FILE NHẠY CẢM (config-driven)
-# ──────────────────────────────────────────────────────────────────────────────
+# BƯỚC 4 – QUÉT FILE NHẠY CẢM
 function Test-SensitiveFile([string]$path) {
     if ($cfg.sensitive.enabled -ne $true) { return $false }
     foreach ($a in @($cfg.sensitive.allowedPatterns)) { if ($path -match $a) { return $false } }
@@ -521,9 +596,7 @@ function Test-SensitiveFile([string]$path) {
     return $false
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # BƯỚC 5 – THAY ĐỔI CỤC BỘ
-# ──────────────────────────────────────────────────────────────────────────────
 $gitStatus = @(& git status --porcelain 2>$null)
 if ($gitStatus.Count -eq 0) {
     Write-StepTitle "HOÀN TẤT"
@@ -537,7 +610,6 @@ $blockedFiles = @()
 foreach ($line in $gitStatus) {
     if (-not $line -or $line.Length -lt 3) { continue }
     $rawPath = $line.Substring(3).Trim()
-    # Porcelain v1: path có ký tự đặc biệt được bọc trong dấu ngoặc kép + escape octal
     if ($rawPath.StartsWith('"') -and $rawPath.EndsWith('"')) {
         $rawPath = $rawPath.Substring(1, $rawPath.Length - 2)
     }
@@ -565,14 +637,10 @@ if ($blockedFiles.Count -gt 0) {
     exit 1
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # BƯỚC 6 – COMMIT
-# ──────────────────────────────────────────────────────────────────────────────
 if (-not (Confirm-YesNo "Bạn có muốn COMMIT những thay đổi này không?" -Default "y")) {
     Write-SubLog "Commit" "Đã bỏ qua" $C_Gray
 } else {
-    # ✅ FIX 10: `git add .` bỏ sót deletions trong một số git version cũ.
-    #    `git add -A` stage đúng: new · modified · deleted.
     & git add -A
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ git add thất bại." -ForegroundColor $C_Err; exit 1
@@ -580,8 +648,6 @@ if (-not (Confirm-YesNo "Bạn có muốn COMMIT những thay đổi này không
 
     if ($cfg.artifactUnstage.enabled -eq $true) {
         $stagedNow   = @(& git diff --cached --name-only 2>$null)
-        # ✅ FIX 11: Tên biến $patterns bị dùng lại ở Bước 1 (junkCleanup) cùng scope
-        #    → có thể override nhau với StrictMode. Đổi tên tường minh.
         $artifactPats = @($cfg.artifactUnstage.patterns) + @($cfg.artifactUnstage.extraPatterns)
         foreach ($f in $stagedNow) {
             $isArt = $false
@@ -600,7 +666,6 @@ if (-not (Confirm-YesNo "Bạn có muốn COMMIT những thay đổi này không
         Write-Host "✅ Không còn file nào sau khi lọc artifact." -ForegroundColor $C_Succ; exit 0
     }
 
-    # Gợi ý commit message — đa ngôn ngữ lập trình
     $hasWorkflow  = @($stagedFinal | Where-Object { $_ -match '\.ya?ml$' -or $_ -match '\.github[\\/]' })
     $hasProjFile  = @($stagedFinal | Where-Object { $_ -match '\.(csproj|vbproj|fsproj|sln|gradle|pom\.xml)$' })
     $hasResources = @($stagedFinal | Where-Object { $_ -match '\.(png|jpg|jpeg|svg|resx|strings|xcassets)$' })
@@ -635,16 +700,12 @@ if (-not (Confirm-YesNo "Bạn có muốn COMMIT những thay đổi này không
     Write-SubLog "Commit" "Thành công!" $C_Succ
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
-# BƯỚC 7 – PUSH (retry + force-with-lease)
-# ──────────────────────────────────────────────────────────────────────────────
+# BƯỚC 7 – PUSH
 if (-not (Confirm-YesNo "Bạn có muốn PUSH lên remote không?" -Default "y")) {
     Write-Host "⏭️ Đã bỏ qua PUSH." -ForegroundColor $C_Gray
 } else {
     Write-Host "`n🚀 Đang PUSH lên $remoteName/$localBranch ..." -ForegroundColor $C_Info
 
-    # ✅ FIX 12: Branch mới chưa có trên remote cần --set-upstream để tạo tracking.
-    #    Thiếu thì push vẫn thành công nhưng lần sau `@{u}` vẫn không tìm được upstream.
     if (-not $remoteExists) {
         & git push --set-upstream $remoteName $localBranch
     } else {
@@ -657,7 +718,7 @@ if (-not (Confirm-YesNo "Bạn có muốn PUSH lên remote không?" -Default "y"
 
         & git --no-pager pull --rebase $remoteName $remoteBranchShort
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "❌ Rebase thất bại — giải quyết conflict rồi chạy lại." -ForegroundColor $C_Err; exit 1
+            Handle-GitConflict   # Gọi hàm xử lý conflict chung
         }
 
         & git push $remoteName $localBranch
@@ -666,7 +727,6 @@ if (-not (Confirm-YesNo "Bạn có muốn PUSH lên remote không?" -Default "y"
             if (Confirm-YesNo "Thử force-with-lease? (chỉ dùng khi bạn chắc)" -Default "n") {
                 & git --no-pager fetch $remoteName 2>$null | Out-Null
                 & git push $remoteName $localBranch --force-with-lease
-                # ✅ FIX 13: Gốc không kiểm tra exitcode sau force-with-lease → script kết thúc "thành công"
                 if ($LASTEXITCODE -ne 0) {
                     Write-Host "❌ Force push thất bại. Kiểm tra quyền trên remote." -ForegroundColor $C_Err; exit 1
                 }
@@ -680,6 +740,5 @@ $duration = (Get-Date) - $Global:StartTime
 Write-StepTitle "HOÀN TẤT TRONG $($duration.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
 Write-Host ""
 
-# Dọn biến môi trường tạm — không để lại side-effect cho session
 Remove-Item Env:GIT_PAGER -ErrorAction SilentlyContinue
 Remove-Item Env:PAGER     -ErrorAction SilentlyContinue
