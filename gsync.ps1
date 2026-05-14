@@ -20,13 +20,22 @@ param(
     [string]$RepoUrl = ""
 )
 
+if ($Yes -and $No) {
+    Write-Host "❌ Không thể dùng -Yes và -No cùng lúc." -ForegroundColor $C_Err
+    exit 1
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 $Global:StartTime      = Get-Date
 
 # ── Cross-platform ─────────────────────────────────────────────────────────────
 $SEP = [IO.Path]::DirectorySeparatorChar
-$IsWindowsEnv = $env:OS -like 'Windows*'
+$IsWindowsEnv = if ($null -ne (Get-Variable -Name 'IsWindows' -ErrorAction SilentlyContinue)) {
+    $IsWindows   # PS7+ cross-platform built-in
+} else {
+    $env:OS -like 'Windows*'   # PS5.1 fallback
+}
 
 # ── Màu sắc ───────────────────────────────────────────────────────────────────
 $C_Header = "Magenta"; $C_Info = "Cyan"; $C_Warn = "Yellow"
@@ -209,8 +218,10 @@ function Get-GitConflictType {
     return $null
 }
 
-function Handle-GitConflict {
+function Invoke-GitConflictHandler {
     $conflictType = Get-GitConflictType
+    $conflictFiles = @()
+
     if (-not $conflictType) {
         Write-Host "❌ Lỗi pull không xác định (không phải conflict). Hãy kiểm tra lại." -ForegroundColor $C_Err
         exit 1
@@ -305,7 +316,10 @@ if ($LASTEXITCODE -ne 0) {
     }
 
     $repoUrl = if (-not [string]::IsNullOrWhiteSpace($RepoUrl)) { $RepoUrl }
-           elseif ($NonInteractive -or $Yes) { Write-Host "❌ Cần -RepoUrl khi dùng -Yes/-NonInteractive"; exit 1 }
+           elseif ($NonInteractive -or $Yes) { 
+                Write-Host "❌ Cần -RepoUrl khi dùng -Yes/-NonInteractive" -ForegroundColor $C_Err
+                exit 1 
+            }
            else { Read-Host "🔗 Nhập URL..." }
     if ([string]::IsNullOrWhiteSpace($repoUrl)) {
         Write-Host "❌ URL không hợp lệ. Hủy bỏ." -ForegroundColor $C_Err; exit 1
@@ -315,8 +329,16 @@ if ($LASTEXITCODE -ne 0) {
     & git init
     if ($LASTEXITCODE -ne 0) { Write-Host "❌ git init thất bại." -ForegroundColor $C_Err; exit 1 }
 
-    & git remote add origin $repoUrl
-    if ($LASTEXITCODE -ne 0) { Write-Host "❌ Không thể thêm remote '$repoUrl'." -ForegroundColor $C_Err; exit 1 }
+    $null = & git remote get-url origin 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        & git remote set-url origin $repoUrl
+        Write-SubLog "Remote" "Đã cập nhật URL origin → $repoUrl" $C_Warn
+    } else {
+        & git remote add origin $repoUrl
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Không thể thêm remote '$repoUrl'." -ForegroundColor $C_Err; exit 1
+        }
+    }
 
     & git fetch origin --prune
     if ($LASTEXITCODE -ne 0) { Write-Host "❌ Fetch thất bại — kiểm tra URL và kết nối mạng." -ForegroundColor $C_Err; exit 1 }
@@ -366,7 +388,7 @@ if ($inProgress) {
         Write-Host "✅ Đã hủy bỏ ${inProgress}. Tiếp tục script..." -ForegroundColor $C_Succ
     } else {
         # Gọi hàm xử lý xung đột (hiển thị hướng dẫn và thoát)
-        Handle-GitConflict
+        Invoke-GitConflictHandler
     }
 }
 
@@ -389,7 +411,8 @@ if ([string]::IsNullOrWhiteSpace($localBranch) -or $localBranch -eq 'HEAD') {
 
 $remoteName = [string]$cfg.git.remoteName
 
-$upstreamRaw = (& git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$null)
+$upstreamRaw = (& git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$null) |
+               Select-Object -First 1
 $upstreamRef = if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($upstreamRaw)) {
     $upstreamRaw
 } else {
@@ -435,7 +458,7 @@ if ($cfg.junkCleanup.enabled -eq $true) {
     $junkPatterns  = @($cfg.junkCleanup.patterns)
     $restrictDirs  = @($cfg.junkCleanup.restrictToDirs)
     $confirmBefore = [bool]$cfg.junkCleanup.confirmBeforeDelete
-    $gitDirPat     = [regex]::Escape("${SEP}.git")
+    $gitDirPat = '[\\/](\.git|node_modules|\.sdk|bin|obj|\.venv|venv)[\\/]'
 
     $junkFound = @(
         foreach ($dir in $restrictDirs) {
@@ -504,7 +527,7 @@ $fetchOut  = & git --no-pager fetch $remoteName 2>&1
 $fetchCode = $LASTEXITCODE
 if ($fetchCode -ne 0) {
     Write-Host "❌ Không thể fetch từ remote (exitcode $fetchCode)." -ForegroundColor $C_Err
-    Write-Host "   $fetchOut"                                        -ForegroundColor $C_Gray
+    ($fetchOut -join "`n") -split "`n" | ForEach-Object { Write-Host "   $_" -ForegroundColor $C_Gray }
     Write-Host "   → Kiểm tra mạng, URL remote, quyền truy cập."   -ForegroundColor $C_Warn
     exit 1
 }
@@ -568,21 +591,31 @@ function Invoke-PopStash {
 
 if ($commitsBehind -gt 0) {
     Write-Host "`n🔔 Remote có $commitsBehind commit mới!" -ForegroundColor $C_Warn
-    if ([string]$cfg.git.pullConflictPolicy -eq "ask") {
-        if (Confirm-YesNo "Bạn có muốn PULL code mới về không?" -Default "y") {
-            $stashed = Invoke-StashIfDirty
-            Write-Host "🔄 Đang pull từ remote..." -ForegroundColor $C_Info
-            & git --no-pager pull $remoteName $remoteBranchShort
-            if ($LASTEXITCODE -ne 0) {
-                # Pull thất bại – gọi hàm xử lý conflict
-                if ($stashed) { Invoke-PopStash }   # Trả lại thay đổi trước khi xử lý
-                Handle-GitConflict
-            }
-            if ($stashed) { Invoke-PopStash }
-            Write-SubLog "Pull" "Thành công!" $C_Succ
-        } else {
-            Write-SubLog "Pull" "Đã bỏ qua" $C_Gray
+
+    $pullPolicy = [string]$cfg.git.pullConflictPolicy
+
+    $shouldPull = switch ($pullPolicy) {
+        "always" { $true }
+        "never"  { $false }
+        "ask"    { Confirm-YesNo "Bạn có muốn PULL code mới về không?" -Default "y" }
+        default  {
+            Write-Host "  ⚠️ pullConflictPolicy '$pullPolicy' không hợp lệ — mặc định 'ask'." -ForegroundColor $C_Warn
+            Confirm-YesNo "Bạn có muốn PULL code mới về không?" -Default "y"
         }
+    }
+
+    if ($shouldPull) {
+        $stashed = Invoke-StashIfDirty
+        Write-Host "🔄 Đang pull từ remote..." -ForegroundColor $C_Info
+        & git --no-pager pull $remoteName $remoteBranchShort
+        if ($LASTEXITCODE -ne 0) {
+            if ($stashed) { Invoke-PopStash }
+            Invoke-GitConflictHandler
+        }
+        if ($stashed) { Invoke-PopStash }
+        Write-SubLog "Pull" "Thành công!" $C_Succ
+    } else {
+        Write-SubLog "Pull" "Đã bỏ qua$(if ($pullPolicy -eq 'never') { ' (config: never)' })" $C_Gray
     }
 } else {
     Write-SubLog "Remote" "Không có thay đổi mới" $C_Gray
@@ -655,7 +688,7 @@ if (-not (Confirm-YesNo "Bạn có muốn COMMIT những thay đổi này không
                 if ($f -match $pat) { $isArt = $true; break }
             }
             if ($isArt) {
-                & git reset HEAD -- $f 2>$null | Out-Null
+                & git restore --staged -- $f 2>$null | Out-Null
                 Write-SubLog "Gỡ artifact" $f $C_Warn
             }
         }
@@ -718,7 +751,7 @@ if (-not (Confirm-YesNo "Bạn có muốn PUSH lên remote không?" -Default "y"
 
         & git --no-pager pull --rebase $remoteName $remoteBranchShort
         if ($LASTEXITCODE -ne 0) {
-            Handle-GitConflict   # Gọi hàm xử lý conflict chung
+            Invoke-GitConflictHandler   # Gọi hàm xử lý conflict chung
         }
 
         & git push $remoteName $localBranch
@@ -740,5 +773,6 @@ $duration = (Get-Date) - $Global:StartTime
 Write-StepTitle "HOÀN TẤT TRONG $($duration.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
 Write-Host ""
 
-Remove-Item Env:GIT_PAGER -ErrorAction SilentlyContinue
-Remove-Item Env:PAGER     -ErrorAction SilentlyContinue
+Remove-Item Env:GIT_SSH_COMMAND  -ErrorAction SilentlyContinue
+Remove-Item Env:GIT_PAGER        -ErrorAction SilentlyContinue
+Remove-Item Env:PAGER            -ErrorAction SilentlyContinue
