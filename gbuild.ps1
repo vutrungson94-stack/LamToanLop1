@@ -236,27 +236,25 @@ function Get-SmartDotnetPath {
     Write-Host "🔍 Đang kiểm tra cache SDK .NET..." -ForegroundColor Cyan
     $cacheFile = Join-Path $PSScriptRoot ".sdkcache.json"
     $dotnetName = if ($IsWindows) { "dotnet.exe" } else { "dotnet" }
+    $Global:SpaceFiller = ' ' * 80
 
     # --- 1. ƯU TIÊN SỐ 1: KIỂM TRA CACHE (TỐC ĐỘ TỨC THÌ) ---
     if (Test-Path $cacheFile) {
         try {
             $cacheData = Get-Content $cacheFile -Raw | ConvertFrom-Json
-            if ($cacheData.Path) {
-                $cachedFolder = $cacheData.Path
-                $dotnetExe = Join-Path $cachedFolder $dotnetName
-                if (Test-Path $dotnetExe) {
-                    $sdkCheck = & $dotnetExe --list-sdks 2>&1
-                    if ($sdkCheck -and $sdkCheck -match '\d+\.\d+') {
-                        Write-Host "✅ Sử dụng SDK từ cache: $cachedFolder" -ForegroundColor Green
-                        Set-DotnetEnv -SdkPath (Get-SafePath $cachedFolder)
-                        return $dotnetExe
-                    }
+            if ($cacheData.Path -and (Test-Path (Join-Path $cacheData.Path $dotnetName))) {
+                $dotnetExe = Join-Path $cacheData.Path $dotnetName
+                # Kiểm tra xem SDK còn sống không
+                $sdkCheck = & $dotnetExe --list-sdks 2>&1
+                if ($sdkCheck -match '\d+\.\d+') {
+                    Write-Host "✅ [CACHE] Sử dụng SDK tại: $($cacheData.Path)" -ForegroundColor Green
+                    # Thiết lập môi trường từ cache
+                    Set-DotnetEnv -SdkPath (Get-SafePath $cacheData.Path)
+                    return $dotnetExe
                 }
-                Write-Host "⚠️ Cache SDK không còn hiệu lực, đang quét lại..." -ForegroundColor Yellow
             }
-        } catch {
-            Write-Host "⚠️ Lỗi đọc cache, tiến hành quét mới..." -ForegroundColor Yellow
-        }
+        } catch { }
+        Write-Host "⚠️ Cache SDK không còn hiệu lực, đang quét lại..." -ForegroundColor Yellow
     }
 
     # --- 2. ƯU TIÊN SỐ 2: KIỂM TRA TRONG PATH HỆ THỐNG ---
@@ -276,61 +274,73 @@ function Get-SmartDotnetPath {
         }
     }
 
-    # --- 3. ƯU TIÊN SỐ 3: QUÉT NHANH THƯ MỤC HIỆN TẠI (DEPTH 4) ---
-    Write-Host "⚙️ Đang quét nhanh thư mục dự án..." -ForegroundColor Cyan
-    $quickPaths = @($PSScriptRoot, (Get-Location).Path) | Select-Object -Unique
-    foreach ($qPath in $quickPaths) {
-        $sdks = Get-ChildItem -Path $qPath -Directory -Recurse -Depth 4 -Filter '.sdk' -ErrorAction SilentlyContinue
-        foreach ($sdkDir in $sdks) {
-            $dotnetExe = Join-Path $sdkDir.FullName $dotnetName
-            if (Test-Path $dotnetExe) {
-                $sdkCheck = & $dotnetExe --list-sdks 2>&1
-                if ($sdkCheck -match '\d+\.\d+') {
-                    $foundPath = $sdkDir.FullName
-                    Write-Host "✅ Đã tìm thấy SDK local: $foundPath" -ForegroundColor Green
-                    Set-DotnetEnv -SdkPath (Get-SafePath $foundPath)
-                    @{ Path = $foundPath } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
-                    return $dotnetExe
-                }
-            }
-        }
+    # --- GIAI ĐOẠN DÒ TÌM LOCAL (Nếu hệ thống chưa có) ---
+    $currentDir = (Get-Location).ProviderPath
+    $projectDrive = Split-Path -Path $currentDir -Qualifier # Ví dụ: "G:"
+    $driveRoot = $projectDrive + "\"
+    
+    $excludeDirs = @('Windows', 'AppData', '$Recycle.Bin', 'System Volume Information', 'ProgramData', 'Microsoft', 'Package Cache')
+    
+    # Tính toán độ sâu từ gốc đến thư mục hiện tại (Depth X)
+    $relativePath = $currentDir.Replace($driveRoot, "")
+    $depthX = ($relativePath -split '\\' | Where-Object { $_ -ne "" }).Count
+    $searchDepth = $depthX + 3
+
+    # HÀM LƯU CACHE NGAY LẬP TỨC
+    $InternalSaveCache = {
+        param($exePath)
+        $folder = Split-Path $exePath -Parent
+        Write-Host "" # Xuống dòng từ dòng tiến trình
+        Write-Host "💾 Đã lưu vị trí SDK vào cache: $folder" -ForegroundColor Green
+        @{ Path = $folder } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
+        Set-DotnetEnv -SdkPath (Get-SafePath $folder)
+        return $exePath
     }
 
-    # --- 4. ƯU TIÊN SỐ 4: QUÉT TOÀN BỘ Ổ ĐĨA (HYBRID SCANNING) ---
-    # Chiến thuật: Né các hố đen dữ liệu để không treo máy, quét sâu dần
-    Write-Host "⚙️ Đang quét sâu các ổ đĩa để tìm SDK (Vui lòng chờ)..." -ForegroundColor Cyan
-    $excludeDirs = @('Windows', 'AppData', '$Recycle.Bin', 'System Volume Information', 'ProgramData', 'Microsoft', 'Package Cache')
-    $allDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -gt 0 } | Select-Object -ExpandProperty Root
-
-    foreach ($drive in $allDrives) {
-        $root = $drive + "\"
-        Write-Host "   Rà soát ổ $root..." -ForegroundColor DarkGray
-
-        # GIAI ĐOẠN A: Quét cực nhanh các thư mục .sdk ở cấp cao (Depth 2)
-        $quickSearch = Get-ChildItem -Path $root -Directory -Depth 2 -Filter '.sdk' -ErrorAction SilentlyContinue
+    # HÀM QUÉT CÓ TIẾN TRÌNH
+    $ScanWithProgress = {
+        param($RootPath, $MaxDepth, $Label)
+        Write-Host "   📂 $Label" -ForegroundColor DarkCyan
         
-        # GIAI ĐOẠN B: Nếu không thấy, quét sâu vào các thư mục tiềm năng
-        $potentialDirs = if ($quickSearch) { $quickSearch } else {
-            Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin $excludeDirs }
-        }
+        # Lấy danh sách thư mục con tại gốc (trừ các thư mục rác/hệ thống)
+        $subDirs = Get-ChildItem -Path $RootPath -Directory -ErrorAction SilentlyContinue | 
+                   Where-Object { $_.Name -notin $excludeDirs }
 
-        foreach ($dir in $potentialDirs) {
-            # Quét sâu thêm 5 cấp bên trong mỗi thư mục tiềm năng (Tổng cộng 6 cấp từ gốc)
-            $deepSdks = Get-ChildItem -Path $dir.FullName -Directory -Recurse -Depth 5 -Filter '.sdk' -ErrorAction SilentlyContinue
-            foreach ($sdkDir in $deepSdks) {
-                $dotnetExe = Join-Path $sdkDir.FullName $dotnetName
-                if (Test-Path $dotnetExe) {
-                    $sdkCheck = & $dotnetExe --list-sdks 2>&1
-                    if ($sdkCheck -match '\d+\.\d+') {
-                        $foundPath = $sdkDir.FullName
-                        Write-Host "✅ Đã tìm thấy SDK tại: $foundPath" -ForegroundColor Green
-                        Set-DotnetEnv -SdkPath (Get-SafePath $foundPath)
-                        @{ Path = $foundPath } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
-                        return $dotnetExe
-                    }
+        foreach ($dir in $subDirs) {
+            $displayPath = $dir.FullName
+            if ($displayPath.Length -gt 60) { $displayPath = "..." + $displayPath.Substring($displayPath.Length - 57) }
+            Write-Host "`r      🔎 Đang dò: $displayPath$($Global:SpaceFiller)" -NoNewline -ForegroundColor DarkGray
+
+            # Quét sâu với độ sâu được tính toán
+            $found = Get-ChildItem -Path $dir.FullName -Filter $dotnetName -Recurse -Depth $MaxDepth -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+                $sdkCheck = & $found.FullName --list-sdks 2>&1
+                if ($sdkCheck -match '\d+\.\d+') {
+                    Write-Host "" # Xuống dòng
+                    return $found.FullName
                 }
             }
         }
+        Write-Host "`r$($Global:SpaceFiller)`r" -NoNewline
+        return $null
+    }
+
+    # BƯỚC 1: Dò tại thư mục dự án (Depth 3)
+    $res = &$ScanWithProgress -RootPath $currentDir -MaxDepth 3 -Label "Đang tìm SDK tại thư mục dự án"
+    if ($res) { return $res }
+
+    # BƯỚC 2: Dò từ gốc ổ đĩa hiện tại ($projectDrive) với độ sâu X + 3
+    $res = &$ScanWithProgress -RootPath $driveRoot -MaxDepth $searchDepth -Label "Đang tìm SDK trên toàn ổ $projectDrive (Độ sâu $searchDepth)"
+    if ($res) { return &$InternalSaveCache -exePath $res }
+
+    # BƯỚC 3: Dò các ổ đĩa khác
+    $otherDrives = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | 
+                    Where-Object { $_.DeviceID -ne $projectDrive } | Select-Object -ExpandProperty DeviceID
+
+    foreach ($drive in $otherDrives) {
+        # Với ổ đĩa khác, ta dùng độ sâu mặc định là 5 để tránh quét quá lâu
+        $res = &$ScanWithProgress -RootPath ($drive + "\") -MaxDepth $searchDepth -Label "Đang tìm SDK trên ổ $drive"
+        if ($res) { return &$InternalSaveCache -exePath $res }
     }
 
     Write-Host "❌ Không tìm thấy bất kỳ SDK .NET hợp lệ nào." -ForegroundColor Red
@@ -372,18 +382,30 @@ function Get-AndroidSdkPath {
     # Nếu chưa tìm thấy, quét các ổ cứng cố định với độ sâu 3
     Write-Log "⚙️ Đang quét ổ cứng tìm Android SDK..." $C_Gray
     $fixedDrives = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object -ExpandProperty DeviceID
+    $excludeDirs = @('Windows', 'AppData', '$Recycle.Bin', 'System Volume Information', 'ProgramData', 'Microsoft', 'Package Cache')
+    
     foreach ($drive in $fixedDrives) {
         $root = $drive + "\"
-        $androidDirs = Get-ChildItem -Path $root -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue |
-                        Where-Object { $_.Name -eq "android-sdk" -or (Test-Path (Join-Path $_.FullName "platform-tools\adb.exe")) }
-        if ($androidDirs) {
-            $found = $androidDirs[0].FullName
-            Write-Log "✅ Đã thấy Android SDK: $found" $C_Succ
-            $safePath = Get-SafePath $found
-            $env:ANDROID_HOME     = $safePath
-            $env:ANDROID_SDK_ROOT = $safePath
-            return $safePath
+        $topDirs = Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin $excludeDirs }
+        
+        foreach ($dir in $topDirs) {
+            $pathStr = $dir.FullName
+            if ($pathStr.Length -gt 50) { $pathStr = $pathStr.Substring(0, 47) + "..." }
+            Write-Host "`r   🔍 Đang dò: $pathStr$(' ' * 20)" -NoNewline -ForegroundColor DarkGray
+
+            $androidDirs = Get-ChildItem -Path $dir.FullName -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+                            Where-Object { $_.Name -eq "android-sdk" -or (Test-Path (Join-Path $_.FullName "platform-tools\adb.exe")) }
+            if ($androidDirs) {
+                Write-Host "" # Xuống dòng
+                $found = $androidDirs[0].FullName
+                Write-Log "✅ Đã thấy Android SDK: $found" $C_Succ
+                $safePath = Get-SafePath $found
+                $env:ANDROID_HOME     = $safePath
+                $env:ANDROID_SDK_ROOT = $safePath
+                return $safePath
+            }
         }
+        Write-Host "`r$(' ' * 80)`r" -NoNewline
     }
 
     Write-Log "❌ Không tìm thấy Android SDK." $C_Err
@@ -413,21 +435,31 @@ function Get-JavaSdkPath {
     # 2. Quét các ổ đĩa cục bộ tìm thư mục chứa `bin\javac.exe` (độ sâu 5)
     Write-Log "⚙️ Đang quét ổ đĩa tìm Java SDK..." $C_Gray
     $fixedDrives = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object -ExpandProperty DeviceID
+    $excludeDirs = @('Windows', 'AppData', '$Recycle.Bin', 'System Volume Information', 'ProgramData', 'Microsoft', 'Package Cache')
+    
     foreach ($drive in $fixedDrives) {
         $root = $drive + "\"
-        # Tìm `javac.exe` với độ sâu 5 (đủ cho `.sdk/jdk/bin` hoặc `Common/.sdk/jdk/bin`)
-        $javacCandidates = @(Get-ChildItem -Path $root -Filter "javac.exe" -Recurse -Depth 5 -ErrorAction SilentlyContinue)
-        foreach ($javac in $javacCandidates) {
-            $binDir = $javac.Directory
-            $jdkDir = $binDir.Parent.FullName
-            # Kiểm tra cấu trúc thư mục `jdk/bin/javac.exe` và có `java.exe`
-            if ((Test-Path (Join-Path $jdkDir "bin\javac.exe")) -and (Test-Path (Join-Path $jdkDir "bin\java.exe"))) {
-                Write-Log "✅ Đã tìm thấy Java SDK: $jdkDir" $C_Succ
-                $safePath = Get-SafePath $jdkDir
-                $env:JAVA_HOME = $safePath
-                return $safePath
+        $topDirs = Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin $excludeDirs }
+        
+        foreach ($dir in $topDirs) {
+            $pathStr = $dir.FullName
+            if ($pathStr.Length -gt 50) { $pathStr = $pathStr.Substring(0, 47) + "..." }
+            Write-Host "`r   🔍 Đang dò: $pathStr$(' ' * 20)" -NoNewline -ForegroundColor DarkGray
+
+            $javacCandidates = @(Get-ChildItem -Path $dir.FullName -Filter "javac.exe" -Recurse -Depth 4 -ErrorAction SilentlyContinue)
+            foreach ($javac in $javacCandidates) {
+                $binDir = $javac.Directory
+                $jdkDir = $binDir.Parent.FullName
+                if ((Test-Path (Join-Path $jdkDir "bin\javac.exe")) -and (Test-Path (Join-Path $jdkDir "bin\java.exe"))) {
+                    Write-Host "" # Xuống dòng
+                    Write-Log "✅ Đã tìm thấy Java SDK: $jdkDir" $C_Succ
+                    $safePath = Get-SafePath $jdkDir
+                    $env:JAVA_HOME = $safePath
+                    return $safePath
+                }
             }
         }
+        Write-Host "`r$(' ' * 80)`r" -NoNewline
     }
 
     # 3. Không tìm thấy
@@ -1140,18 +1172,47 @@ function ProcessBuildAndShow {
 
     $sw        = [System.Diagnostics.Stopwatch]::StartNew()
     $copyCount = 0; $warnCount = 0; $errCount = 0
+    $isProgressActive = $false
 
     $output = & $dotnetExe @params 2>&1 | ForEach-Object {
         $line = $_.ToString().TrimEnd()
         if ([string]::IsNullOrWhiteSpace($line)) { return $line }
+        
+        # Ẩn bớt các dòng copy file, chỉ đếm ngầm
         if ($line -match '^\s*Copying file from') { $copyCount++; return $line }
-        if      ($line -match '(?i)\berror\b')   { $errCount++; Write-Host "  ❌ $line" -ForegroundColor $C_Err }
-        elseif  ($line -match '(?i)\bwarning\b') { $warnCount++; Write-Host "  ⚠️  $line" -ForegroundColor $C_Warn }
-        elseif  ($line -match '(Build succeeded|Build FAILED|->\s|Publish:|Done Building|Time Elapsed)') { Write-Host "  ✔  $line" -ForegroundColor $C_Succ }
-        elseif  ($line -match '(CoreCompile|ResolveAssembly|GenerateBindingRedirects|CheckForDuplicate)') { <# skip #> }
-        else    { Write-Host "    $line" -ForegroundColor $C_Gray }
+        
+        # Nếu là Lỗi
+        if ($line -match '(?i)\berror\b') {
+            if ($isProgressActive) { Write-Host ""; $isProgressActive = $false }
+            $errCount++; Write-Host "  ❌ $line" -ForegroundColor $C_Err
+        }
+        # Nếu là Cảnh báo
+        elseif ($line -match '(?i)\bwarning\b') {
+            if ($isProgressActive) { Write-Host ""; $isProgressActive = $false }
+            $warnCount++; Write-Host "  ⚠️  $line" -ForegroundColor $C_Warn
+        }
+        # Nếu là các mốc hoàn thành quan trọng
+        elseif ($line -match '(Build succeeded|Build FAILED|->\s|Publish:|Done Building|Time Elapsed)') {
+            if ($isProgressActive) { Write-Host ""; $isProgressActive = $false }
+            Write-Host "  ✔  $line" -ForegroundColor $C_Succ
+        }
+        # CÁC LOG KHÁC -> IN ĐÈ TRÊN 1 DÒNG ĐỂ LÀM TIẾN TRÌNH
+        else {
+            $shortLine = $line.Trim()
+            # Cắt bớt nếu dòng log quá dài để không bị rớt dòng (word-wrap) làm vỡ giao diện
+            if ($shortLine.Length -gt 70) { $shortLine = $shortLine.Substring(0, 67) + "..." }
+            
+            Write-Host "`r   ⚙️ Đang thực thi: $shortLine$(' ' * 20)" -NoNewline -ForegroundColor DarkGray
+            $isProgressActive = $true
+        }
+        
+        # Trả về line để lưu vào biến $output (dùng cho việc in lỗi cuối script)
         $line
     }
+    
+    # Dọn dẹp dòng tiến trình sau khi tiến trình dotnet kết thúc
+    if ($isProgressActive) { Write-Host "`r$(' ' * 100)`r" -NoNewline }
+
     $exitCode = $LASTEXITCODE
     $sw.Stop()
 
@@ -1249,23 +1310,35 @@ $currentTfm = Get-LatestInstalledTfm -SdksList $globalSdksList
 
 # Cập nhật global.json một lần
 if ($globalSdksList) {
-    $latestSdk = ($globalSdksList[-1] -split ' ')[0]
+    $latestSdkVersion = ($globalSdksList[-1] -split ' ')[0]
     $gJsonPath = Join-Path $PSScriptRoot "global.json"
     $needsUpdate = $true
+    
+    # 1. Nếu file đã tồn tại, kiểm tra xem version có khác không
     if (Test-Path $gJsonPath) {
         try {
-            $json = Get-Content $gJsonPath -Raw | ConvertFrom-Json
-            if ($json.sdk -and $json.sdk.version -eq $latestSdk) { $needsUpdate = $false }
-        } catch {}
-    }
-    if ($needsUpdate) {
-        $jsonContent = @{
-            sdk = @{
-                version     = $latestSdk
-                rollForward = "latestFeature"  # latestFeature an toàn hơn latestMajor
+            $existingJson = Get-Content $gJsonPath -Raw | ConvertFrom-Json
+            if ($existingJson.sdk.version -eq $latestSdkVersion) {
+                $needsUpdate = $false
+                Write-Log "ℹ global.json đã đúng version ($latestSdkVersion), bỏ qua cập nhật." $C_Gray
             }
-        } | ConvertTo-Json -Depth 3
-        [System.IO.File]::WriteAllText($gJsonPath, $jsonContent, [System.Text.UTF8Encoding]::new($false))
+        } catch {
+            # Nếu file lỗi/không parse được JSON thì cứ để nó update lại
+            Write-Warn "global.json hiện tại bị lỗi định dạng, sẽ tạo lại."
+        }
+    }
+
+    # 2. Chỉ ghi file nếu thực sự có thay đổi hoặc file chưa tồn tại
+    if ($needsUpdate) {
+        $gJsonContent = @{
+            sdk = @{
+                version     = $latestSdkVersion
+                rollForward = "latestFeature"
+            }
+        } | ConvertTo-Json
+        
+        $gJsonContent | Out-File $gJsonPath -Encoding utf8 -Force
+        Write-Done "Đã cập nhật global.json mới ($latestSdkVersion)"
     }
 }
 $sw1.Stop()
