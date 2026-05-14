@@ -205,16 +205,14 @@ function Initialize-SshKey {
 # HÀM XỬ LÝ XUNG ĐỘT KHI PULL / REBASE
 # ==============================================================================
 function Get-GitConflictType {
-    $gitDir = Join-Path (Get-Location) ".git"
-    if ((Test-Path (Join-Path $gitDir "rebase-merge")) -or (Test-Path (Join-Path $gitDir "rebase-apply"))) {
-        return "rebase"
-    }
-    if (Test-Path (Join-Path $gitDir "MERGE_HEAD")) {
-        return "merge"
-    }
-    if (Test-Path (Join-Path $gitDir "CHERRY_PICK_HEAD")) {
-        return "cherry-pick"
-    }
+    $gitDirRaw = (& git rev-parse --git-dir 2>$null)
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitDirRaw)) { return $null }
+    $gitDir = $gitDirRaw.Trim()
+
+    if ((Test-Path (Join-Path $gitDir "rebase-merge")) -or
+        (Test-Path (Join-Path $gitDir "rebase-apply"))) { return "rebase" }
+    if (Test-Path (Join-Path $gitDir "MERGE_HEAD"))       { return "merge" }
+    if (Test-Path (Join-Path $gitDir "CHERRY_PICK_HEAD")) { return "cherry-pick" }
     return $null
 }
 
@@ -298,6 +296,7 @@ Initialize-SshKey
 
 $env:GIT_PAGER = 'cat'
 $env:PAGER     = 'cat'
+$env:GIT_CONFIG_PARAMETERS = "'core.quotepath=false'"
 
 # BƯỚC 0 – KIỂM TRA MÔI TRƯỜNG
 Write-StepTitle "KIỂM TRA MÔI TRƯỜNG"
@@ -447,7 +446,11 @@ if ($cfg.gitignore.enabled -eq $true) {
     foreach ($p in $cfg.gitignore.rulesToAdd) {
         $pStr = [string]$p
         if (-not ($currentContent -contains $pStr)) {
-            Add-Content $ignoreFile $pStr -Encoding UTF8; $added++
+            [System.IO.File]::AppendAllText(
+                (Resolve-Path $ignoreFile).Path,
+                "$pStr`n",
+                [System.Text.UTF8Encoding]::new($false)
+            )
         }
     }
     if ($added -gt 0) { Write-SubLog ".gitignore" "Đã thêm $added quy tắc" $C_Succ }
@@ -458,14 +461,13 @@ if ($cfg.junkCleanup.enabled -eq $true) {
     $junkPatterns  = @($cfg.junkCleanup.patterns)
     $restrictDirs  = @($cfg.junkCleanup.restrictToDirs)
     $confirmBefore = [bool]$cfg.junkCleanup.confirmBeforeDelete
-    $gitDirPat = '[\\/](\.git|node_modules|\.sdk|bin|obj|\.venv|venv)[\\/]'
 
     $junkFound = @(
         foreach ($dir in $restrictDirs) {
             if (-not (Test-Path $dir)) { continue }
             foreach ($pat in $junkPatterns) {
-                Get-ChildItem -Path $dir -Include $pat -Recurse -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch $gitDirPat }
+                Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like $pat -and $_.FullName -notmatch $excludePat }
             }
         }
     )
@@ -703,7 +705,7 @@ if (-not (Confirm-YesNo "Bạn có muốn COMMIT những thay đổi này không
     $hasProjFile  = @($stagedFinal | Where-Object { $_ -match '\.(csproj|vbproj|fsproj|sln|gradle|pom\.xml)$' })
     $hasResources = @($stagedFinal | Where-Object { $_ -match '\.(png|jpg|jpeg|svg|resx|strings|xcassets)$' })
     $hasCode      = @($stagedFinal | Where-Object {
-        $_ -match '\.(cs|xaml|razor|fs|vb|js|ts|jsx|tsx|vue|py|go|java|kt|swift|rb|rs|cpp|c|h)$'
+        $_ -match '\.(cs|xaml|razor|fs|vb|js|ts|jsx|tsx|vue|py|go|java|kt|swift|rb|rs|cpp|c|h|ps1|psm1|sh|bash|dart|r|sql|tf|tfvars|proto|lua)$'
     })
     $hasConfig    = @($stagedFinal | Where-Object { $_ -match '\.(json|xml|toml|ini|conf|config)$' })
     $hasDoc       = @($stagedFinal | Where-Object { $_ -match '\.(md|txt|rst|adoc)$' })
@@ -773,6 +775,7 @@ $duration = (Get-Date) - $Global:StartTime
 Write-StepTitle "HOÀN TẤT TRONG $($duration.TotalSeconds.ToString('F1')) GIÂY" $C_Succ
 Write-Host ""
 
-Remove-Item Env:GIT_SSH_COMMAND  -ErrorAction SilentlyContinue
-Remove-Item Env:GIT_PAGER        -ErrorAction SilentlyContinue
-Remove-Item Env:PAGER            -ErrorAction SilentlyContinue
+Remove-Item Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue
+Remove-Item Env:GIT_PAGER -ErrorAction SilentlyContinue
+Remove-Item Env:PAGER -ErrorAction SilentlyContinue
+Remove-Item Env:GIT_CONFIG_PARAMETERS -ErrorAction SilentlyContinue
