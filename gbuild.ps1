@@ -617,7 +617,7 @@ function Read-KeystoreInteractive([hashtable]$ks) {
 function Invoke-SmartClean {
     param(
         [string]$ProjectDir,
-        [string]$OutputSubDir = "",   # tuỳ chọn: nếu có → kill EXE cũ trong publish-output/<OutputSubDir>
+        [string]$OutputSubDir = "",
         [string]$CsprojPath = ""
     )
 
@@ -627,7 +627,6 @@ function Invoke-SmartClean {
         'explorer', 'svchost', 'System', 'Idle',
         'csrss', 'winlogon', 'services', 'lsass',
         'smss', 'wininit', 'taskhostw', 'dwm', 'conhost', 'powershell', 'pwsh',
-        # Language servers — KHÔNG được kill, sẽ phá IntelliSense
         'OmniSharp', 'VBCSCompiler', 'RazorLanguageServer',
         'ServiceHub.RoslynCodeAnalysisService',
         'ServiceHub.IdentityHost',
@@ -639,9 +638,9 @@ function Invoke-SmartClean {
     Write-Log "🧹 [SmartClean] Bắt đầu dọn dẹp toàn diện..." $C_Info
 
     # ============================================================
-    # BƯỚC 0.5: KILL TIẾN TRÌNH GIỮ FILE TRONG bin / obj
+    # Bước 1: KILL TIẾN TRÌNH GIỮ FILE TRONG bin / obj
     # ============================================================
-    Write-Log "   🔍 [Bước 0.5] Quét process khóa file bin/obj..." $C_Gray
+    Write-Log "   🔍 Quét process khóa file bin/obj..." $C_Gray
     $srcFolders = @(
         (Join-Path $ProjectDir "bin"),
         (Join-Path $ProjectDir "obj")
@@ -658,14 +657,14 @@ function Invoke-SmartClean {
             }
         } catch {}
         if ($hit) {
-            Write-Log "      🎯 Kill (bin/obj lock): $($proc.Name) PID=$($proc.Id)" $C_Gray
+            Write-Log "      ↳ Chấm dứt tiến trình Kill (bin/obj lock): $($proc.Name) PID=$($proc.Id)" $C_Gray
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         }
     }
     Start-Sleep -Milliseconds 800
 
     # ============================================================
-    # BƯỚC 0.7: KILL EXE PUBLISH CŨ ĐANG CHẠY
+    # BƯỚC 2: KILL EXE PUBLISH CŨ ĐANG CHẠY
     #   — quét tất cả *.exe trong publish-output/<OutputSubDir>
     #   — kill theo BaseName (Get-Process không dùng .exe)
     #   — belt-and-suspenders: kill theo đường dẫn
@@ -673,7 +672,7 @@ function Invoke-SmartClean {
     if (-not [string]::IsNullOrWhiteSpace($OutputSubDir)) {
         $publishOut = Join-Path $PSScriptRoot "publish-output\$OutputSubDir"
         if (Test-Path $publishOut) {
-            Write-Log "   🔫 [Bước 0.7] Kill EXE publish cũ trong: $publishOut..." $C_Gray
+            Write-Log "   🔫 Kill EXE publish cũ trong: $publishOut..." $C_Gray
             $exeFiles = @(Get-ChildItem -Path $publishOut -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue)
             foreach ($exe in $exeFiles) {
                 # Kill theo tên process (BaseName, không có .exe)
@@ -685,7 +684,7 @@ function Invoke-SmartClean {
                 )
                 if ($running.Count -gt 0) {
                     $running | Stop-Process -Force -ErrorAction SilentlyContinue
-                    Write-Log "      🎯 Kill EXE cũ: $($exe.Name) (PID: $($running.Id -join ', '))" $C_Warn
+                    Write-Log "      ↳ Chấm dứt tiến trình Kill EXE cũ: $($exe.Name) (PID: $($running.Id -join ', '))" $C_Warn
                 }
             }
             # Belt-and-suspenders: bất kỳ process nào path bắt đầu bằng $publishOut
@@ -704,7 +703,7 @@ function Invoke-SmartClean {
     }
 
     # ============================================================
-    # BƯỚC 1: XÓA bin / obj VỚI RETRY + ESCALATION
+    # BƯỚC 3: XÓA bin / obj VỚI RETRY + ESCALATION
     #   Tầng 1: Remove-Item trực tiếp
     #   Tầng 2: robocopy /MIR empty → xóa (phá lock OS)
     #   Tầng 3: Escalate kill lại → retry (tối đa 25 giây)
@@ -727,12 +726,12 @@ function Invoke-SmartClean {
             # ── Tầng 1: Remove-Item & Tầng 2: robocopy /MIR──────────────────────────────
             if (Remove-ItemForce -TargetDir $folder) {
                 $deleted = $true
-                Write-Log "   ✅ Đã dọn dẹp an toàn: $folder" $C_Gray
+                Write-Log "   ✅ [1] Đã xóa thư mục artifact: $folder" $C_Gray
                 continue
             }
 
             # ── Tầng 3: Escalate kill → sẽ retry vòng lặp ──────
-            Write-Log "   ⚠️ Không xóa được $folder → escalate kill (đã chờ ${totalWait}s)..." $C_Warn
+            Write-Log "   ⚠️ [1] Thư mục $folder bị khóa, đang leo thang xử lý (đã chờ ${totalWait}s)" $C_Warn
             
             Get-Process | Where-Object { $_.Name -notin $safeList } | ForEach-Object {
                 $p = $_
@@ -748,7 +747,7 @@ function Invoke-SmartClean {
                     
                     # Nếu phát hiện khóa, tiêu diệt chính xác process đó
                     if ($isLocked) {
-                        Write-Log "      🎯 Escalate kill chuẩn xác: $($p.Name) PID=$($p.Id)" $C_Gray
+                        Write-Log "      ↳ Buộc chấm dứt: $($p.Name) PID=$($p.Id)" $C_Gray
                         Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
                     }
                 } catch {
@@ -771,7 +770,61 @@ function Invoke-SmartClean {
     }
 
     # ============================================================
-    # BƯỚC 2: DỌN CACHE PHỤ (Xamarin / Android) — CHỈ KHI LÀ MAUI PROJECT
+    # BƯỚC 4: XÓA THƯ MỤC .vs (Visual Studio IDE cache)
+    #   — Tìm từ ProjectDir leo lên tối đa 3 cấp (nơi chứa .sln)
+    #   — Chỉ xóa .vs nằm trong hoặc cùng cấp với $PSScriptRoot
+    # ============================================================
+    Write-Log "   🗑️  Tìm và xóa thư mục .vs..." $C_Gray
+
+    $searchDir = $ProjectDir
+    $vsDeleted = $false
+    $maxLevels = 3
+
+    for ($lvl = 0; $lvl -le $maxLevels; $lvl++) {
+        if ([string]::IsNullOrWhiteSpace($searchDir)) { break }
+
+        # Guard: không leo vượt ra ngoài $PSScriptRoot
+        $resolvedSearch = try { (Get-Item -LiteralPath $searchDir -EA Stop).FullName } catch { $null }
+        $resolvedRoot   = try { (Get-Item -LiteralPath $PSScriptRoot -EA Stop).FullName } catch { $null }
+        if ($resolvedSearch -and $resolvedRoot) {
+            $rootWithSep = $resolvedRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+            $srchWithSep = $resolvedSearch.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+            # Chỉ cho phép nếu searchDir = PSScriptRoot hoặc nằm bên trong
+            if (-not ($srchWithSep -eq $rootWithSep -or $srchWithSep.StartsWith($rootWithSep, [StringComparison]::OrdinalIgnoreCase))) {
+                Write-Log "   🛡️  Vượt phạm vi cho phép — dừng tìm kiếm .vs tại: $searchDir" $C_Warn
+                break
+            }
+        }
+
+        $vsPath = Join-Path $searchDir ".vs"
+        if (Test-Path $vsPath) {
+            # Xóa file cache .db/.db-shm/.db-wal bên trong .vs (giữ lại .suo)
+            Get-ChildItem -Path $vsPath -Recurse -Include "*.db","*.db-shm","*.db-wal" -EA SilentlyContinue |
+                Remove-Item -Force -EA SilentlyContinue
+
+            # Xóa thư mục ipch và config (pure cache)
+            @('ipch','config', 'ProjectEvaluation', 'server') | ForEach-Object {
+                $sub = Join-Path $vsPath $_
+                if (Test-Path $sub) { Remove-ItemForce -TargetDir $sub | Out-Null }
+            }
+
+            Write-Log "   ✅ Cache .vs đã được dọn sạch." $C_Gray
+            $vsDeleted = $true
+            break
+        }
+
+        # Leo lên thư mục cha
+        $parent = Split-Path $searchDir -Parent
+        if ($parent -eq $searchDir) { break }  # Đã tới gốc ổ đĩa
+        $searchDir = $parent
+    }
+
+    if (-not $vsDeleted) {
+        Write-Log "   ℹ️  Không tìm thấy thư mục .vs trong phạm vi script." $C_Gray
+    }
+
+    # ============================================================
+    # BƯỚC 5: DỌN CACHE PHỤ (Xamarin / Android) — CHỈ KHI LÀ MAUI PROJECT
     # ============================================================
     if ($CsprojPath -and (Test-Path $CsprojPath)) {
         $content = Get-Content $CsprojPath -Raw -EA SilentlyContinue
@@ -785,6 +838,127 @@ function Invoke-SmartClean {
                 } catch {}
             }
         }
+    }
+
+    # ============================================================
+    # BƯỚC 6: DỌN CACHE WEB — TỰ ĐỘNG PHÁT HIỆN LOẠI PROJECT
+    #   6.1 → ASP.NET temp files  (mọi Web project)
+    #   6.2 → Frontend bundler cache  (npm + webpack/vite/parcel/esbuild)
+    #   6.3 → wwwroot build output    (dist/, bundle/, *.min.*)
+    #   6.4 → Blazor WASM cache       (_framework/, _content/)
+    # ============================================================
+    if (-not ($CsprojPath -and (Test-Path $CsprojPath))) { continue }
+    $csprojContent = Get-Content $CsprojPath -Raw -EA SilentlyContinue
+    $isWeb      = $csprojContent -match 'Sdk\s*=\s*"Microsoft\.NET\.Sdk\.Web"'
+    $isBlazorWasm = $csprojContent -match 'Sdk\s*=\s*"Microsoft\.NET\.Sdk\.BlazorWebAssembly"'
+
+    if (-not ($isWeb -or $isBlazorWasm)) { return }
+
+    Write-Log "   🌐 Bắt đầu dọn cache Web..." $C_Gray
+
+    # ── 3.1: ASP.NET Temporary Files ─────────────────────────────────────────────
+    Write-Log "   🗂️  Đang Dọn ASP.NET Temporary Files..." $C_Gray
+    $projName   = [IO.Path]::GetFileNameWithoutExtension($CsprojPath)
+    $aspnetTemp = Join-Path $env:TEMP "Temporary ASP.NET Files"
+    if (Test-Path $aspnetTemp) {
+        # Chỉ xóa thư mục con khớp tên project, không đụng project khác
+        Get-ChildItem -Path $aspnetTemp -Directory -Recurse -EA SilentlyContinue |
+            Where-Object { $_.Name -like "*$projName*" } |
+            ForEach-Object {
+                if (Remove-ItemForce -TargetDir $_.FullName) {
+                    Write-Log "         ↳ Đã xóa: $($_.FullName)" $C_Gray
+                }
+            }
+    }
+
+    # Dọn thêm MSBuild temp cùng tên project trong %TEMP%
+    Get-ChildItem -Path $env:TEMP -Directory -Filter "MSBuild*" -EA SilentlyContinue |
+        ForEach-Object { Remove-ItemForce -TargetDir $_.FullName | Out-Null }
+    Write-Log "   ✅ ASP.NET Temporary Files đã được dọn sạch." $C_Gray
+
+    # ── 3.2: Frontend Bundler Cache (npm/vite/webpack/parcel/esbuild) ────────────
+    Write-Log "   📦 Phát hiện và dọn frontend bundler cache..." $C_Gray
+
+    $hasNpm    = Test-Path (Join-Path $ProjectDir "package.json")
+    $hasVite   = (Test-Path (Join-Path $ProjectDir "vite.config.js"))   -or
+                 (Test-Path (Join-Path $ProjectDir "vite.config.ts"))
+    $hasWebpack= (Test-Path (Join-Path $ProjectDir "webpack.config.js")) -or
+                 (Test-Path (Join-Path $ProjectDir "webpack.config.ts"))
+    $hasParcel = (Test-Path (Join-Path $ProjectDir ".parcelrc"))         -or
+                 (Test-Path (Join-Path $ProjectDir ".parcel-cache"))
+    $hasEsbuild= Test-Path (Join-Path $ProjectDir "esbuild.config.*")
+
+    if ($hasNpm) {
+        # node_modules/.cache — KHÔNG xóa toàn bộ node_modules (quá chậm để restore)
+        $nmCache = Join-Path $ProjectDir "node_modules\.cache"
+        if (Test-Path $nmCache) {
+            Remove-ItemForce -TargetDir $nmCache | Out-Null
+            Write-Log "         ↳ Đã xóa: node_modules/.cache" $C_Gray
+        }
+    }
+    if ($hasVite) {
+        foreach ($viteCache in @(".vite", "node_modules/.vite")) {
+            $p = Join-Path $ProjectDir $viteCache
+            if (Test-Path $p) { Remove-ItemForce -TargetDir $p | Out-Null; Write-Log "         ↳ Đã xóa: $viteCache" $C_Gray }
+        }
+    }
+    if ($hasWebpack) {
+        foreach ($wpCache in @(".webpack", ".cache\webpack")) {
+            $p = Join-Path $ProjectDir $wpCache
+            if (Test-Path $p) { Remove-ItemForce -TargetDir $p | Out-Null; Write-Log "         ↳ Đã xóa: $wpCache" $C_Gray }
+        }
+    }
+    if ($hasParcel) {
+        $p = Join-Path $ProjectDir ".parcel-cache"
+        if (Test-Path $p) { Remove-ItemForce -TargetDir $p | Out-Null; Write-Log "         ↳ Đã xóa: .parcel-cache" $C_Gray }
+    }
+    if ($hasEsbuild) {
+        # esbuild không có cache folder cố định, nhưng hay dùng .cache/
+        $p = Join-Path $ProjectDir ".cache"
+        if (Test-Path $p) { Remove-ItemForce -TargetDir $p | Out-Null; Write-Log "         ↳ Đã xóa: .cache (esbuild)" $C_Gray }
+    }
+
+    if (-not ($hasNpm -or $hasVite -or $hasWebpack -or $hasParcel -or $hasEsbuild)) {
+        Write-Log "   ℹ️  Không phát hiện frontend bundler — bỏ qua." $C_Gray
+    } else {
+        Write-Log "   ✅ Frontend bundler cache đã được dọn sạch." $C_Gray
+    }
+
+    # ── 3.3: wwwroot Build Output ─────────────────────────────────────────────────
+    Write-Log "   🖼️  Đang dọn wwwroot build output..." $C_Gray
+    $wwwroot = Join-Path $ProjectDir "wwwroot"
+    if (Test-Path $wwwroot) {
+        # Thư mục do bundler sinh ra
+        foreach ($bundleDir in @("dist", "bundle", ".nuxt", ".next")) {
+            $p = Join-Path $wwwroot $bundleDir
+            if (Test-Path $p) { Remove-ItemForce -TargetDir $p | Out-Null; Write-Log "         ↳ Đã xóa: wwwroot/$bundleDir/" $C_Gray }
+        }
+
+        # File minified do bundler/LibMan sinh ra (*.min.css, *.min.js) — KHÔNG xóa file gốc
+        Get-ChildItem -Path $wwwroot -Recurse -EA SilentlyContinue |
+            Where-Object { $_.Name -match '\.min\.(css|js)$' -and $_.FullName -notmatch '[\\/]lib[\\/]' } |
+            Remove-Item -Force -EA SilentlyContinue
+
+        Write-Log "   ✅ wwwroot build output đã được dọn sạch." $C_Gray
+    } else {
+        Write-Log "   ℹ️  Không tìm thấy thư mục wwwroot — bỏ qua." $C_Gray
+    }
+
+    # ── 3.4: Blazor WASM Cache ───────────────────────────────────────────────────
+    if ($isBlazorWasm) {
+        Write-Log "   🔷 Đang Dọn Blazor WebAssembly cache..." $C_Gray
+        foreach ($blazorDir in @("_framework", "_content")) {
+            $p = Join-Path $wwwroot $blazorDir
+            if (Test-Path $p) { Remove-ItemForce -TargetDir $p | Out-Null; Write-Log "         ↳ Đã xóa: wwwroot/$blazorDir/" $C_Gray }
+        }
+
+        # Browser-side Blazor cache trong %LOCALAPPDATA%
+        $blazorBrowserCache = Join-Path $env:LOCALAPPDATA "Microsoft\Blazor"
+        if (Test-Path $blazorBrowserCache) {
+            Remove-ItemForce -TargetDir $blazorBrowserCache | Out-Null
+            Write-Log "         ↳ Đã xóa: Blazor browser cache" $C_Gray
+        }
+        Write-Log "   ✅ Blazor WASM cache đã được dọn sạch." $C_Gray
     }
 
     Write-Log "✅ [SmartClean] Hoàn tất." $C_Succ
