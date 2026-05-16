@@ -255,7 +255,7 @@ function Remove-ItemForce {
     } else {
         # Trên Linux/macOS: dùng lệnh rm -rf
         try {
-            & /bin/rm -rf $TargetDir 2>$null
+            & /bin/rm -rf -- $TargetDir 2>$null
             return (-not (Test-Path $TargetDir))
         } catch {
             return $false
@@ -391,6 +391,75 @@ function Set-DotnetEnv {
     # nếu SDK local bị hỏng, tránh làm chết IntelliSense
 }
 
+# ── Runtime Identifier động theo OS & CPU arch ────────────────────────────────
+function Get-RuntimeIdentifier {
+    $arch  = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
+    $isArm = ($arch -eq [System.Runtime.InteropServices.Architecture]::Arm64)
+    switch ($script:OS) {
+        'Windows' { return $(if ($isArm) { 'win-arm64'   } else { 'win-x64'   }) }
+        'MacOS'   { return $(if ($isArm) { 'osx-arm64'   } else { 'osx-x64'   }) }
+        'Linux'   { return $(if ($isArm) { 'linux-arm64' } else { 'linux-x64' }) }
+        default   { return 'win-x64' }
+    }
+}
+
+# ── Kiểm tra port đang lắng nghe (đa nền tảng) ────────────────────────────────
+function Test-PortListening {
+    param([int]$Port)
+    try {
+        if ($script:OS -eq 'Windows') {
+            return [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -EA SilentlyContinue)
+        } elseif ($script:OS -eq 'Linux') {
+            $out = & ss -tlnp 2>/dev/null | Select-String ":$Port\s"
+            return [bool]$out
+        } elseif ($script:OS -eq 'MacOS') {
+            $out = & lsof -iTCP:$Port -sTCP:LISTEN 2>/dev/null
+            return [bool]$out
+        }
+    } catch {}
+    return $false
+}
+
+# ── Mở URL trên trình duyệt (đa nền tảng) ─────────────────────────────────────
+function Open-Url {
+    param([string]$Url)
+    try {
+        if ($script:OS -eq 'Windows')   { Start-Process $Url }
+        elseif ($script:OS -eq 'MacOS') { Start-Process open    -ArgumentList $Url }
+        elseif ($script:OS -eq 'Linux') { Start-Process xdg-open -ArgumentList $Url }
+    } catch { Write-Warn "Không thể tự mở trình duyệt. Vui lòng truy cập: $Url" }
+}
+
+# ── Quét thư mục tìm dotnet SDK với thanh tiến trình (thay $ScanWithProgress) ──
+function Invoke-ScanForDotnet {
+    param(
+        [string]  $RootPath,
+        [int]     $MaxDepth  = 4,
+        [string]  $Label     = "",
+        [string[]]$ExcludeDirs = @()
+    )
+    $dotnetName = if ($script:OS -eq 'Windows') { 'dotnet.exe' } else { 'dotnet' }
+    $excludePattern = if ($ExcludeDirs.Count -gt 0) {
+        '[\\/](' + (($ExcludeDirs | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')[\\/]'
+    } else { $null }
+
+    Write-Host "`r   🔎 $Label ...$(' ' * 20)" -NoNewline -ForegroundColor DarkGray
+
+    $found = Get-ChildItem -Path $RootPath -File -Filter $dotnetName `
+                           -Recurse -Depth $MaxDepth -EA SilentlyContinue |
+        Where-Object {
+            if ($excludePattern -and ($_.FullName -match $excludePattern)) { return $false }
+            try {
+                $sdkCheck = & $_.FullName --list-sdks 2>&1
+                return ($sdkCheck -match '\d+\.\d+')
+            } catch { return $false }
+        } |
+        Select-Object -First 1
+
+    Write-Host "`r$(' ' * 80)`r" -NoNewline
+    return $found?.FullName
+}
+
 function Get-SmartDotnetPath {
     Write-Host "🔍 Đang kiểm tra cache SDK .NET..." -ForegroundColor Cyan
     $cacheFile = Join-Path $script:ScriptRoot ".sdkcache.json"
@@ -433,22 +502,48 @@ function Get-SmartDotnetPath {
     }
 
     # --- GIAI ĐOẠN DÒ TÌM LOCAL (Nếu hệ thống chưa có) ---
-    if ($script:OS -eq 'Windows'){
-        $currentDir = (Get-Location).ProviderPath
-        $projectDrive = Split-Path -Path $currentDir -Qualifier # Ví dụ: "G:"
-        $driveRoot = $projectDrive + "\"
-        
-        $excludeDirs = @('Windows', 'AppData', '$Recycle.Bin', 'System Volume Information',
-                        'ProgramData', 'Microsoft', 'Package Cache', 'proc', 'sys', 'dev', 'run')
-        
-        # Tính toán độ sâu từ gốc đến thư mục hiện tại (Depth X)
-        $relativePath = $currentDir.Replace($driveRoot, "")
-        $depthX = ($relativePath -split '\\' | Where-Object { $_ -ne "" }).Count
+    $dotnetName  = if ($script:OS -eq 'Windows') { 'dotnet.exe' } else { 'dotnet' }
+    $excludeDirs = @('Windows', 'AppData', '$Recycle.Bin', 'System Volume Information',
+                     'ProgramData', 'Microsoft', 'Package Cache', 'proc', 'sys', 'dev', 'run')
+
+    # --- macOS / Linux: kiểm tra các vị trí cài đặt phổ biến ---
+    if ($script:OS -in @('MacOS', 'Linux')) {
+        $localCandidates = @(
+            (Join-Path $script:ScriptRoot ".sdk" "dotnet"),
+            (Join-Path $HOME ".dotnet"),
+            "/usr/local/share/dotnet",
+            "/usr/share/dotnet"
+        )
+        foreach ($candidate in $localCandidates) {
+            if (-not $candidate) { continue }
+            $exe = Join-Path $candidate $dotnetName
+            if (Test-Path $exe) {
+                $sdkCheck = & $exe --list-sdks 2>&1
+                if ($sdkCheck -match '\d+\.\d+') {
+                    Write-Host "✅ Đã tìm thấy dotnet tại: $candidate" -ForegroundColor Green
+                    @{ Path = $candidate } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
+                    Set-DotnetEnv -SdkPath $candidate
+                    return $exe
+                }
+            }
+        }
+        Write-Host "❌ Không tìm thấy SDK .NET nào hệ thống." -ForegroundColor Red
+        return $null
+    }
+
+    if ($script:OS -eq 'Windows') {
+        $currentDir  = (Get-Location).ProviderPath
+        $projectDrive = Split-Path -Path $currentDir -Qualifier   # "G:"
+        $driveRoot    = $projectDrive + [System.IO.Path]::DirectorySeparatorChar
+
+        # Tính độ sâu tương đối từ gốc ổ đĩa đến thư mục hiện tại
+        $sep      = [System.IO.Path]::DirectorySeparatorChar
+        $depthX   = ($currentDir.TrimEnd($sep).Split($sep) | Where-Object { $_ -ne "" }).Count - 1
         $searchDepth = $depthX + 3
 
         # --- TÌM TỪ THƯ MỤC DỰ ÁN SÂU XUỐNG 3 CẤP ---
         Write-Host "🔍 [Bước 3] Tìm nhanh trong thư mục dự án hiện tại (độ sâu tối đa 3)..." -ForegroundColor Cyan
-        $res = & $ScanWithProgress -RootPath $currentDir -MaxDepth 3 -Label "Quét thư mục dự án" -ExcludeDirs $excludeDirs
+        $res = Invoke-ScanForDotnet -RootPath $currentDir -MaxDepth 3 -Label "Quét thư mục dự án" -ExcludeDirs $excludeDirs
         if ($res) {
             $folder = Split-Path $res -Parent
             Write-Host "💾 Đã lưu vị trí SDK vào cache: $folder" -ForegroundColor Green
@@ -459,7 +554,7 @@ function Get-SmartDotnetPath {
 
         # --- LÙI VỀ GỐC Ổ ĐĨA DỰ ÁN, QUÉT XUỐNG ĐỘ SÂU (depthX + 3) ---
         Write-Host "🔍 [Bước 4] Không thấy, lùi về gốc $driveRoot quét xuống độ sâu $searchDepth (depthX+3)..." -ForegroundColor Cyan
-        $res = & $ScanWithProgress -RootPath $driveRoot -MaxDepth $searchDepth -Label "Quét ổ đĩa hiện tại ($driveRoot)" -ExcludeDirs $excludeDirs
+        $res = Invoke-ScanForDotnet -RootPath $driveRoot -MaxDepth $searchDepth -Label "Quét ổ đĩa hiện tại ($driveRoot)" -ExcludeDirs $excludeDirs
         if ($res) {
             $folder = Split-Path $res -Parent
             Write-Host "💾 Đã lưu vị trí SDK vào cache: $folder" -ForegroundColor Green
@@ -468,15 +563,14 @@ function Get-SmartDotnetPath {
             return $res
         }
 
-        # --- MỞ RỘNG QUÉT CÁC Ổ ĐĨA KHÁC (Vùng xa hơn nếu vẫn chưa thấy) ---
+        # --- MỞ RỘNG QUÉT CÁC Ổ ĐĨA KHÁC ---
         Write-Host "🔍 [Bước 5] Vẫn không thấy, mở rộng quét toàn bộ các ổ đĩa khả dụng..." -ForegroundColor Cyan
-        $drives = Get-AvailableDrives
-        # Sắp xếp loại trừ ổ hiện tại ra vì đã quét ở bước 4
+        $drives      = Get-AvailableDrives
         $otherDrives = $drives | Where-Object { $_ -ne $projectDrive }
 
         foreach ($drive in $otherDrives) {
-            $targetRoot = $drive + "\"
-            $res = & $ScanWithProgress -RootPath $targetRoot -MaxDepth 4 -Label "Đang quét ổ đĩa $drive" -ExcludeDirs $excludeDirs
+            $targetRoot = $drive + [System.IO.Path]::DirectorySeparatorChar
+            $res = Invoke-ScanForDotnet -RootPath $targetRoot -MaxDepth 4 -Label "Đang quét ổ đĩa $drive" -ExcludeDirs $excludeDirs
             if ($res) {
                 $folder = Split-Path $res -Parent
                 Write-Host "💾 Đã lưu vị trí SDK vào cache: $folder" -ForegroundColor Green
@@ -502,22 +596,27 @@ function Get-AndroidSdkPath {
     Write-Log "🔍 Đang săn tìm Android SDK..." $C_Gray
     $adbExeName = if ($script:OS -eq 'Windows') { 'adb.exe' } else { 'adb' }
     $searchList = @(
-        (Join-Path $PSScriptRoot ".sdk" "android-sdk"),
-        (Join-Path $PSScriptRoot "..\.sdk" "android-sdk"),
+        (Join-Path $script:ScriptRoot ".sdk" "android-sdk"),
+        (Join-Path $script:ScriptRoot ".." ".sdk" "android-sdk"),
         (Join-Path (Get-Location) ".sdk" "android-sdk"),
         $env:ANDROID_HOME,
         $env:ANDROID_SDK_ROOT
     )
 
-    # Thêm vị trí theo OS
+    # Thêm vị trí theo OS (không hardcode C:\)
     if ($script:OS -eq 'Windows') {
-        $searchList += (Join-Path $env:LOCALAPPDATA "Android\Sdk")
-        $searchList += "C:\Program Files (x86)\Android\android-sdk"
-        $searchList += "C:\Android\android-sdk"
+        $pf86     = ${env:ProgramFiles(x86)}
+        $pf       = $env:ProgramFiles
+        $sysDrive = $env:SystemDrive
+        $localAppData = $env:LOCALAPPDATA
+        if ($localAppData) { $searchList += (Join-Path $localAppData "Android" "Sdk") }
+        if ($pf86)         { $searchList += (Join-Path $pf86 "Android" "android-sdk") }
+        if ($pf)           { $searchList += (Join-Path $pf   "Android" "android-sdk") }
+        if ($sysDrive)     { $searchList += (Join-Path $sysDrive "Android" "android-sdk") }
     } elseif ($script:OS -eq 'MacOS') {
-        $searchList += (Join-Path $env:HOME "Library/Android/sdk")
+        $searchList += (Join-Path $env:HOME "Library" "Android" "sdk")
     } elseif ($script:OS -eq 'Linux') {
-        $searchList += (Join-Path $env:HOME "Android/Sdk")
+        $searchList += (Join-Path $env:HOME "Android" "Sdk")
         $searchList += "/opt/android-sdk"
     }
 
@@ -563,21 +662,21 @@ function Get-AndroidSdkPath {
     }
 
     $foundSdk = Find-FileInDrives -FileName 'android-sdk' -Directory -MaxDepth 3 -ValidateScript {
-    param($path)
-    # Kiểm tra xem có platform-tools/adb không
-    $adbName = if ($script:OS -eq 'Windows') { 'adb.exe' } else { 'adb' }
-    return (Test-Path (Join-Path $path "platform-tools" $adbName))
+        param($path)
+        # Kiểm tra xem có platform-tools/adb không
+        $adbName = if ($script:OS -eq 'Windows') { 'adb.exe' } else { 'adb' }
+        return (Test-Path (Join-Path $path "platform-tools" $adbName))
+    }  # ← Đóng scriptblock ValidateScript
 
-
-if ($foundSdk) {
-    Write-Host ""
-    Write-Log "✅ Đã thấy Android SDK: $foundSdk" $C_Succ
-    $safePath = Get-SafePath $foundSdk
-    $env:ANDROID_HOME = $safePath
-    $env:ANDROID_SDK_ROOT = $safePath
-    return $safePath
-}
+    if ($foundSdk) {
+        Write-Host ""
+        Write-Log "✅ Đã thấy Android SDK: $foundSdk" $C_Succ
+        $safePath = Get-SafePath $foundSdk
+        $env:ANDROID_HOME     = $safePath
+        $env:ANDROID_SDK_ROOT = $safePath
+        return $safePath
     }
+
     Write-Log "❌ Không tìm thấy Android SDK." $C_Err
     return $null
 }
@@ -588,19 +687,21 @@ function Get-JavaSdkPath {
 
     # 1. Kiểm tra các vị trí ưu tiên (gần script, biến môi trường)
     $searchList = @(
-        (Join-Path $PSScriptRoot ".sdk" "jdk"),
-        (Join-Path $PSScriptRoot "..\.sdk" "jdk"),
-        (Join-Path $PSScriptRoot "..\..\..\.sdk" "jdk"),
+        (Join-Path $script:ScriptRoot ".sdk" "jdk"),
+        (Join-Path $script:ScriptRoot ".." ".sdk" "jdk"),
+        (Join-Path $script:ScriptRoot ".." ".." ".." ".sdk" "jdk"),
         (Join-Path (Get-Location) ".sdk" "jdk"),
         $env:JAVA_HOME
     )
 
     if ($script:OS -eq 'Windows') {
-        $searchList += "C:\Program Files\Java"
-        $searchList += "C:\Program Files (x86)\Java"
+        $pf   = $env:ProgramFiles
+        $pf86 = ${env:ProgramFiles(x86)}
+        if ($pf)   { $searchList += (Join-Path $pf   "Java") }
+        if ($pf86) { $searchList += (Join-Path $pf86 "Java") }
     } elseif ($script:OS -eq 'MacOS') {
         $searchList += "/Library/Java/JavaVirtualMachines"
-        $searchList += (Join-Path $env:HOME "Library/Java/JavaVirtualMachines")
+        $searchList += (Join-Path $env:HOME "Library" "Java" "JavaVirtualMachines")
     } elseif ($script:OS -eq 'Linux') {
         $searchList += "/usr/lib/jvm"
         $searchList += "/usr/local/lib/jvm"
@@ -616,19 +717,21 @@ function Get-JavaSdkPath {
         }
     }
 
-    # 2. Quét các ổ đĩa cục bộ tìm thư mục chứa `bin\javac.exe` (độ sâu 5)
+    # 2. Quét các ổ đĩa cục bộ tìm thư mục chứa bin/javac (độ sâu 4)
     Write-Log "⚙️ Đang quét ổ đĩa tìm Java SDK..." $C_Gray
 
+    # ValidateScript tự tính exe names để không phụ thuộc scope ngoài
     $foundJavac = Find-FileInDrives -FileName $javacExe -MaxDepth 4 -ValidateScript {
         param($javacPath)
         $binDir = Split-Path $javacPath -Parent
-        # Kiểm tra cả javac và java trong cùng thư mục bin
-        return ((Test-Path (Join-Path $binDir $javacExe)) -and (Test-Path (Join-Path $binDir $javaExe)))
+        # Tính lại tên exe bên trong scriptblock (tránh lỗi scope khi truyền qua hàm)
+        $jcExe = if ($script:OS -eq 'Windows') { 'javac.exe' } else { 'javac' }
+        $jExe  = if ($script:OS -eq 'Windows') { 'java.exe'  } else { 'java'  }
+        return ((Test-Path (Join-Path $binDir $jcExe)) -and (Test-Path (Join-Path $binDir $jExe)))
     }
 
     if ($foundJavac) {
-        $javacPath = $foundJavac
-        $binDir = Split-Path $javacPath -Parent
+        $binDir = Split-Path $foundJavac -Parent
         $jdkDir = Split-Path $binDir -Parent
         Write-Host ""
         Write-Log "✅ Đã tìm thấy Java SDK: $jdkDir" $C_Succ
@@ -638,7 +741,7 @@ function Get-JavaSdkPath {
     }
 
     # 3. Không tìm thấy
-    Write-Log "❌ Không tìm thấy Java JDK. Hãy đặt JDK vào thư mục '.sdk\jdk' gần script hoặc cài đặt JDK." $C_Err
+    Write-Log "❌ Không tìm thấy Java JDK. Hãy đặt JDK vào thư mục '.sdk/jdk' gần script hoặc cài đặt JDK." $C_Err
     return $null
 }
 
@@ -697,7 +800,7 @@ function Find-Project {
     }
 
     # Ưu tiên project cùng thư mục với script
-    $scriptDirProjects = @($allProjects | Where-Object { $_.DirectoryName -eq $PSScriptRoot })
+    $scriptDirProjects = @($allProjects | Where-Object { $_.DirectoryName -eq $script:ScriptRoot })
     if ($scriptDirProjects.Count -eq 1) {
         return $scriptDirProjects[0]
     }
@@ -740,7 +843,7 @@ function Get-ProjectType {
 function Get-ProjectPort {
     param([string]$ProjectDir)
     $port = 5000 # Mặc định nếu không tìm thấy gì
-    $lsPath = Join-Path $ProjectDir "Properties\launchSettings.json"
+    $lsPath = Join-Path $ProjectDir "Properties" "launchSettings.json"
     if (Test-Path $lsPath) {
         try {
             $ls = Get-Content $lsPath -Raw | ConvertFrom-Json
@@ -798,9 +901,9 @@ function Read-KeystoreInteractive([hashtable]$ks) {
     return $ks
 }
 
-# ==================================================================================
-# SMART CLEAN
-# ==================================================================================
+# ==================================================================================================
+# SMART CLEAN - CROSS-PLATFORM, SECURE & THOROUGH
+# ==================================================================================================
 function Invoke-SmartClean {
     param(
         [Parameter(Mandatory=$true)] [string]$ProjectDir,
@@ -808,159 +911,176 @@ function Invoke-SmartClean {
         [string]$CsprojPath = ""
     )
 
-    $absProjectDir = Get-CanonicalPath $ProjectDir
-    if (-not $absProjectDir -or -not (Test-Path -LiteralPath $absProjectDir)) { return }
-    # ── Chỉ cho phép xóa dưới project root ─────────────────────────────
-    $safeTargets = New-Object System.Collections.Generic.List[string]
+    # ── 1. Chuẩn hóa path tuyệt đối & kiểm tra tồn tại ───────────────────────
+    $absProjectDir = try { [System.IO.Path]::GetFullPath($ProjectDir) } catch { return }
+    if (-not (Test-Path -LiteralPath $absProjectDir -PathType Container)) { return }
 
-    # --- [BƯỚC 1: XÁC ĐỊNH MỤC TIÊU CƠ BẢN] ---
-    $foldersToClean = @(
-        (Join-Path $absProjectDir "bin"),
-        (Join-Path $absProjectDir "obj")
-    )
+    # ── 2. Hàm bảo mật: Chỉ cho phép thao tác bên trong project root ──────────
+    # BUG FIX: dùng StringComparison phù hợp OS — Linux case-sensitive (Ordinal),
+    #          Windows không phân biệt hoa/thường (OrdinalIgnoreCase).
+    $pathCmp = if ($script:OS -eq 'Windows') {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
+    $rootPrefix = $absProjectDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar,
+                                          [System.IO.Path]::AltDirectorySeparatorChar) +
+                  [System.IO.Path]::DirectorySeparatorChar
 
-    # Tự động nhận diện loại Project để thêm thư mục rác đặc thù
-    $isWeb = $false; $isMaui = $false
-
-    if ($CsprojPath -and (Test-Path $CsprojPath)) {
-        $csprojContent = Get-Content $CsprojPath -Raw -EA SilentlyContinue
-        $isWeb = $csprojContent -match 'Sdk\s*=\s*"Microsoft\.NET\.Sdk\.(Web|BlazorWebAssembly)"'
-        $isMaui = $csprojContent -match '<UseMaui>\s*true\s*</UseMaui>'
+    function Assert-SafePath {
+        param([string]$Target)
+        if ([string]::IsNullOrWhiteSpace($Target)) { return $false }
+        $canonical = try { [System.IO.Path]::GetFullPath($Target) } catch { return $false }
+        # BUG FIX: dùng $pathCmp thay vì hardcode OrdinalIgnoreCase
+        return $canonical.StartsWith($rootPrefix, $pathCmp) -or
+               [string]::Equals($canonical, $absProjectDir.TrimEnd(
+                   [System.IO.Path]::DirectorySeparatorChar,
+                   [System.IO.Path]::AltDirectorySeparatorChar), $pathCmp)
     }
 
-    # Bổ sung thư mục rác chỉ trong project (không ra ngoài)
+    # ── 3. Đọc nội dung csproj để phát hiện loại project ─────────────────────
+    # BUG FIX: dùng -LiteralPath cho Test-Path và Get-Content
+    $csprojContent = ""
+    if ($CsprojPath -and (Test-Path -LiteralPath $CsprojPath -PathType Leaf)) {
+        $csprojContent = Get-Content -LiteralPath $CsprojPath -Raw -EA SilentlyContinue
+    }
+    $isWeb   = $csprojContent -match 'Sdk\s*=\s*"Microsoft\.NET\.Sdk\.(Web|BlazorWebAssembly)"'
+    $isMaui  = $csprojContent -match '<UseMaui>\s*true\s*</UseMaui>'
+
+    # ── 4. Xây dựng danh sách target cần xóa (an toàn & động) ────────────────
+    $targetsToClean = [System.Collections.Generic.List[string]]::new()
+
+    # Hàm helper: thêm path vào danh sách nếu tồn tại & an toàn
+    function Add-CleanTarget {
+        param([string]$Path)
+        if ([string]::IsNullOrWhiteSpace($Path)) { return }
+        # BUG FIX: dùng -LiteralPath để tránh glob chars ([, ], *, ?) trong tên thư mục
+        if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return }
+        if (-not (Assert-SafePath $Path)) { return }
+        # BUG FIX: bỏ qua symlink — không xóa target của symlink, chỉ xóa symlink
+        $item = Get-Item -LiteralPath $Path -Force -EA SilentlyContinue
+        if ($item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            Write-Log "   ⚠️  Bỏ qua symlink: $Path" $C_Warn
+            return
+        }
+        $targetsToClean.Add($Path)
+    }
+
+    # Build output (bắt buộc mọi loại project)
+    foreach ($name in @('bin', 'obj')) {
+        Add-CleanTarget (Join-Path $absProjectDir $name)
+    }
+
+    # IDE caches phổ biến
+    foreach ($name in @('.vs', '.idea', '.fleet', '.cache')) {
+        Add-CleanTarget (Join-Path $absProjectDir $name)
+    }
+
+    # Web / Blazor caches
+    # BUG FIX: dùng Join-Path với nhiều arg thay vì forward-slash literal trong string
+    #          'wwwroot/_framework' trong 1 arg → trên Windows sẽ thành 1 path component sai
     if ($isWeb) {
-        $foldersToClean += (Join-Path $absProjectDir ".vite")
-        $foldersToClean += (Join-Path $absProjectDir "node_modules")
-        $foldersToClean += (Join-Path $absProjectDir ".cache")
-    }
-
-    # Bổ sung cache ASP.NET temp chỉ trong project: KHÔNG làm (vì temp nằm ngoài project)
-    # Bổ sung .vs: chỉ xóa tại project root, KHÔNG leo ra ngoài
-    $localVsPath = Join-Path $absProjectDir ".vs"
-    if (Test-Path -LiteralPath $localVsPath) {
-        $foldersToClean += $localVsPath
-    }
-    
-    # Danh sách process "vùng an toàn"
-    $safeList = @(
-        'Code', 'devenv', 'rider', 'fleet', 'powershell', 'pwsh', 'explorer',
-        'svchost', 'System', 'Idle', 'csrss', 'winlogon', 'services', 'lsass',
-        'smss', 'wininit', 'taskhostw', 'dwm', 'conhost',
-        'OmniSharp', 'VBCSCompiler', 'csc', 'MSBuild', 'dotnet',
-        'RazorLanguageServer', 'ServiceHub.RoslynCodeAnalysisService',
-        'ServiceHub.IdentityHost', 'Microsoft.CodeAnalysis.LanguageServer',
-        'Microsoft.ServiceHub.Controller'
-    )
-
-    Write-Log "🧹 [SmartClean] Đang dọn dẹp triệt để: $absProjectDir" $C_Info
-
-    # ── Collect targets (chỉ trong project root) ───────────────────────
-    foreach ($folder in $foldersToClean) {
-        if ($null -eq $folder) { continue }
-        if (-not (Test-Path -LiteralPath $folder)) { continue }
-        if (Assert-InProjectRoot -TargetPath $folder -ProjectRoot $absProjectDir) {
-            $safeTargets.Add($folder) | Out-Null
+        foreach ($pair in @(
+            @('wwwroot', '_framework'),
+            @('wwwroot', '_content'),
+            @('.vite'),
+            @('node_modules')
+        )) {
+            Add-CleanTarget ([System.IO.Path]::Combine(@($absProjectDir) + $pair))
         }
     }
 
-    if ($safeTargets.Count -eq 0) { return }
-
-    # --- [2] THỰC HIỆN XÓA ĐA TẦNG LEO THANG] ---
-    foreach ($folder in $safeTargets) {
-        if (-not (Test-Path $folder)) { continue }
-
-        $maxWaitSec = 25
-        $retryDelay = 1
-        $totalWait  = 0
-        $success    = $false
-
-        while (-not $success -and $totalWait -lt $maxWaitSec) {
-            # Sử dụng hàm Remove-ItemForce của bạn (Tầng 1 & 2)
-            if (Remove-ItemForce -TargetDir $folder) {
-                $success = $true
-                Write-Log "   ✅ Đã dọn xong: $(Split-Path $folder -Leaf)" $C_Gray
-            } else {
-                # TẦNG 3: Kill Process nếu Robocopy cũng không xử lý được
-                Write-Log "   ⚠️  Thư mục đang bị khóa, tiến hành giải phóng (${totalWait}s)..." $C_Warn
-                Get-Process | Where-Object { $_.Name -notin $safeList } | ForEach-Object {
-                    try {
-                        $p = $_; $locked = $false
-                        foreach ($mod in $p.Modules) {
-                            if ($mod.FileName -and $mod.FileName.StartsWith($folder, "OrdinalIgnoreCase")) {
-                                $locked = $true; break
-                            }
-                        }
-                        if ($locked) {
-                            Stop-Process -Id $p.Id -Force -EA SilentlyContinue
-                            Write-Log "      ↳ Đã dừng process: $($p.Name)" $C_Gray
-                        }
-                    } catch {}
-                }
-                
-                Start-Sleep -Seconds $retryDelay
-                $totalWait += $retryDelay
-                $retryDelay = [Math]::Min($retryDelay * 2, 5)
-            }
-        }
-    }
-
-    # --- [3] PHẪU THUẬT CACHE .VS (An toàn)] ---
-    # Leo lên tối đa 2 cấp để tìm .vs (phòng trường hợp project nằm trong folder con của Solution)
-    $vsPath = $null
-    $current = $absProjectDir
-    for ($i = 0; $i -le 2; $i++) {
-        $candidate = Join-Path $current '.vs'
-        if (Test-Path $candidate) { $vsPath = $candidate; break }
-        $current = Split-Path $current -Parent
-    }
-
-    if ($vsPath) {
-        Write-Log "   🧹 Dọn cache IDE (.vs) – giữ cấu hình workspace..." $C_Gray
-        # Chỉ xóa các thư mục cache chính (IntelliSense, evaluation)
-        @('ipch', 'ProjectEvaluation') | ForEach-Object {
-            $sub = Join-Path $vsPath $_
-            if (Test-Path $sub) { Remove-ItemForce -TargetDir $sub | Out-Null }
-        }
-        # Xóa các file database tạm của IntelliSense (không đụng .suo)
-        Get-ChildItem -Path $vsPath -Recurse -Include "*.db","*.db-shm","*.db-wal" -EA SilentlyContinue |
-            Remove-Item -Force -EA SilentlyContinue
-    }
-
-    # --- [4] DỌN CACHE ĐẶC THÙ (WEB/MAUI)] ---
-    if ($isWeb) {
-        # Dọn ASP.NET Temp
-        $projName = [IO.Path]::GetFileNameWithoutExtension($CsprojPath)
-        $aspTemp = Join-Path $env:TEMP "Temporary ASP.NET Files"
-        if (Test-Path $aspTemp) {
-            Get-ChildItem $aspTemp -Directory -Recurse -EA SilentlyContinue | 
-                Where-Object { $_.Name -like "*$projName*" } | ForEach-Object { Remove-ItemForce -TargetDir $_.FullName | Out-Null }
-        }
-
-        # Dọn artifacts trong wwwroot
-        $wwwroot = Join-Path $absProjectDir "wwwroot"
-        if (Test-Path $wwwroot) {
-            @('_framework', '_content', 'dist', 'bundle') | ForEach-Object {
-                $p = Join-Path $wwwroot $_
-                if (Test-Path $p) { Remove-ItemForce -TargetDir $p | Out-Null }
-            }
-            # Xóa các file .min tự sinh nhưng giữ lại thư mục lib (thư mục chứa thư viện gốc)
-            Get-ChildItem $wwwroot -Recurse -Include "*.min.js","*.min.css" -EA SilentlyContinue | 
-                Where-Object { $_.FullName -notmatch '[\\/]lib[\\/]' } | Remove-Item -Force -EA SilentlyContinue
-        }
-    }
-
+    # MAUI-specific caches
     if ($isMaui) {
-        $androidCache = Join-Path $env:LOCALAPPDATA "Xamarin\MonoAndroid"
-        if (Test-Path $androidCache) {
-            Get-ChildItem $androidCache -Recurse -Include "*.stamp","res.zip.*" -EA SilentlyContinue | 
-                Remove-Item -Force -EA SilentlyContinue
+        foreach ($name in @('.maui', 'MauiAssets')) {
+            Add-CleanTarget (Join-Path $absProjectDir $name)
+        }
+        # Dọn sạch Platforms/*/bin  Platforms/*/obj
+        $platformsDir = Join-Path $absProjectDir 'Platforms'
+        if (Test-Path -LiteralPath $platformsDir -PathType Container) {
+            Get-ChildItem -LiteralPath $platformsDir -Directory -EA SilentlyContinue | ForEach-Object {
+                Add-CleanTarget (Join-Path $_.FullName 'bin')
+                Add-CleanTarget (Join-Path $_.FullName 'obj')
+            }
         }
     }
 
-    Write-Log "✅ [SmartClean] Hoàn tất dọn dẹp." $C_Succ
-}
+    # ── 5. Xóa sớm các file cache NuGet hay gây lỗi TFM mismatch ─────────────
+    # BUG FIX: dùng Join-Path với 2 arg riêng thay vì "obj/project.assets.json"
+    $objDir     = Join-Path $absProjectDir "obj"
+    $assetsFile = Join-Path $objDir "project.assets.json"
+    if (Test-Path -LiteralPath $assetsFile -PathType Leaf) {
+        try {
+            Remove-Item -LiteralPath $assetsFile -Force -EA Stop
+            Write-Log "   🗑️  Đã xóa project.assets.json (TFM mismatch cache)" $C_Gray
+        } catch { }
+    }
 
+    if (Test-Path -LiteralPath $objDir -PathType Container) {
+        Get-ChildItem -LiteralPath $objDir -Recurse -File -EA SilentlyContinue |
+            Where-Object { $_.Extension -in @('.nuspec', '.cache') -or
+                           $_.Name -in @('project.nuget.cache', 'project.assets.json') } |
+            Where-Object { Assert-SafePath $_.FullName } |
+            ForEach-Object {
+                try { Remove-Item -LiteralPath $_.FullName -Force -EA Stop } catch {}
+            }
+    }
+
+    # ── 6. Hàm xóa thư mục đa nền tảng với retry thông minh ──────────────────
+    function Remove-SafeFolder {
+        param([string]$FolderPath)
+        # BUG FIX: dùng -LiteralPath để tránh glob misinterpretation
+        if (-not (Test-Path -LiteralPath $FolderPath)) { return $true }
+        if (-not (Assert-SafePath $FolderPath)) {
+            Write-Warn "   ⛔ Bỏ qua path ngoài project: $FolderPath"
+            return $false
+        }
+
+        $maxRetries = 3; $delaySec = 1
+        for ($i = 0; $i -lt $maxRetries; $i++) {
+            try {
+                Remove-Item -LiteralPath $FolderPath -Recurse -Force -EA Stop
+                return $true
+            } catch {
+                if ($i -lt ($maxRetries - 1)) {
+                    Start-Sleep -Seconds $delaySec
+                    $delaySec *= 2
+                } else {
+                    # BUG FIX: Write-Warn chỉ nhận 1 tham số — bỏ $C_Warn thừa
+                    Write-Warn "   ⚠️  Không xóa được (bị khóa/thiếu quyền): $(Split-Path $FolderPath -Leaf)"
+                    return $false   # BUG FIX: return tường minh thay vì fall-through
+                }
+            }
+        }
+        return $false  # safety net — không bao giờ đến đây nhưng giữ type đúng
+    }
+
+    # ── 7. Thực thi & báo cáo ────────────────────────────────────────────────
+    Write-Log "🧹 [SmartClean] Dọn cache an toàn & đa nền tảng..." $C_Info
+    Write-Log "   📂 Root: $absProjectDir" $C_Gray
+
+    $cleanedCount = 0; $failedCount = 0
+    foreach ($folder in $targetsToClean) {
+        $label = $folder.Replace($absProjectDir, '').TrimStart([System.IO.Path]::DirectorySeparatorChar,
+                                                                [System.IO.Path]::AltDirectorySeparatorChar)
+        Write-Host "   🗑️  $label" -NoNewline -ForegroundColor DarkGray
+        if (Remove-SafeFolder $folder) {
+            Write-Host "  ✅" -ForegroundColor Green
+            $cleanedCount++
+        } else {
+            Write-Host "  ⚠️" -ForegroundColor Yellow
+            $failedCount++
+        }
+    }
+
+    if ($cleanedCount -eq 0 -and $failedCount -eq 0) {
+        Write-Log "ℹ️  [SmartClean] Không có mục nào cần dọn." $C_Gray
+    } elseif ($failedCount -eq 0) {
+        Write-Log "✅ [SmartClean] Hoàn tất. Đã dọn $cleanedCount mục." $C_Succ
+    } else {
+        Write-Log "⚠️  [SmartClean] Hoàn tất với $failedCount lỗi. Đã dọn $cleanedCount/$($cleanedCount+$failedCount) mục." $C_Warn
+    }
+}
 # ==================================================================================
 # BUILD & DEPLOY
 # ==================================================================================
@@ -1095,7 +1215,7 @@ function Invoke-KillByPort {
     $portsToKill = [System.Collections.Generic.HashSet[int]]::new()
 
     # --- Nguồn 1: launchSettings.json (chính xác nhất) ---
-    $launchSettings = Join-Path $ProjectDir "Properties\launchSettings.json"
+    $launchSettings = Join-Path $ProjectDir "Properties" "launchSettings.json"
     if (Test-Path $launchSettings) {
         try {
             $ls = Get-Content $launchSettings -Raw | ConvertFrom-Json
@@ -1169,7 +1289,7 @@ function ProcessBuildAndShow {
 
     # Bảo vệ: chỉ xử lý project nằm trong thư mục script
     $resolvedProjectDir = try { (Get-Item -LiteralPath $projectDir -EA Stop).FullName } catch { $null }
-    $resolvedScriptRoot = try { (Get-Item -LiteralPath $PSScriptRoot -EA Stop).FullName } catch { $null }
+    $resolvedScriptRoot = try { (Get-Item -LiteralPath $script:ScriptRoot -EA Stop).FullName } catch { $null }
     if ($resolvedProjectDir -and $resolvedScriptRoot) {
         $guardRoot = $resolvedScriptRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
         $guardProj = $resolvedProjectDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
@@ -1311,15 +1431,17 @@ function ProcessBuildAndShow {
         }
         'Web' {
             if (-not $isWindowsPlatform -and -not $isAndroidPlatform -and -not $isApplePlatform) {
-                $params += @("-r", "win-x64", "--self-contained", "true")
+                $rid = Get-RuntimeIdentifier
+                $params += @("-r", $rid, "--self-contained", "true")
                 if ($BuildArgs -notcontains "-p:PublishSingleFile=false") {
                     $params += @("-p:PublishSingleFile=true", "-p:IncludeAllContentForSelfExtract=true")
                 }
             }
         }
         { $_ -in @('WinForms', 'WPF', 'Console', 'WinExe') } {
+            # Những loại này chỉ chạy trên Windows; vẫn dùng Get-RuntimeIdentifier để hỗ trợ arm64
             if ($BuildArgs -notcontains "--self-contained") { $params += "--self-contained" }
-            if ($BuildArgs -notcontains "-r") { $params += "-r", "win-x64" }
+            if ($BuildArgs -notcontains "-r") { $params += "-r", (Get-RuntimeIdentifier) }
         }
         'BlazorWasm' {
             $params += @("-r", "browser-wasm")
@@ -1489,8 +1611,7 @@ if ($global:dotnetCmd) {
 $currentTfm = Get-LatestInstalledTfm -SdksList $globalSdksList
 
 # Cập nhật global.json một lần
-$scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-$gJsonPath  = Join-Path $scriptRoot 'global.json'
+$gJsonPath  = Join-Path $script:ScriptRoot 'global.json'
 
 if ($globalSdksList) {
     $latestSdkVersion = ($globalSdksList[-1] -split ' ')[0]
@@ -1709,11 +1830,11 @@ keyPassword=$($ks.KeyPass)
                 $maxWait = 15; $waited = 0; $portReady = $false
                 while ($waited -lt $maxWait) {
                     Start-Sleep -Seconds 1; $waited++
-                    if (Get-NetTCPConnection -LocalPort $dynamicPort -State Listen -EA SilentlyContinue) { $portReady = $true; break }
+                    if (Test-PortListening -Port $dynamicPort) { $portReady = $true; break }
                 }
                 $swWeb.Stop()
                 if ($portReady) {
-                    Start-Process $url
+                    Open-Url $url
                     Write-Done "App đang chạy tại $url" $swWeb.Elapsed.TotalSeconds
                 } else {
                     Write-Warn "App phản hồi chậm — kiểm tra tại: $url"
@@ -1742,14 +1863,14 @@ keyPassword=$($ks.KeyPass)
         Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: WPF"
         Write-StepTitle "XUẤT BẢN WPF APP" -Color "DarkYellow"
         if ($projectType -eq 'WPF') {
-            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "wpf" -BuildArgs @("-r","win-x64","--self-contained","true") -ProjectType $projectType -Incremental:$Incremental
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "wpf" -BuildArgs @("-r",(Get-RuntimeIdentifier),"--self-contained","true") -ProjectType $projectType -Incremental:$Incremental
         }
     }
     '10' {
         Show-ProgressBar -Current $StepIndex -Total $TotalSteps -Label "Đang Build: CONSOLE"
         Write-StepTitle "XUẤT BẢN CONSOLE APP" -Color "DarkYellow"
         if ($projectType -eq 'Console') {
-            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "console" -BuildArgs @("-r","win-x64","--self-contained","true") -ProjectType $projectType -Incremental:$Incremental
+            ProcessBuildAndShow -Project $projPath -Tfm $currentTfm -OutputSubDir "console" -BuildArgs @("-r",(Get-RuntimeIdentifier),"--self-contained","true") -ProjectType $projectType -Incremental:$Incremental
         }
     }
     '11' {
