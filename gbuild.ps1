@@ -430,317 +430,352 @@ function Open-Url {
     } catch { Write-Warn "Không thể tự mở trình duyệt. Vui lòng truy cập: $Url" }
 }
 
-# ── Quét thư mục tìm dotnet SDK với thanh tiến trình (thay $ScanWithProgress) ──
-function Invoke-ScanForDotnet {
+function Invoke-SmartScan {
     param(
-        [string]  $RootPath,
-        [int]     $MaxDepth  = 4,
-        [string]  $Label     = "",
-        [string[]]$ExcludeDirs = @()
+        [string]$RootPath,
+        [string]$Filter,
+        [scriptblock]$ValidateScript,
+        [int]$MaxDepth = 4,
+        [string]$Label = ""
     )
-    $dotnetName = if ($script:OS -eq 'Windows') { 'dotnet.exe' } else { 'dotnet' }
-    $excludePattern = if ($ExcludeDirs.Count -gt 0) {
-        '[\\/](' + (($ExcludeDirs | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')[\\/]'
-    } else { $null }
 
     Write-Host "`r   🔎 $Label ...$(' ' * 20)" -NoNewline -ForegroundColor DarkGray
 
-    $found = Get-ChildItem -Path $RootPath -File -Filter $dotnetName `
-                           -Recurse -Depth $MaxDepth -EA SilentlyContinue |
-        Where-Object {
-            if ($excludePattern -and ($_.FullName -match $excludePattern)) { return $false }
-            try {
-                $sdkCheck = & $_.FullName --list-sdks 2>&1
-                return ($sdkCheck -match '\d+\.\d+')
-            } catch { return $false }
-        } |
+    $found = Get-ChildItem -LiteralPath $RootPath -File -Filter $Filter -Recurse -Depth $MaxDepth -EA SilentlyContinue |
+        Where-Object { & $ValidateScript $_.FullName } |
         Select-Object -First 1
 
     Write-Host "`r$(' ' * 80)`r" -NoNewline
-    return $found?.FullName
+
+    if ($null -ne $found) {
+        return $found.FullName
+    }
+    return $null
 }
 
-function Get-SmartDotnetPath {
-    Write-Host "🔍 Đang kiểm tra cache SDK .NET..." -ForegroundColor Cyan
-    $cacheFile  = Join-Path $script:ScriptRoot ".sdkcache.json"
-    $dotnetName = if ($script:OS -eq 'Windows') { 'dotnet.exe' } else { 'dotnet' }
+function Find-SdkByDirectory {
+    param(
+        [string]$RootPath,
+        [int]$MaxDepth,
+        [string[]]$DirectoryPatterns,
+        [string]$ExeRelativePath,
+        [string]$Label
+    )
 
-    # --- 1. ƯU TIÊN SỐ 1: KIỂM TRA CACHE (TỐC ĐỘ TỨC THÌ) ---
+    Write-Host "`r   🔎 $Label ...$(' ' * 20)" -NoNewline -ForegroundColor DarkGray
+
+    $allDirs = @(Get-ChildItem -LiteralPath $RootPath -Directory -Recurse -Depth $MaxDepth -EA SilentlyContinue |
+        Where-Object {
+            $name = $_.Name
+            foreach ($p in $DirectoryPatterns) {
+                if ($name -like $p) { return $true }
+            }
+            return $false
+        } |
+        Sort-Object { $_.FullName.Split([IO.Path]::DirectorySeparatorChar).Count }
+    )
+
+    foreach ($dir in $allDirs) {
+        $testExe = Join-Path $dir.FullName $ExeRelativePath
+        if (Test-Path -LiteralPath $testExe) {
+            Write-Host "`r$(' ' * 80)`r" -NoNewline
+            return $dir.FullName
+        }
+    }
+
+    Write-Host "`r$(' ' * 80)`r" -NoNewline
+    return $null
+}
+
+function Get-SmartSdk {
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Dotnet', 'JDK', 'Android')]
+        [string]$ToolType
+    )
+
+    $exeName = switch ($ToolType) {
+        'Dotnet'  { if ($script:OS -eq 'Windows') { 'dotnet.exe' } else { 'dotnet' } }
+        'JDK'     { if ($script:OS -eq 'Windows') { 'javac.exe'  } else { 'javac'  } }
+        'Android' { if ($script:OS -eq 'Windows') { 'adb.exe'    } else { 'adb'    } }
+    }
+
+    $labelName = switch ($ToolType) {
+        'Dotnet'  { '.NET SDK' }
+        'JDK'     { 'Java JDK' }
+        'Android' { 'Android SDK' }
+    }
+
+    $cacheFile = Join-Path $script:ScriptRoot ".sdkcache.json"
+
+    # ─── Pattern lọc thư mục nhanh ───
+    $directoryPatterns = switch ($ToolType) {
+        'Dotnet'  { @('*dotnet*') }
+        'JDK'     { @('*jdk*', '*jre*', '*java*', '*openjdk*', '*zulu*', '*graalvm*') }
+        'Android' { @('*android*', '*sdk*') }
+    }
+
+    $exeRelativePath = switch ($ToolType) {
+        'Dotnet'  { $exeName }
+        'JDK'     { "bin\$exeName" }
+        'Android' { "platform-tools\$exeName" }
+    }
+
+    # ─── Scriptblock lấy thư mục gốc SDK ───
+    $getHomeBlock = {
+        param($p)
+        switch ($ToolType) {
+            'Dotnet'  { Split-Path $p -Parent }
+            'JDK'     { Split-Path (Split-Path $p -Parent) -Parent }
+            'Android' { Split-Path (Split-Path $p -Parent) -Parent }
+        }
+    }.GetNewClosure()
+
+    # ─── Scriptblock kiểm tra hợp lệ ───
+    $validateBlock = {
+        param($p)
+        switch ($ToolType) {
+            'Dotnet' {
+                try {
+                    $sdkCheck = & $p --list-sdks 2>&1
+                    return [bool]($sdkCheck -match '\d+\.\d+')
+                } catch { return $false }
+            }
+            'JDK' {
+                try {
+                    $binDir = Split-Path $p -Parent
+                    $javaExe = if ($script:OS -eq 'Windows') { 'java.exe' } else { 'java' }
+                    return (Test-Path -LiteralPath (Join-Path $binDir $javaExe))
+                } catch { return $false }
+            }
+            'Android' { return $true }
+        }
+    }.GetNewClosure()
+
+    # ─── Scriptblock thiết lập biến môi trường ───
+    $setEnvBlock = {
+        param($h)
+        switch ($ToolType) {
+            'Dotnet' {
+                if ($env:PATH -notlike "*$h*") {
+                    $sep = if ($script:OS -eq 'Windows') { ';' } else { ':' }
+                    $escapedHome = $h -replace '"', '""'
+                    $env:PATH = "`"$escapedHome`"$sep" + $env:PATH
+                }
+                $env:DOTNET_ROOT = $h
+                $env:DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR = $h
+            }
+            'JDK' { $env:JAVA_HOME = $h }
+            'Android' {
+                $env:ANDROID_HOME     = $h
+                $env:ANDROID_SDK_ROOT = $h
+            }
+        }
+    }.GetNewClosure()
+
+    # ─── Hàm con lưu cache (PSCustomObject) ───
+    function Update-Cache {
+        param([string]$SdkHome)
+        $cacheData = [PSCustomObject]@{}
+        if (Test-Path -LiteralPath $cacheFile) {
+            try { $cacheData = Get-Content -LiteralPath $cacheFile -Raw | ConvertFrom-Json } catch {}
+            if ($null -eq $cacheData) { $cacheData = [PSCustomObject]@{} }
+        }
+        # Thêm hoặc cập nhật thuộc tính
+        $cacheData | Add-Member -MemberType NoteProperty -Name $ToolType -Value $SdkHome -Force
+        $cacheData | ConvertTo-Json | Out-File -LiteralPath $cacheFile -Encoding utf8 -Force
+    }
+
+    # ─── BƯỚC 1: Cache ───
     if (Test-Path -LiteralPath $cacheFile) {
         try {
-            $cacheData = Get-Content -LiteralPath $cacheFile -Raw | ConvertFrom-Json
-            if ($cacheData.Path) {
-                $dotnetExe = Join-Path $cacheData.Path $dotnetName
-                if (Test-Path -LiteralPath $dotnetExe) {
-                    $sdkCheck = & $dotnetExe --list-sdks 2>&1
-                    if ($sdkCheck -match '\d+\.\d+') {
-                        Write-Host "✅ [CACHE] Sử dụng SDK tại: $($cacheData.Path)" -ForegroundColor Green
-                        Set-DotnetEnv -SdkPath (Get-SafePath $cacheData.Path)
-                        return $dotnetExe
+            $cacheContent = Get-Content -LiteralPath $cacheFile -Raw | ConvertFrom-Json
+            if ($null -ne $cacheContent -and ($cacheContent | Get-Member -Name $ToolType -ErrorAction SilentlyContinue)) {
+                $cachedPath = $cacheContent.$ToolType
+                if ($cachedPath -and (Test-Path -LiteralPath $cachedPath)) {
+                    $testExe = switch ($ToolType) {
+                        'Dotnet'  { Join-Path $cachedPath $exeName }
+                        'JDK'     { Join-Path $cachedPath "bin" $exeName }
+                        'Android' { Join-Path $cachedPath "platform-tools" $exeName }
+                    }
+                    if ((Test-Path -LiteralPath $testExe) -and (& $validateBlock $testExe)) {
+                        Write-Host "✅ [CACHE] Tự động nạp cấu hình $labelName tại: $cachedPath" -ForegroundColor Green
+                        $safeHome = Get-SafePath $cachedPath
+                        & $setEnvBlock $safeHome
+                        return $(if ($ToolType -eq 'Dotnet') { $testExe } else { $safeHome })
                     }
                 }
             }
-        } catch { }
-        Write-Host "⚠️ Cache SDK không còn hiệu lực, chuyển sang tìm kiếm..." -ForegroundColor Yellow
+        } catch {}
     }
 
-    # --- 2. ƯU TIÊN SỐ 2: KIỂM TRA TRONG PATH HỆ THỐNG ---
-    Write-Host "🔍 Kiểm tra dotnet trong PATH..." -ForegroundColor Cyan
-    $systemDotnet = Get-Command 'dotnet' -ErrorAction SilentlyContinue
-    if ($systemDotnet) {
-        $sdkCheck = & dotnet --list-sdks 2>&1
-        if ($sdkCheck -and $sdkCheck -match '\d+\.\d+') {
-            $dotnetExe  = $systemDotnet.Source
-            $sdkFolder  = Split-Path $dotnetExe -Parent
-            Write-Host "✅ Sử dụng dotnet từ PATH: $sdkFolder" -ForegroundColor Green
-            @{ Path = $sdkFolder } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
-            Set-DotnetEnv -SdkPath $sdkFolder
-            return $dotnetExe
+    # ─── BƯỚC 2: Môi trường cài đặt sẵn ───
+    Write-Host "🔍 Kiểm tra $labelName sẵn có trong hệ thống..." -ForegroundColor Cyan
+
+    # 2a. Biến môi trường
+    $envHome = switch ($ToolType) {
+        'Dotnet'  { $env:DOTNET_ROOT }
+        'JDK'     { $env:JAVA_HOME }
+        'Android' { if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { $env:ANDROID_SDK_ROOT } }
+    }
+    if ($envHome -and (Test-Path -LiteralPath $envHome)) {
+        $testExe = switch ($ToolType) {
+            'Dotnet'  { Join-Path $envHome $exeName }
+            'JDK'     { Join-Path $envHome "bin" $exeName }
+            'Android' { Join-Path $envHome "platform-tools" $exeName }
+        }
+        if ((Test-Path -LiteralPath $testExe) -and (& $validateBlock $testExe)) {
+            $hPath = & $getHomeBlock $testExe
+            $safeHome = Get-SafePath $hPath
+            Write-Host "✅ Tìm thấy $labelName từ biến môi trường: $safeHome" -ForegroundColor Green
+            Update-Cache -SdkHome $hPath
+            & $setEnvBlock $safeHome
+            return $(if ($ToolType -eq 'Dotnet') { $testExe } else { $safeHome })
         }
     }
 
-    # --- GIAI ĐOẠN DÒ TÌM LOCAL (Nếu hệ thống chưa có) ---
-    # $dotnetName đã khai báo ở đầu hàm — không khai báo lại
-    $excludeDirs = @('Windows', 'AppData', '$Recycle.Bin', 'System Volume Information',
-                     'ProgramData', 'Microsoft', 'Package Cache', 'proc', 'sys', 'dev', 'run')
-
-    # --- macOS / Linux: kiểm tra các vị trí cài đặt phổ biến ---
-    if ($script:OS -in @('MacOS', 'Linux')) {
-        $localCandidates = @(
-            (Join-Path $script:ScriptRoot ".sdk" "dotnet"),
-            (Join-Path $HOME ".dotnet"),
-            "/usr/local/share/dotnet",
-            "/usr/share/dotnet"
-        )
-        foreach ($candidate in $localCandidates) {
-            if (-not $candidate) { continue }
-            $exe = Join-Path $candidate $dotnetName
-            if (Test-Path -LiteralPath $exe) {
-                $sdkCheck = & $exe --list-sdks 2>&1
-                if ($sdkCheck -match '\d+\.\d+') {
-                    Write-Host "✅ Đã tìm thấy dotnet tại: $candidate" -ForegroundColor Green
-                    @{ Path = $candidate } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
-                    Set-DotnetEnv -SdkPath $candidate
-                    return $exe
-                }
-            }
+    # 2b. PATH hệ thống
+    $sysCmd = Get-Command $exeName -ErrorAction SilentlyContinue
+    if ($sysCmd) {
+        $testExe = $sysCmd.Source
+        if ($testExe -and (Test-Path -LiteralPath $testExe) -and (& $validateBlock $testExe)) {
+            $hPath = & $getHomeBlock $testExe
+            $safeHome = Get-SafePath $hPath
+            Write-Host "✅ Tìm thấy $labelName trong PATH hệ thống: $safeHome" -ForegroundColor Green
+            Update-Cache -SdkHome $hPath
+            & $setEnvBlock $safeHome
+            return $(if ($ToolType -eq 'Dotnet') { $testExe } else { $safeHome })
         }
-        Write-Host "❌ Không tìm thấy SDK .NET nào hệ thống." -ForegroundColor Red
-        return $null
     }
+
+    # 2c. Thư mục ưu tiên
+    $priorityPaths = @()
+    $priorityPaths += Join-Path $script:ScriptRoot ".sdk"
+    $priorityPaths += Join-Path $script:ScriptRoot ".." ".sdk"
+    $priorityPaths += Join-Path (Get-Location) ".sdk"
 
     if ($script:OS -eq 'Windows') {
-        $currentDir  = (Get-Location).ProviderPath
-        $projectDrive = Split-Path -Path $currentDir -Qualifier   # "G:"
-        $driveRoot    = $projectDrive + [System.IO.Path]::DirectorySeparatorChar
-
-        # Tính độ sâu tương đối từ gốc ổ đĩa đến thư mục hiện tại
-        $sep      = [System.IO.Path]::DirectorySeparatorChar
-        $depthX   = ($currentDir.TrimEnd($sep).Split($sep) | Where-Object { $_ -ne "" }).Count - 1
-        $searchDepth = $depthX + 3
-
-        # --- TÌM TỪ THƯ MỤC DỰ ÁN SÂU XUỐNG 3 CẤP ---
-        Write-Host "🔍 [Bước 3] Tìm nhanh trong thư mục dự án hiện tại (độ sâu tối đa 3)..." -ForegroundColor Cyan
-        $res = Invoke-ScanForDotnet -RootPath $currentDir -MaxDepth 3 -Label "Quét thư mục dự án" -ExcludeDirs $excludeDirs
-        if ($res) {
-            $folder = Split-Path $res -Parent
-            Write-Host "💾 Đã lưu vị trí SDK vào cache: $folder" -ForegroundColor Green
-            @{ Path = $folder } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
-            Set-DotnetEnv -SdkPath (Get-SafePath $folder)
-            return $res
+        $pf = $env:ProgramFiles; $pf86 = ${env:ProgramFiles(x86)}; $localAppData = $env:LOCALAPPDATA
+        switch ($ToolType) {
+            'JDK' {
+                if ($pf) { $priorityPaths += Join-Path $pf "Java"; $priorityPaths += Join-Path $pf "Android\Android Studio\jbr" }
+                if ($pf86) { $priorityPaths += Join-Path $pf86 "Java" }
+                if ($localAppData) { $priorityPaths += Join-Path $localAppData "Android\Android Studio\jbr" }
+            }
+            'Android' {
+                if ($localAppData) { $priorityPaths += Join-Path $localAppData "Android\Sdk" }
+                if ($pf) { $priorityPaths += Join-Path $pf "Android\android-sdk" }
+                if ($env:SystemDrive) { $priorityPaths += Join-Path $env:SystemDrive "Android\android-sdk" }
+            }
+            'Dotnet' {
+                if ($pf) { $priorityPaths += Join-Path $pf "dotnet" }
+            }
         }
-
-        # --- LÙI VỀ GỐC Ổ ĐĨA DỰ ÁN, QUÉT XUỐNG ĐỘ SÂU (depthX + 3) ---
-        Write-Host "🔍 [Bước 4] Không thấy, lùi về gốc $driveRoot quét xuống độ sâu $searchDepth (depthX+3)..." -ForegroundColor Cyan
-        $res = Invoke-ScanForDotnet -RootPath $driveRoot -MaxDepth $searchDepth -Label "Quét ổ đĩa hiện tại ($driveRoot)" -ExcludeDirs $excludeDirs
-        if ($res) {
-            $folder = Split-Path $res -Parent
-            Write-Host "💾 Đã lưu vị trí SDK vào cache: $folder" -ForegroundColor Green
-            @{ Path = $folder } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
-            Set-DotnetEnv -SdkPath (Get-SafePath $folder)
-            return $res
+    } elseif ($script:OS -eq 'MacOS') {
+        switch ($ToolType) {
+            'JDK'     { $priorityPaths += @("/Library/Java/JavaVirtualMachines", (Join-Path $env:HOME "Library/Java/JavaVirtualMachines")) }
+            'Android' { $priorityPaths += Join-Path $env:HOME "Library/Android/sdk" }
+            'Dotnet'  { $priorityPaths += "/usr/local/share/dotnet" }
         }
+    } elseif ($script:OS -eq 'Linux') {
+        switch ($ToolType) {
+            'JDK'     { $priorityPaths += @("/usr/lib/jvm", "/usr/local/lib/jvm") }
+            'Android' { $priorityPaths += @((Join-Path $env:HOME "Android/Sdk"), "/opt/android-sdk") }
+            'Dotnet'  { $priorityPaths += "/usr/share/dotnet" }
+        }
+    }
 
-        # --- MỞ RỘNG QUÉT CÁC Ổ ĐĨA KHÁC ---
-        Write-Host "🔍 [Bước 5] Vẫn không thấy, mở rộng quét toàn bộ các ổ đĩa khả dụng..." -ForegroundColor Cyan
-        $drives      = Get-AvailableDrives
-        $otherDrives = $drives | Where-Object { $_ -ne $projectDrive }
-
-        foreach ($drive in $otherDrives) {
-            $targetRoot = $drive + [System.IO.Path]::DirectorySeparatorChar
-            $res = Invoke-ScanForDotnet -RootPath $targetRoot -MaxDepth 4 -Label "Đang quét ổ đĩa $drive" -ExcludeDirs $excludeDirs
-            if ($res) {
-                $folder = Split-Path $res -Parent
-                Write-Host "💾 Đã lưu vị trí SDK vào cache: $folder" -ForegroundColor Green
-                @{ Path = $folder } | ConvertTo-Json | Out-File $cacheFile -Encoding utf8 -Force
-                Set-DotnetEnv -SdkPath (Get-SafePath $folder)
-                return $res
+    foreach ($path in $priorityPaths) {
+        if ($path -and (Test-Path -LiteralPath $path)) {
+            $foundExe = Get-ChildItem -LiteralPath $path -File -Filter $exeName -Recurse -Depth 3 -EA SilentlyContinue |
+                Where-Object { & $validateBlock $_.FullName } | Select-Object -First 1
+            if ($foundExe) {
+                $hPath = & $getHomeBlock $foundExe.FullName
+                $safeHome = Get-SafePath $hPath
+                Write-Host "✅ Tìm thấy $labelName tại thư mục ưu tiên: $safeHome" -ForegroundColor Green
+                Update-Cache -SdkHome $hPath
+                & $setEnvBlock $safeHome
+                return $(if ($ToolType -eq 'Dotnet') { $foundExe.FullName } else { $safeHome })
             }
         }
     }
 
-    Write-Host "❌ Không tìm thấy SDK .NET nào hệ thống." -ForegroundColor Red
+    # ─── BƯỚC 3: Quét thư mục dự án (depth 3) ───
+    $currentDir = (Get-Location).ProviderPath
+    Write-Host "🔍 Quét thư mục dự án hiện tại (độ sâu 3)..." -ForegroundColor Cyan
+    $res = Invoke-SmartScan -RootPath $currentDir -Filter $exeName -MaxDepth 3 -Label "Quét thư mục dự án" -ValidateScript $validateBlock
+    if ($res) {
+        $hPath = & $getHomeBlock $res
+        $safeHome = Get-SafePath $hPath
+        Write-Host "💾 Đã tìm thấy và lưu vị trí $labelName vào cache: $safeHome" -ForegroundColor Green
+        Update-Cache -SdkHome $hPath
+        & $setEnvBlock $safeHome
+        return $(if ($ToolType -eq 'Dotnet') { $res } else { $safeHome })
+    }
+
+    # ─── BƯỚC 4 & 5: Quét ổ đĩa bằng lọc thư mục (chỉ Windows) ───
+    if ($script:OS -eq 'Windows') {
+        $projectDrive = Split-Path -Path $currentDir -Qualifier
+        $driveRoot    = $projectDrive + [System.IO.Path]::DirectorySeparatorChar
+        $depthX       = ($currentDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar).Split([System.IO.Path]::DirectorySeparatorChar) | Where-Object { $_ -ne "" }).Count
+        $searchDepth  = $depthX + 3
+
+        # Bước 4
+        Write-Host "🔍 Quét nhanh ổ $projectDrive (độ sâu $searchDepth, lọc theo $($directoryPatterns -join ', '))..." -ForegroundColor Cyan
+        $sdkRoot = Find-SdkByDirectory -RootPath $driveRoot -MaxDepth $searchDepth `
+                       -DirectoryPatterns $directoryPatterns `
+                       -ExeRelativePath $exeRelativePath `
+                       -Label "Quét ổ đĩa $projectDrive"
+        if ($sdkRoot) {
+            $safeHome = Get-SafePath $sdkRoot
+            Write-Host "✅ Tìm thấy $labelName tại: $safeHome" -ForegroundColor Green
+            Update-Cache -SdkHome $sdkRoot
+            & $setEnvBlock $safeHome
+            return $(if ($ToolType -eq 'Dotnet') { Join-Path $sdkRoot $exeName } else { $safeHome })
+        }
+
+        # Bước 5
+        Write-Host "🔍 Mở rộng quét các ổ khác (độ sâu $searchDepth)..." -ForegroundColor Cyan
+        $allDrives = Get-AvailableDrives
+        $otherDrives = $allDrives | Where-Object { $_ -ne $projectDrive }
+        foreach ($drive in $otherDrives) {
+            $targetRoot = $drive + [System.IO.Path]::DirectorySeparatorChar
+            $sdkRoot = Find-SdkByDirectory -RootPath $targetRoot -MaxDepth $searchDepth `
+                           -DirectoryPatterns $directoryPatterns `
+                           -ExeRelativePath $exeRelativePath `
+                           -Label "Quét ổ đĩa $drive"
+            if ($sdkRoot) {
+                $safeHome = Get-SafePath $sdkRoot
+                Write-Host "✅ Tìm thấy $labelName tại: $safeHome" -ForegroundColor Green
+                Update-Cache -SdkHome $sdkRoot
+                & $setEnvBlock $safeHome
+                return $(if ($ToolType -eq 'Dotnet') { Join-Path $sdkRoot $exeName } else { $safeHome })
+            }
+        }
+    }
+
     return $null
 }
 
 # Khởi tạo biến $dotnetCmd để sử dụng cho toàn bộ quá trình build phía sau
-$global:dotnetCmd = Get-SmartDotnetPath
+$global:dotnetCmd = Get-SmartSdk -ToolType 'Dotnet'
 if (-not $global:dotnetCmd) {
     Write-Host "❌ Không có SDK .NET, không thể tiếp tục." -ForegroundColor Red
     exit 1
 }
 
-function Get-AndroidSdkPath {
-    Write-Log "🔍 Đang săn tìm Android SDK..." $C_Gray
-    $adbExeName = if ($script:OS -eq 'Windows') { 'adb.exe' } else { 'adb' }
-    $searchList = @(
-        (Join-Path $script:ScriptRoot ".sdk" "android-sdk"),
-        (Join-Path $script:ScriptRoot ".." ".sdk" "android-sdk"),
-        (Join-Path (Get-Location) ".sdk" "android-sdk"),
-        $env:ANDROID_HOME,
-        $env:ANDROID_SDK_ROOT
-    )
-
-    # Thêm vị trí theo OS (không hardcode C:\)
-    if ($script:OS -eq 'Windows') {
-        $pf86     = ${env:ProgramFiles(x86)}
-        $pf       = $env:ProgramFiles
-        $sysDrive = $env:SystemDrive
-        $localAppData = $env:LOCALAPPDATA
-        if ($localAppData) { $searchList += (Join-Path $localAppData "Android" "Sdk") }
-        if ($pf86)         { $searchList += (Join-Path $pf86 "Android" "android-sdk") }
-        if ($pf)           { $searchList += (Join-Path $pf   "Android" "android-sdk") }
-        if ($sysDrive)     { $searchList += (Join-Path $sysDrive "Android" "android-sdk") }
-    } elseif ($script:OS -eq 'MacOS') {
-        $searchList += (Join-Path $env:HOME "Library" "Android" "sdk")
-    } elseif ($script:OS -eq 'Linux') {
-        $searchList += (Join-Path $env:HOME "Android" "Sdk")
-        $searchList += "/opt/android-sdk"
-    }
-
-    foreach ($p in $searchList) {
-        if ($p -and (Test-Path -LiteralPath $p)) {
-            $found = (Get-Item -LiteralPath $p).FullName.TrimEnd('\', '/')
-            Write-Log "✅ Đã thấy Android SDK: $found" $C_Succ
-            $safePath = Get-SafePath $found
-            # Set ANDROID_HOME với safe path để child processes dùng được
-            $env:ANDROID_HOME     = $safePath
-            $env:ANDROID_SDK_ROOT = $safePath
-            return $safePath
-        }
-    }
-
-    # Nếu chưa tìm thấy, quét các ổ cứng cố định với độ sâu 3
-    Write-Log "⚙️ Đang quét ổ cứng tìm Android SDK..." $C_Gray
-    $fixedDrives = Get-AvailableDrives
-    $excludeDirs = @('Windows', 'AppData', '$Recycle.Bin', 'System Volume Information', 'ProgramData', 'Microsoft', 'Package Cache')
-    
-    foreach ($drive in $fixedDrives) {
-        $root = Join-Path $drive ''
-        $topDirs = Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin $excludeDirs }
-        
-        foreach ($dir in $topDirs) {
-            $pathStr = $dir.FullName
-            if ($pathStr.Length -gt 50) { $pathStr = $pathStr.Substring(0, 47) + "..." }
-            Write-Host "`r   🔍 Đang dò: $pathStr$(' ' * 20)" -NoNewline -ForegroundColor DarkGray
-
-            $androidDirs = Get-ChildItem -Path $dir.FullName -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue |
-                            Where-Object { $_.Name -eq "android-sdk" -or (Test-Path (Join-Path $_.FullName "platform-tools" $adbExeName)) }
-            if ($androidDirs) {
-                Write-Host "" # Xuống dòng
-                $found = $androidDirs[0].FullName
-                Write-Log "✅ Đã thấy Android SDK: $found" $C_Succ
-                $safePath = Get-SafePath $found
-                $env:ANDROID_HOME     = $safePath
-                $env:ANDROID_SDK_ROOT = $safePath
-                return $safePath
-            }
-        }
-        Write-Host "`r$(' ' * 80)`r" -NoNewline
-    }
-
-    $foundSdk = Find-FileInDrives -FileName 'android-sdk' -Directory -MaxDepth 3 -ValidateScript {
-        param($path)
-        # Kiểm tra xem có platform-tools/adb không
-        $adbName = if ($script:OS -eq 'Windows') { 'adb.exe' } else { 'adb' }
-        return (Test-Path (Join-Path $path "platform-tools" $adbName))
-    }  # ← Đóng scriptblock ValidateScript
-
-    if ($foundSdk) {
-        Write-Host ""
-        Write-Log "✅ Đã thấy Android SDK: $foundSdk" $C_Succ
-        $safePath = Get-SafePath $foundSdk
-        $env:ANDROID_HOME     = $safePath
-        $env:ANDROID_SDK_ROOT = $safePath
-        return $safePath
-    }
-
-    Write-Log "❌ Không tìm thấy Android SDK." $C_Err
-    return $null
+# 1. Nạp .NET SDK (Yêu cầu đường dẫn tệp thực thi .exe)
+$global:javaSdk = Get-SmartSdk -ToolType 'JDK'
+if (-not $global:javaSdk) {
+    Write-Host "❌ Không tìm thấy Java JDK. Hãy cài đặt hoặc bỏ vào thư mục .sdk" -ForegroundColor Red
+    exit 1
 }
 
-function Get-JavaSdkPath {
-    $javacExe = if ($script:OS -eq 'Windows') { 'javac.exe' } else { 'javac' }
-    $javaExe  = if ($script:OS -eq 'Windows') { 'java.exe' } else { 'java' }
-
-    # 1. Kiểm tra các vị trí ưu tiên (gần script, biến môi trường)
-    $searchList = @(
-        (Join-Path $script:ScriptRoot ".sdk" "jdk"),
-        (Join-Path $script:ScriptRoot ".." ".sdk" "jdk"),
-        (Join-Path $script:ScriptRoot ".." ".." ".." ".sdk" "jdk"),
-        (Join-Path (Get-Location) ".sdk" "jdk"),
-        $env:JAVA_HOME
-    )
-
-    if ($script:OS -eq 'Windows') {
-        $pf   = $env:ProgramFiles
-        $pf86 = ${env:ProgramFiles(x86)}
-        if ($pf)   { $searchList += (Join-Path $pf   "Java") }
-        if ($pf86) { $searchList += (Join-Path $pf86 "Java") }
-    } elseif ($script:OS -eq 'MacOS') {
-        $searchList += "/Library/Java/JavaVirtualMachines"
-        $searchList += (Join-Path $env:HOME "Library" "Java" "JavaVirtualMachines")
-    } elseif ($script:OS -eq 'Linux') {
-        $searchList += "/usr/lib/jvm"
-        $searchList += "/usr/local/lib/jvm"
-    }
-
-    foreach ($p in $searchList) {
-        if ($p -and (Test-Path -LiteralPath (Join-Path $p "bin" $javacExe))) {
-            Write-Log "✅ Đã tìm thấy Java SDK: $p" $C_Succ
-            $safePath = Get-SafePath $p
-            # Set JAVA_HOME với safe path
-            $env:JAVA_HOME = $safePath
-            return $safePath
-        }
-    }
-
-    # 2. Quét các ổ đĩa cục bộ tìm thư mục chứa bin/javac (độ sâu 4)
-    Write-Log "⚙️ Đang quét ổ đĩa tìm Java SDK..." $C_Gray
-
-    # ValidateScript tự tính exe names để không phụ thuộc scope ngoài
-    $foundJavac = Find-FileInDrives -FileName $javacExe -MaxDepth 4 -ValidateScript {
-        param($javacPath)
-        $binDir = Split-Path $javacPath -Parent
-        # Tính lại tên exe bên trong scriptblock (tránh lỗi scope khi truyền qua hàm)
-        $jcExe = if ($script:OS -eq 'Windows') { 'javac.exe' } else { 'javac' }
-        $jExe  = if ($script:OS -eq 'Windows') { 'java.exe'  } else { 'java'  }
-        return ((Test-Path (Join-Path $binDir $jcExe)) -and (Test-Path (Join-Path $binDir $jExe)))
-    }
-
-    if ($foundJavac) {
-        $binDir = Split-Path $foundJavac -Parent
-        $jdkDir = Split-Path $binDir -Parent
-        Write-Host ""
-        Write-Log "✅ Đã tìm thấy Java SDK: $jdkDir" $C_Succ
-        $safePath = Get-SafePath $jdkDir
-        $env:JAVA_HOME = $safePath
-        return $safePath
-    }
-
-    # 3. Không tìm thấy
-    Write-Log "❌ Không tìm thấy Java JDK. Hãy đặt JDK vào thư mục '.sdk/jdk' gần script hoặc cài đặt JDK." $C_Err
-    return $null
+# 3. Nạp Android SDK (Yêu cầu đường dẫn thư mục gốc Android SDK)
+$global:androidSdk = Get-SmartSdk -ToolType 'Android'
+if (-not $global:androidSdk) {
+    Write-Host "❌ Không tìm thấy Android SDK." -ForegroundColor Red
+    exit 1
 }
 
 # ==================================================================================
@@ -1134,7 +1169,7 @@ function Invoke-DeviceDebug {
     
     # Tái sử dụng $sdk đã lấy ở trên — KHÔNG gọi lại Get-AndroidSdkPath lần nữa
     $androidSdk = $sdk
-    $javaSdk    = Get-JavaSdkPath
+    $javaSdk    = Get-SmartSdk -ToolType 'JDK'
 
     # Lấy safe path cho project và các SDK
     $safeProject    = Get-SafePath $Project
@@ -1451,8 +1486,8 @@ function ProcessBuildAndShow {
     
     $androidSdk = $null; $javaSdk = $null
     if ($isAndroidPlatform) {
-        $androidSdk = Get-AndroidSdkPath
-        $javaSdk    = Get-JavaSdkPath
+        $androidSdk = Get-SmartSdk -ToolType 'Android'
+        $javaSdk    = Get-SmartSdk -ToolType 'JDK'
         if (-not $androidSdk) { Write-Log "❌ Thiếu Android SDK!" $C_Err; exit 1 }
         if (-not $javaSdk)    { Write-Log "❌ Thiếu Java JDK!" $C_Err; exit 1 }
     }
