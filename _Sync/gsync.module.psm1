@@ -21,6 +21,7 @@ function Start-GSync {
         [switch]$DryRun
     )
 
+    $Global:StartTime = Get-Date   # ← Fix: đặt vào đây, không phải ngoài module
     $global:NonInteractive = $NonInteractive
     $global:Yes = $Yes
     $global:No = $No
@@ -55,9 +56,10 @@ function Start-GSync {
             exit 1
         }
         $repoUrl = if (-not [string]::IsNullOrWhiteSpace($RepoUrl)) { $RepoUrl }
-                   elseif ($NonInteractive -or $Yes) { Write-Error "Cần -RepoUrl khi dùng -Yes/-NonInteractive"; exit 1 }
+                   elseif ($NonInteractive -or $Yes) { Write-Log "Cần -RepoUrl khi dùng -Yes/-NonInteractive" -Level Error; exit 1 }
                    else { Read-Host "🔗 Nhập URL" }
-        Initialize-GitRepository -RepoUrl $repoUrl
+        $initOk = Initialize-GitRepository -RepoUrl $repoUrl
+        if (-not $initOk) { exit 1 }
     }
 
     # Giải phóng lock nếu có
@@ -190,8 +192,8 @@ function Start-GSync {
     }
 
     $suggestion = New-CommitMessageSuggestion -StagedFiles $staged
-    $msg = if ($NonInteractive -or $Yes) { $suggestion }
-           else { Read-Host "✍️ Commit message (Enter = $suggestion)" ; if ([string]::IsNullOrWhiteSpace($_)) { $suggestion } else { $_ } }
+    $inp = Read-Host "✍️ Commit message (Enter = $suggestion)"
+    $msg = if ([string]::IsNullOrWhiteSpace($inp)) { $suggestion } else { $inp }
     & git commit -m "$msg"
     if ($LASTEXITCODE -ne 0) { Write-Error "Commit thất bại"; exit 1 }
     Write-SubLog "Commit" "Thành công" $global:C_Succ

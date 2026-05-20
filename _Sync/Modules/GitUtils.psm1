@@ -29,7 +29,7 @@ function Initialize-GitRepository {
     param([string]$RepoUrl)
     Write-Log "Khởi tạo repo mới từ $RepoUrl" -Level Info
     & git init
-    if ($LASTEXITCODE -ne 0) { throw "git init thất bại" }
+    if ($LASTEXITCODE -ne 0) { Write-Log "git init thất bại" -Level Error; return $false }
     $null = & git remote get-url origin 2>$null
     if ($LASTEXITCODE -eq 0) {
         & git remote set-url origin $RepoUrl
@@ -37,12 +37,15 @@ function Initialize-GitRepository {
         & git remote add origin $RepoUrl
     }
     & git fetch origin --prune
+    if ($LASTEXITCODE -ne 0) { Write-Log "fetch thất bại — kiểm tra URL/mạng" -Level Error; return $false }
     $lsRemote = (& git ls-remote --symref origin HEAD 2>$null) -join "`n"
     $branch = "main"
     if ($lsRemote -match "ref: refs/heads/(?<b>\S+)\s+HEAD") { $branch = $Matches.b }
     & git checkout -B $branch "origin/$branch" -f
+    if ($LASTEXITCODE -ne 0) { Write-Log "checkout '$branch' thất bại" -Level Error; return $false }
     & git branch --set-upstream-to="origin/$branch" $branch
     Write-Log "Đã đồng bộ repo thành công." -Level Success
+    return $true
 }
 
 function Clear-GitLock {
@@ -51,10 +54,12 @@ function Clear-GitLock {
         Write-Log "Phát hiện index.lock, đang xóa..." -Level Warn
         Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
         if (Test-Path $lockFile) {
-            throw "Không thể xóa lock file"
+            Write-Log "Không thể xóa lock file — hãy đóng IDE rồi thử lại." -Level Error
+            return $false   # ← Không throw; caller xử lý $false
         }
         Write-Log "Đã xóa lock" -Level Success
     }
+    return $true
 }
 
 function Get-GitConflictType {
@@ -69,36 +74,42 @@ function Get-GitConflictType {
 function Invoke-GitAbort {
     param([string]$ConflictType)
     switch ($ConflictType) {
-        "rebase" { & git rebase --abort }
-        "merge" { & git merge --abort }
+        "rebase"      { & git rebase --abort }
+        "merge"       { & git merge --abort }
         "cherry-pick" { & git cherry-pick --abort }
     }
-    if ($LASTEXITCODE -ne 0) { throw "Không thể abort $ConflictType" }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "Không thể abort $ConflictType — vui lòng xử lý thủ công." -Level Error
+        return $false
+    }
     Write-Log "Đã abort $ConflictType" -Level Success
+    return $true
 }
 
 function Invoke-GitConflictHandler {
     param([string]$ConflictType)
-    Write-Host "`n⚠️ Xung đột $ConflictType!" -ForegroundColor $global:C_Warn
+    $typeLabel = if ($ConflictType) { $ConflictType } else { "git operation" }
+    Write-Host "`n⚠️ Xung đột $typeLabel!" -ForegroundColor $global:C_Warn
     Write-Host "   Hướng dẫn giải quyết:" -ForegroundColor $global:C_Info
     Write-Host "   1. Xem file conflict: git diff --name-only --diff-filter=U"
     Write-Host "   2. Sửa file, rồi git add"
-    Write-Host "   3. git $ConflictType --continue"
-    Write-Host "   Hoặc hủy: git $ConflictType --abort"
+    if ($ConflictType) { Write-Host "   3. git $typeLabel --continue" }
+    Write-Host "   Hoặc hủy: git $typeLabel --abort"
     if (Confirm-YesNo "Hiển thị danh sách file conflict?" -Default "y") {
         $files = & git diff --name-only --diff-filter=U 2>$null
         if ($files) { $files | ForEach-Object { Write-Host "      $_" -ForegroundColor $global:C_Warn } }
     }
-    throw "Conflict detected"
+    return $false   # ← Không throw; caller dùng return value để exit
 }
 
 function Get-CurrentBranch {
+    param([Object]$Config)
     $branch = & git branch --show-current 2>$null
     if (-not $branch) {
         $branch = & git rev-parse --abbrev-ref HEAD 2>$null
     }
     if (-not $branch -or $branch -eq 'HEAD') {
-        $fallback = $cfg.git.defaultBranchFallback
+        $fallback = $Config.git.defaultBranchFallback
         if ($global:NonInteractive -or $global:Yes) { $branch = $fallback }
         else {
             $inp = Read-Host "Nhập tên nhánh (Enter = $fallback)"
@@ -109,15 +120,20 @@ function Get-CurrentBranch {
 }
 
 function Get-UpstreamBranch {
-    param([string]$RemoteName, [string]$LocalBranch)
+    param([string]$RemoteName, [string]$LocalBranch)   # ← Fix: khai báo param (trước không có)
     $upstream = & git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$null
-    if ($LASTEXITCODE -eq 0 -and $upstream) { return $upstream }
-    return "$RemoteName/$LocalBranch"
+    if ($LASTEXITCODE -eq 0 -and $upstream) {
+        # "@{u}" trả về "origin/main" → chỉ lấy phần branch "main"
+        return ($upstream -split '/', 2)[-1]
+    }
+    return $LocalBranch   # ← Giờ $LocalBranch hợp lệ vì đã là param
 }
 
 function Test-RemoteBranch {
     param([string]$RemoteName, [string]$Branch)
-    $null = & git rev-parse "$Branch" 2>$null
+    # Phải kiểm tra "$RemoteName/$Branch" (vd: "origin/main"), không phải chỉ "$Branch"
+    # Nếu chỉ dùng "$Branch" → git rev-parse "main" → kiểm tra local branch, không phải remote
+    $null = & git rev-parse "$RemoteName/$Branch" 2>$null
     return $LASTEXITCODE -eq 0
 }
 
@@ -193,16 +209,23 @@ function Invoke-StashIfDirty {
 }
 
 function Invoke-PopStash {
-    if (-not $global:StashName) { return }
+    if (-not $global:StashName) { return $true }
     $stashLine = & git stash list --format='%gd %s' | Where-Object { $_ -match [regex]::Escape($global:StashName) } | Select-Object -First 1
-    if (-not $stashLine) { Write-Warn "Không tìm thấy stash '$global:StashName'"; return }
+    if (-not $stashLine) {
+        Write-Warn "Không tìm thấy stash '$global:StashName'"
+        $global:StashName = $null
+        return $true
+    }
     $stashRef = ($stashLine -split ' ')[0]
     & git stash pop $stashRef
     if ($LASTEXITCODE -ne 0) {
-        throw "Stash pop conflict. Hãy xử lý thủ công: git stash pop $stashRef"
+        Write-Log "⚠️ Stash pop conflict — xử lý thủ công: git stash pop $stashRef" -Level Warn
+        $global:StashName = $null
+        return $false   # ← Không throw; caller kiểm tra return value
     }
     Write-SubLog "Stash" "Đã khôi phục" $global:C_Succ
     $global:StashName = $null
+    return $true
 }
 
 function Get-GitStatus {
@@ -254,4 +277,4 @@ function Send-WebhookNotification {
     }
 }
 
-Export-ModuleMember -Function Initialize-SshKey, Test-GitVersion, Test-GitRepository, Initialize-GitRepository, Clear-GitLock, Get-GitConflictType, Invoke-GitAbort, Invoke-GitConflictHandler, Get-CurrentBranch, Get-UpstreamBranch, Test-RemoteBranch, Invoke-GitFetch, Get-AheadBehind, Invoke-GitPull, Invoke-GitPush, Invoke-StashIfDirty, Invoke-PopStash, Get-GitStatus, Unstage-Artifacts, Generate-CommitMessageSuggestion, Send-WebhookNotification
+Export-ModuleMember -Function Initialize-SshKey, Test-GitVersion, Test-GitRepository, Initialize-GitRepository, Clear-GitLock, Get-GitConflictType, Invoke-GitAbort, Invoke-GitConflictHandler, Get-CurrentBranch, Get-UpstreamBranch, Test-RemoteBranch, Invoke-GitFetch, Get-AheadBehind, Invoke-GitPull, Invoke-GitPush, Invoke-StashIfDirty, Invoke-PopStash, Get-GitStatus, Undo-Artifacts, New-CommitMessageSuggestion, Send-WebhookNotification

@@ -28,9 +28,13 @@ function Test-SensitiveFiles {
         if ($rawPath.StartsWith('"') -and $rawPath.EndsWith('"')) {
             $rawPath = $rawPath.Substring(1, $rawPath.Length - 2)
         }
+        $isAllowed = $false
+        foreach ($a in $Config.sensitive.allowedPatterns) {
+            if ($rawPath -match $a) { $isAllowed = $true; break }
+        }
+        if ($isAllowed) { <# hiển thị bình thường #>; continue }
+
         $isSensitive = $false
-        foreach ($a in $Config.sensitive.allowedPatterns) { if ($rawPath -match $a) { $isSensitive = $false; break } }
-        if ($isSensitive) { continue }
         foreach ($p in $Config.sensitive.blockedPatterns) {
             if ($rawPath -match $p) { $isSensitive = $true; break }
         }
