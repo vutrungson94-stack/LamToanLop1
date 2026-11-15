@@ -1,4 +1,4 @@
-﻿using LamToanLop1.Models;
+using LamToanLop1.Models;
 using LamToanLop1.Services;
 using LamToanLop1.ViewModels;
 using Microsoft.Maui.Controls.Shapes;
@@ -697,7 +697,24 @@ public partial class GamePage : ContentPage
                             {
                                 try
                                 {
-                                    var pre = await ComputeScatterLayoutAsync(allItems, token);
+                                    // 🔥 Giới hạn vùng rải + dùng mô hình chiều sâu nông trại (giống nhánh TotalCount)
+                                    var limitZone = Rect.Zero;
+                                    var reservedBottom = 120.0;
+                                    await MainThread.InvokeOnMainThreadAsync(() =>
+                                    {
+                                        if (AnswerLayout.Height > 0)
+                                            reservedBottom = Math.Max(120, AnswerLayout.Height + 20);
+                                        if (FarmContainer.Width > 0 && FarmContainer.Height > 0)
+                                            limitZone = new Rect(0, 0, FarmContainer.Width, Math.Max(0, FarmContainer.Height - reservedBottom));
+                                    });
+                                    if (limitZone == Rect.Zero)
+                                    {
+                                        var density = DeviceDisplay.MainDisplayInfo.Density;
+                                        var screenWidth = DeviceDisplay.MainDisplayInfo.Width / density;
+                                        var screenHeight = DeviceDisplay.MainDisplayInfo.Height / density;
+                                        limitZone = new Rect(0, 0, screenWidth, Math.Max(0, screenHeight - reservedBottom));
+                                    }
+                                    var pre = await ComputeScatterLayoutAsync(allItems, token, useFarmDepth: true, limitZone: limitZone);
                                     if (token.IsCancellationRequested) return;
 
                                     await RenderItemsScatterFromPrecomputedAsync(pre, token);
@@ -947,10 +964,10 @@ public partial class GamePage : ContentPage
 // ==========================================
 
 // 🔥 TỶ LỆ CHUẨN CHO MÀN HÌNH DÀI (ANDROID)
-private const double FARM_HORIZON_RATIO = 0.35; // Trời chiếm 32% trên cùng
-private const double FARM_BOTTOM_RATIO = 0.80;  // Vùng đất an toàn kết thúc ở 80% (chừa 20% dưới cho nút bấm)
-private const double FARM_DEPTH_MIN = 0.55;     // Con vật xa nhất (nhỏ nhất)
-private const double FARM_DEPTH_MAX = 1.25;     // Con vật gần nhất (to nhất)
+private const double FARM_HORIZON_RATIO = 0.55; // cập nhật: con vật không bay lên trời & cân đối size
+private const double FARM_BOTTOM_RATIO = 0.83; // cập nhật: con vật không bay lên trời & cân đối size
+private const double FARM_DEPTH_MIN = 0.75; // cập nhật: con vật không bay lên trời & cân đối size
+private const double FARM_DEPTH_MAX = 1.10; // cập nhật: con vật không bay lên trời & cân đối size
 
 // --- HÀM TÍNH TOÁN VỊ TRÍ (ComputeScatterLayoutAsync) ---
 private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameItem> items, CancellationToken token, bool useFarmDepth = false, Rect limitZone = default, List<Rect>? forbiddenZones = null, bool enforceExactScale = false)
@@ -994,7 +1011,6 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
     // Vùng đất farm (Y tuyệt đối trên container)
     double horizonY = ch * FARM_HORIZON_RATIO;
     double bottomY = ch * FARM_BOTTOM_RATIO;
-    double depthRange = bottomY - horizonY;
 
     // Kích thước cơ sở
     double baseSize = Math.Clamp(Math.Min(cw, ch) * (items.Count <= 5 ? 0.14 : items.Count <= 10 ? 0.11 : 0.09), 28, 110);
@@ -1015,22 +1031,25 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
             bool placed_ok = false;
             double globalShrink = 1.0;
 
+            // 🔧 Tính biên vùng đất MỘT LẦN (không tính lại mỗi vòng thử)
+            double yMin = limitZone == default ? horizonY : Math.Max(horizonY, zoneY);
+            double yMax = limitZone == default ? bottomY : Math.Min(bottomY, zoneY + zoneHeight);
+            if (yMax <= yMin) { yMin = horizonY; yMax = bottomY; }
+            double xMin = limitZone == default ? 0 : zoneX;
+            double xMax = limitZone == default ? cw : zoneX + zoneWidth;
+
             for (int attempt = 0; attempt < 60 && !placed_ok; attempt++)
             {
-                double yMin = limitZone == default ? horizonY : Math.Max(horizonY, zoneY);
-                double yMax = limitZone == default ? bottomY : Math.Min(bottomY, zoneY + zoneHeight);
-                if (yMax <= yMin) { yMin = horizonY; yMax = bottomY; }
-
                 // Depth ngẫu nhiên (0 = xa, 1 = gần)
                 depthRatio = rand.NextDouble();
-                double yPos = yMin + depthRatio * (yMax - yMin);
 
                 double depthScale = FARM_DEPTH_MIN + depthRatio * (FARM_DEPTH_MAX - FARM_DEPTH_MIN);
                 double sz = baseSize * it.Scale * depthScale * globalShrink;
-                sz = Math.Clamp(sz, 28, cw * 0.40);
+                // 🔧 Kẹp theo vùng rải — con vật không bao giờ to hơn chính vùng đất nó đứng
+                sz = Math.Clamp(sz, 28, Math.Min(cw * 0.40, Math.Min(xMax - xMin, yMax - yMin) * 0.9));
+                // Đáy con vật không trôi quá vùng đất
+                double yPos = Math.Min(yMin + depthRatio * (yMax - yMin), Math.Max(yMin, yMax - sz));
 
-                double xMin = limitZone == default ? 0 : zoneX;
-                double xMax = limitZone == default ? cw : zoneX + zoneWidth;
                 double x = xMin + rand.NextDouble() * Math.Max(0, (xMax - xMin) - sz);
 
                 r = new Rect(x, yPos, sz, sz);
@@ -1045,16 +1064,14 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                 if (!isColliding)
                     placed_ok = true;
 
-                if (!placed_ok && attempt % 20 == 19)
-                    globalShrink = Math.Max(0.4, globalShrink - 0.05);
+                if (!placed_ok && attempt % 10 == 9)
+                    globalShrink = Math.Max(0.35, globalShrink - 0.15);
             }
 
-            // Fallback: Nếu không tìm được chỗ, ép xuống vùng đất an toàn
-            if (r == Rect.Zero)
+            // 🔧 Fallback xác định: rải ngẫu nhiên thất bại → quét lưới đều trong vùng đất
+            if (!placed_ok)
             {
-                double sz = baseSize * it.Scale * 0.6;
-                double yPos = horizonY + depthRange * 0.4; // Đặt ở giữa vùng đất
-                r = new Rect(rand.NextDouble() * Math.Max(0, cw - sz), yPos, sz, sz);
+                r = GridFallback(xMin, yMin, xMax, yMax, baseSize * it.Scale, placed, allForbiddenZones) ?? r;
             }
         }
         else
@@ -1062,7 +1079,8 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
             // --- FLAT MODEL (HÌNH KHỐI) ---
             double randomScale = enforceExactScale ? 1.0 : 0.8 + rand.NextDouble() * 0.4;
             double sz = baseSize * it.Scale * randomScale;
-            sz = Math.Clamp(sz, 35, cw * 0.25);
+            // 🔧 Kẹp theo vùng rải, không bao giờ to hơn chính vùng chứa nó
+            sz = Math.Clamp(sz, 35, Math.Min(cw * 0.25, Math.Min(zoneWidth, zoneHeight) * 0.9));
 
             bool placed_ok = false;
             for (int attempt = 0; attempt < 50 && !placed_ok; attempt++)
@@ -1075,8 +1093,13 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                                    allForbiddenZones.Any(fz => fz.IntersectsWith(r));
 
                 if (!isColliding) placed_ok = true;
+                else if (attempt % 10 == 9) sz = Math.Max(28, sz * 0.85); // co dần khi vùng chật
             }
-            if (r == Rect.Zero) r = new Rect(zoneX, zoneY, sz, sz);
+            if (!placed_ok)
+            {
+                // 🔧 Fallback xác định: quét lưới đều, không chồng lên vật đã đặt
+                r = GridFallback(zoneX, zoneY, zoneX + zoneWidth, zoneY + zoneHeight, baseSize * it.Scale, placed, allForbiddenZones) ?? r;
+            }
             depthRatio = 0.5;
         }
 
@@ -1086,6 +1109,38 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
 
     return result;
 }
+
+    // 🔧 Quét lưới đều trong vùng rải để tìm ô trống khi rải ngẫu nhiên thất bại.
+    // Không bao giờ chồng lên vật đã đặt hoặc vùng cấm. Trả về null nếu không có ô nào; rơi về r cuối.
+    private static Rect? GridFallback(double xMin, double yMin, double xMax, double yMax, double desired, List<Rect> placed, List<Rect> forbidden)
+    {
+        double w = xMax - xMin, h = yMax - yMin;
+        if (w <= 0 || h <= 0) return null;
+
+        double cell = Math.Max(40, Math.Min(desired, Math.Min(w, h)));
+        // Pass 1: lưới cơ sở, Pass 2: lưới mịn hơn ×1.5
+        for (int pass = 0; pass < 2; pass++)
+        {
+            int cols = Math.Max(1, (int)Math.Floor(w / cell));
+            int rows = Math.Max(1, (int)Math.Floor(h / cell));
+            double cw = w / cols, chh = h / rows;
+            for (int ry = 0; ry < rows; ry++)
+                for (int rx = 0; rx < cols; rx++)
+                {
+                    double s = Math.Max(24, Math.Min(cw, chh) * 0.85);
+                    double cx = xMin + rx * cw + (cw - s) / 2.0;
+                    double cy = yMin + ry * chh + (chh - s) / 2.0;
+                    Rect cand = new Rect(cx, cy, s, s);
+                    double pad = s * 0.08;
+                    Rect padded = new Rect(cand.X - pad, cand.Y - pad, cand.Width + pad * 2, cand.Height + pad * 2);
+                    bool clash = placed.Any(p => p.IntersectsWith(padded)) ||
+                                 forbidden.Any(f => f.IntersectsWith(padded));
+                    if (!clash) return cand;
+                }
+            cell /= 1.5;
+        }
+        return null;
+    }
 
     // Hàm dựng view từ kết quả precomputed (chạy trên UI thread)
     private async Task RenderItemsScatterFromPrecomputedAsync(List<PrecomputedItem> pre, CancellationToken token, bool isInteractive = false)
@@ -1977,52 +2032,77 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
         double topH = Math.Max(0, forbiddenRect.Y - 24 - safeTopY);
         double bottomY = forbiddenRect.Y + forbiddenRect.Height + 24;
         double bottomH = Math.Max(0, safeBottomY - bottomY - 8);
-        Rect topZone = new(sideInset, safeTopY, Math.Max(0, cw - sideInset * 2), topH);
-        Rect bottomZone = new(sideInset, bottomY, Math.Max(0, cw - sideInset * 2), bottomH);
-        Rect scatterZone = topH > bottomH ? topZone : (bottomH > 60 ? bottomZone : topZone);
-        if (scatterZone.Height < 90)
-        {
-            // Dự phòng: rải trong toàn bộ phần giấy an toàn (vẫn tránh ô nét đứt nhờ kiểm tra va chạm bên dưới)
-            scatterZone = new(sideInset, safeTopY, Math.Max(0, cw - sideInset * 2), Math.Max(0, safeBottomY - safeTopY));
-        }
-        var occupied = new List<Rect> { forbiddenRect };
+        // 🔥 LƯỚI ĐỀU: chia số vào 2 vùng TRÊN / DƯỚI khung nét đứt theo lưới cân bằng.
+        // Số luôn nằm trọn trong tờ giấy an toàn, không đè vào ô kẻ nét đứt, không bị clip.
         var shuffled = numbers.OrderBy(_ => rand.Next()).ToList();
+        int nTotal = shuffled.Count;
+        double availW = Math.Max(0, cw - sideInset * 2);
 
-        for (int i = 0; i < shuffled.Count; i++)
+        // Lưới tối ưu (ô lớn nhất, gần vuông) cho từng vùng
+        static (int cols, int rows) GridFit(int count, double w, double h)
         {
-            int num = shuffled[i];
-            double size = rand.Next(55, 85);
-
-            Rect pos = Rect.Zero;
-            bool placed = false;
-            
-            for (int attempt = 0; attempt < 150; attempt++)
+            if (count <= 0 || w <= 0 || h <= 0) return (1, 1);
+            int bestCols = 1, bestRows = count;
+            double bestCell = 0;
+            for (int cols = 1; cols <= count; cols++)
             {
-                double x = scatterZone.X + rand.NextDouble() * Math.Max(0, scatterZone.Width - size);
-                double y = scatterZone.Y + rand.NextDouble() * Math.Max(0, scatterZone.Height - size);
-                Rect candidate = new(x, y, size, size);
-                
-                bool isColliding = occupied.Any(o => o.IntersectsWith(candidate));
-                if (forbiddenRect.Width > 0 && forbiddenRect.IntersectsWith(candidate)) isColliding = true;
-                if (!isColliding)
-                {
-                    pos = candidate;
-                    placed = true;
-                    break;
-                }
+                int rows = (count + cols - 1) / cols;
+                double cell = Math.Min(w / cols, h / rows);
+                if (cell > bestCell) { bestCell = cell; bestCols = cols; bestRows = rows; }
             }
+            return (bestCols, bestRows);
+        }
 
-            if (!placed)
+        // Chia số ra 2 vùng; nếu 1 vùng quá hẹp thì dồn hết về vùng còn lại
+        int topCount = (nTotal + 1) / 2;   // vùng trên nhiều hơn 1 số khi tổng lẻ
+        int botCount = nTotal - topCount;
+        bool topUsable = topCount > 0 && topH >= 30;
+        bool botUsable = botCount > 0 && bottomH >= 30;
+        if (!topUsable && botUsable) { botCount = nTotal; topCount = 0; }
+        else if (!botUsable && topUsable) { topCount = nTotal; botCount = 0; }
+        else if (!topUsable && !botUsable) { sideInset = 0; availW = Math.Max(0, cw); topCount = nTotal; botCount = 0; topH = safeBottomY - safeTopY; }
+
+        var topPlan = GridFit(topCount, availW, topH);
+        var botPlan = GridFit(botCount, availW, bottomH);
+
+        double cellTop = topCount > 0 ? Math.Min(availW / topPlan.cols, topH / topPlan.rows) : double.MaxValue;
+        double cellBot = botCount > 0 ? Math.Min(availW / botPlan.cols, bottomH / botPlan.rows) : double.MaxValue;
+        double cellMin = Math.Min(cellTop, cellBot);
+        if (cellMin == double.MaxValue) cellMin = Math.Max(1, Math.Min(availW, safeBottomY - safeTopY));
+
+        // Kích thước đồng đều cho TẤT CẢ số — nhân 0.72 để lọt góc xoay ±25°
+        double uniformSize = Math.Clamp(cellMin * 0.72, 45, 85);
+
+        var placements = new List<(int num, Rect pos)>(nTotal);
+
+        void BuildZone(int count, int cols, int rows, double zoneY, double zoneH, int startIndex)
+        {
+            if (count <= 0 || availW <= 0 || zoneH <= 0) return;
+            double cellW = availW / cols;
+            double cellH = zoneH / rows;
+            double s = Math.Min(uniformSize, Math.Min(cellW, cellH));
+            for (int i = 0, idx = startIndex; i < count; i++, idx++)
             {
-                double offsetX = (i % 3) * 80;
-                double offsetY = (i / 3) * 90;
-                // 🔒 Kẹp vị trí dự phòng để số luôn nằm trọn trong vùng giấy an toàn
-                double fx = Math.Min(scatterZone.X + offsetX, Math.Max(scatterZone.X, scatterZone.X + scatterZone.Width - size));
-                double fy = Math.Min(scatterZone.Y + offsetY, Math.Max(scatterZone.Y, scatterZone.Y + scatterZone.Height - size));
-                pos = new Rect(Math.Max(scatterZone.X, fx), Math.Max(scatterZone.Y, fy), size, size);
+                int row = i / cols, col = i % cols;
+                int inRow = Math.Min(cols, count - row * cols);
+                double rowOffset = (cols - inRow) * cellW / 2.0;  // hàng cuối căn giữa
+                double x = sideInset + rowOffset + col * cellW + (cellW - s) / 2.0;
+                double y = zoneY + row * cellH + (cellH - s) / 2.0;
+                // Kẹp cứng vào vùng — số không bao giờ ra ngoài tờ giấy
+                x = Math.Clamp(x, sideInset, Math.Max(sideInset, sideInset + availW - s));
+                y = Math.Clamp(y, zoneY, Math.Max(zoneY, zoneY + zoneH - s));
+                placements.Add((shuffled[idx], new Rect(x, y, s, s)));
             }
+        }
 
-            occupied.Add(pos);
+        BuildZone(topCount, topPlan.cols, topPlan.rows, safeTopY, topH, 0);
+        BuildZone(botCount, botPlan.cols, botPlan.rows, bottomY, bottomH, topCount);
+
+        // Mở vòng lặp mới: phần tạo Border phía dưới dùng lại 'pos', 'size', 'num', 'i'
+        for (int i = 0; i < placements.Count; i++)
+        {
+            var (num, pos) = placements[i];
+            double size = pos.Width;
 
             var border = new Border
             {

@@ -128,25 +128,46 @@
                       Padding="4"/>
             </ScrollView>
 
-            <!-- Nút quay lại chọn phạm vi -->
-            <Button x:Name="BackToRangesButton"
-                    Grid.Row="2" 
-                    Text="🔁 CHỌN PHẠM VI KHÁC" 
-                    Clicked="OnBackToRangesClicked"
-                    BackgroundColor="#FF9800" 
-                    FontFamily="NunitoExtraBold"
-                    FontSize="18"
-                    FontAttributes="Bold" 
-                    TextColor="White"
-                    CornerRadius="25" 
-                    HeightRequest="55" 
-                    WidthRequest="260"
-                    Margin="0,15,0,0"
-                    HorizontalOptions="Center">
-                <Button.Shadow>
-                    <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
-                </Button.Shadow>
-            </Button>
+            <!-- Nút chuyển phạm vi + dãy số ngẫu nhiên mới (nút sau chỉ hiện ở chế độ ngẫu nhiên) -->
+            <VerticalStackLayout Grid.Row="2"
+                                 Spacing="8"
+                                 HorizontalOptions="Fill"
+                                 Padding="0,10,0,0">
+                <Button x:Name="GenerateRandomButton"
+                        Text="🎲 TẠO DÃY SỐ MỚI"
+                        Clicked="OnGenerateRandomClicked"
+                        BackgroundColor="#8E24AA"
+                        FontFamily="NunitoExtraBold"
+                        FontSize="14"
+                        FontAttributes="Bold"
+                        TextColor="White"
+                        CornerRadius="25"
+                        HeightRequest="55"
+                        HorizontalOptions="Fill"
+                        Margin="0"
+                        IsVisible="False">
+                    <Button.Shadow>
+                        <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
+                    </Button.Shadow>
+                </Button>
+
+                <Button x:Name="BackToRangesButton"
+                        Text="🔁 CHỌN PHẠM VI"
+                        Clicked="OnBackToRangesClicked"
+                        BackgroundColor="#FF9800"
+                        FontFamily="NunitoExtraBold"
+                        FontSize="14"
+                        FontAttributes="Bold"
+                        TextColor="White"
+                        CornerRadius="25"
+                        HeightRequest="55"
+                        HorizontalOptions="Fill"
+                        Margin="0">
+                    <Button.Shadow>
+                        <Shadow Brush="Black" Offset="2,4" Opacity="0.3" Radius="5"/>
+                    </Button.Shadow>
+                </Button>
+            </VerticalStackLayout>
         </Grid>
     </Grid>
 </ContentPage>

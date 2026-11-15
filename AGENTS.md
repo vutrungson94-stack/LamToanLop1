@@ -71,10 +71,20 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
    - (Lưu ý khi project sau này có `*.Tests.csproj`: `dotnet test` sẽ chạy thật và cũng phải xanh.)
    - Bước này PHẢI XANH trước khi gọi `_Build` — không có ngoại lệ.
 4. **`_Build` (gbuild) — toàn bộ gate L5 xanh (mục 8):** Security (3 phase) + Supply chain/SBOM + SAST + **Policy check**. Nếu một gate đỏ → sửa nguyên nhân (không nới gate), rồi chạy lại `_Tests` → `_Build`.
+   - Build nhanh cho mỗi lần sửa UI/code (mặc định):
    ```powershell
-   pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "D:\HOC_TAP\backup\_Build\gbuild.ps1" -Project "D:\HOC_TAP\Android\LamToanLop1\LamToanLop1" -NonInteractive -Incremental
+   pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "D:\HOC_TAP\backup\_Build\gbuild.ps1" -Project "D:\HOC_TAP\Android\LamToanLop1\LamToanLop1" -NonInteractive -Target 1
    ```
-   - APK: `publish-output\apk\com.vutrungson.lamtoanlop1-Signed.apk` (gbuild cũng tự cài + mở app trên emulator đang kết nối).
+   - ⚠️ **`-Target 1` có thể KHÔNG cài APK lên emulator** dù log báo "Deploying app to device..." + "[PIPELINE DONE] COMPLETED" (xác nhận 2026-11-15 23:10 và 2026-11-16 00:14 — `lastUpdateTime` không đổi, APK không đóng gói lại). Bước deploy của gbuild nuốt stdout nên lỗi im lặng. Sau mỗi lần Target 1 **kiểm chứng bắt buộc**:
+   ```powershell
+   & "C:\Program Files\Android\platform-tools\adb.exe" -s emulator-5554 shell dumpsys package com.vutrungson.lamtoanlop1 | Select-String lastUpdateTime
+   ```
+   Nếu `lastUpdateTime` không khớp thời điểm build → deploy thủ công (đã xác nhận 2026-11-16 00:15:51):
+   ```powershell
+   dotnet build "D:\HOC_TAP\Android\LamToanLop1\LamToanLop1\LamToanLop1.csproj" -t:Run -f net10.0-android -p:AndroidSdkDirectory="C:\Program Files\Android" -p:JavaSdkDirectory="C:\Program Files\Microsoft\jdk-21.0.11.10-hotspot"
+   ```
+   - Build đầy đủ: `-Incremental` (giống gate, chậm hơn). `-Target 1` chỉ thay bước đóng gói/cài — gate L5 vẫn chạy đủ.
+   - APK: `publish-output\apk\com.vutrungson.lamtoanlop1-Signed.apk` (gbuild cố deploy + mở app trên emulator đang kết nối, nhưng luôn kiểm `lastUpdateTime`).
 5. **`_Sync` (gsync) — đồng bộ repo, chỉ chạy khi 3+4 đã xanh:**
    ```powershell
    pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "D:\HOC_TAP\backup\_Sync\gsync.ps1" -Project "D:\HOC_TAP\Android\LamToanLop1\LamToanLop1" -Yes -NonInteractive
@@ -90,7 +100,9 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
    & $adb wait-for-device; do { Start-Sleep 5 } until ((& $adb shell getprop sys.boot_completed) -match '1')
    & $adb install -r "<apk mới nhất>"
    & $adb shell monkey -p com.vutrungson.lamtoanlop1 -c android.intent.category.LAUNCHER 1
-   & $adb exec-out screencap -p > "$env:TEMP\ltl1_verify.png"
+    # KHÔNG dùng exec-out rồi pipe ra file — PowerShell mã hóa lại bytes (xác nhận 2026-11-15)
+    & $adb -s emulator-5554 shell screencap -p /sdcard/verify.png
+    & $adb -s emulator-5554 pull /sdcard/verify.png "$env:TEMP\ltl1_verify.png"
    ```
    Boot lần đầu mất 1–3 phút. Nút trên màn hình lấy bounds qua `uiautomator dump` rồi `input tap <x> <y>` (ví dụ nút "KHÁM PHÁ ĐỘNG VẬT": bounds `[121,1311][961,1507]` → tap `541 1409`).
 7. **BÁO CÁO:** `git status --short`/`git diff --stat`, kết quả `_Tests` + `_Build` (kèm đường dẫn APK + gate nào đỏ nếu có) + kết quả `_Sync` (commit/push OK hay lỗi gì) + screenshot verify. **Không báo "xong" khi chưa qua đủ bước 3→5.**
@@ -109,6 +121,11 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
 - Cac file tool build (gbuild.ps1, gsync.ps1, .gbuildcache/, .gbuild-state.gbuildstate*, .sdkcache.json) da bi xoa khoi project tu 2026-11-15 theo yeu cau chu project; tool dung chung o D:\HOC_TAP\backup\_Build / _Tests / _Sync. _Build tu sinh .gbuild-state.gbuildstate*/.gbuildcache/ khi chay - chung da duoc them vao .gitignore; xoa chung khi khong con process build chay.
 - **Artifacts của tool không còn nằm trong project (từ 2026-11-15):** `.gbuildcache/` và `.gbuild-state.gbuildstate` không sinh trong project nữa — bản `_Build` trong `D:\HOC_TAP\backup\_Build` đã được sửa để đặt runtime data per-project vào thư mục tool tree: `.gbuildcache/<projectKey>` và `.gbuildstate/<projectKey>` (projectKey = tên thư mục + SHA256 của path tuyệt đối). Muốn quay về layout cũ: set `build.cacheDirectory` / `paths.stateDirectory` = `project` trong `gbuild.config.json` (constant BuildConstants `CacheDir` / `StateDirectory`).
 - **Emulator Pixel 8 (`Pixel8Launcher`):** audio đã được bật lại từ 2026-11-15 (trước đó `-no-audio` khiến mọi app trên emulator im — root cause của "toàn bộ project bị tắt tiếng"). Đừng khôi phục `-no-audio` nếu không được chủ project yêu cầu.
+- **Audio đã đo 2026-11-16:** emulator audio đi qua host (QEMU → WASAPI Windows), nên nghe "dè" trên emulator là vấn đề đường đi (resample giữa 48 kHz host ↔ stream), KHÔNG phải file MP3 hỏng hay app lỗi — Android side sạch: `dumpsys media.audio_flinger` → 48000 Hz, underrun `partial=0 empty=0`, audio track stop/release bình thường. Mẫu 25 file MP3 cache của app hợp lệ 100% (MPEG2 Layer III, 24 kHz, 64 kbps, frame-locked). Kỳ vọng: trên **điện thoại thật** lời đọc không bị kiểu "dè" này (AudioTrack thẳng, không qua host). Nếu vẫn dè trên máy thật → điều tra plugin `Plugin.Maui.Audio`/volume.
+- **Deploy của gbuild im lặng thất bại** (mục 3 bước 4): luôn kiểm `lastUpdateTime` — Target 1 có thể không cài gì.
+- **Launcher activity thật:** `com.vutrungson.lamtoanlop1/crc6445a82788cff09539.MainActivity` — **không phải** `.MainActivity` (báo `Error type 3 / Activity class does not exist`). Khôi phục tên đầy đủ: `& $adb -s emulator-5554 shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER com.vutrungson.lamtoanlop1`.
+- **NumberPage không có nút back dạng text** — dùng `& $adb -s emulator-5554 shell input keyevent KEYCODE_BACK`; back liên tiếp nhiều lần ở trang con sẽ thoát app (đã xảy ra 2026-11-16).
+- **Kéo file binary từ emulator:** KHÔNG `adb exec-out ... > file` qua PowerShell (bytes bị mã hóa lại; MP3 pull ra 0 byte). Dùng `screencap -p /sdcard/x.png` + `adb pull`, hoặc `Start-Process adb -RedirectStandardOutput <file>`.
 - **gtest tự-append** vào `.gitignore`: `node_modules/`, `build-reports/`, `logs/` — bình thường.
 - **Emulator không thấy device:** `& $adb kill-server; & $adb devices` rồi mở lại shortcut; đợi `sys.boot_completed=1`.
 - **App crash ngay khi mở:** xem `crash.log` (`SelfHealingService`) + `adb logcat`; không tháo fallback `AudioManager` trong `MauiProgram.cs`.
@@ -118,6 +135,7 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
 - [ ] `git status --short` — chỉ chứa file(s) dự định đổi
 - [ ] `gtest` → **PASS** (đính kèm output)
 - [ ] `gbuild` → **qua hết các gate L5** (xem mục 8 — Security/SAST/SupplyChain/Compliance), đường dẫn APK
+- [ ] Target 1: `lastUpdateTime` == thời điểm build (hoặc đã deploy thủ công) + screenshot verify
 - [ ] `build-reports/security-scan.json` → `Pass=true`; `build-reports/compliance-report.json` → `pass=true`; không có CAR record `Open` mới ngoài records cũ đã được chủ project chấp nhận (2 record 2026-11-15)
 - [ ] Emulator: app cài & mở được, screenshot đính kèm (màn chính + ít nhất 1 màn có ảnh động vật)
 - [ ] `git diff -- Models/MathEngine.cs` — chỉ chứa thay đổi được yêu cầu; section 1 (GameData) đúng 73 entry, đúng cấu trúc
@@ -143,7 +161,7 @@ Project này build/verify bằng chính chuỗi công cụ L5 (CMMI L5 Optimizin
 
 1. `Start-GBuild` → preflight, SDK discovery (`dotnet 10.0.300`), `[Auto-tune]`, `[Supply chain]`.
 2. Build `net10.0-android` (Release) + incremental cache → APK trong `publish-output\apk\`.
-3. Gbuild tự **deploy + launch** trên `emulator-*` đang kết nối.
+3. Gbuild chạy bước deploy + launch trên `emulator-*` đang kết nối nhưng **có thể im lặng KHÔNG cài APK** (mục 3 bước 4) — sau Target 1 luôn kiểm `lastUpdateTime` và deploy thủ công nếu cần.
 4. `Test` step: detect `*.Tests.csproj` — không có → skip (không fake).
 5. `[Security] Phase 1/3` secret scan → `security-scan.json`; `Phase 2/3` vulnerable packages; `Phase 3/3` license compliance → `compliance-report.json`.
 6. `[Supply chain]` → `sbom.json` (CycloneDX) + policy gate (`SbomPolicy=Passed`); provenance hiện **Skipped** (`GBUILD_GITHUB_REPO` chưa set).

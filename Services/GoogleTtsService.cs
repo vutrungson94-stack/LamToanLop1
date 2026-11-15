@@ -1,4 +1,4 @@
-﻿using LamToanLop1.Models;
+using LamToanLop1.Models;
 using Plugin.Maui.Audio;
 using System.Diagnostics;
 using System.Net.WebSockets;
@@ -163,6 +163,56 @@ namespace LamToanLop1.Services
             }
         }
 
+        private static bool IsValidCachedMp3(string path)
+        {
+            // Kiểm tra file cache MP3 trước khi phát — bỏ file hỏng/truncated
+            // (tiếng rè / méo), tải lại từ mạng thay vì chơi mãi file lỗi.
+            try
+            {
+                if (!File.Exists(path)) return false;
+                var fi = new FileInfo(path);
+                if (fi.Length < 1024) return false;
+
+                byte[] head = new byte[10];
+                using (var fs = File.OpenRead(path))
+                {
+                    int r = fs.Read(head, 0, head.Length);
+                    if (r < 4) return false;
+                    bool id3 = head[0] == 'I' && head[1] == 'D' && head[2] == '3';
+                    bool sync = head[0] == 0xFF && (head[1] & 0xE0) == 0xE0;
+                    if (!id3 && !sync) return false;
+
+                    if (id3 && r >= 10)
+                    {
+                        long size = ((head[6] & 0x7FL) << 21) | ((head[7] & 0x7FL) << 14) | ((head[8] & 0x7FL) << 7) | (head[9] & 0x7FL);
+                        if (size + 10 >= fi.Length) return false; // ID3v2 khai báo size lớn hơn file -> truncated
+                    }
+
+                    // Quét toàn cụm đầu file: cần >= 4 khung MPEG hợp lệ (sync + bitrate + sample rate)
+                    fs.Position = 0;
+                    byte[] buf = new byte[Math.Min(fi.Length, 512 * 1024)];
+                    int read = fs.Read(buf, 0, buf.Length);
+                    int hits = 0;
+                    for (int i = 0; i < read - 4; i++)
+                    {
+                        if (buf[i] != 0xFF) continue;
+                        if ((buf[i + 1] & 0xE0) != 0xE0) continue;
+                        int bitrateIndex = (buf[i + 2] & 0xF0) >> 4;
+                        int sampleRateIndex = (buf[i + 2] & 0x0C) >> 2;
+                        if (bitrateIndex == 0 || bitrateIndex == 15) continue;
+                        if (sampleRateIndex == 3) continue;
+                        hits++;
+                        if (hits >= 4) return true;
+                    }
+                    return false;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public async Task SpeakAsync(string text)
 		{
 			if (string.IsNullOrWhiteSpace(text)) return;
@@ -179,10 +229,14 @@ namespace LamToanLop1.Services
 
 			try
 			{
-                // Chuẩn bị file (Tải nếu chưa có)
+                // Chuẩn bị file (Tải nếu chưa có / nếu file cache bị hỏng)
                 var cachePath = GetCachePath(text);
 
-                bool fileExists = await Task.Run(() => File.Exists(cachePath));
+                bool fileExists = await Task.Run(() => IsValidCachedMp3(cachePath));
+                if (!fileExists && File.Exists(cachePath))
+                {
+                    try { File.Delete(cachePath); } catch { /* bỏ file cache hỏng để tải lại */ }
+                }
 
                 bool hasInternet = false;
                 try { hasInternet = Connectivity.Current.NetworkAccess == NetworkAccess.Internet; } catch { hasInternet = false; }
@@ -197,8 +251,8 @@ namespace LamToanLop1.Services
                     }
                 }
 
-                // Phát ngay nếu file tồn tại và chưa bị hủy
-                if (await Task.Run(() => File.Exists(cachePath)) && !token.IsCancellationRequested)
+                // Phát ngay nếu file tồn tại và hợp lệ (MP3 thật, không truncated)
+                if (await Task.Run(() => IsValidCachedMp3(cachePath)) && !token.IsCancellationRequested)
                 {
                     await PlayFile(cachePath, token);
                 }
@@ -248,7 +302,9 @@ namespace LamToanLop1.Services
 				await client.SendAsync(System.Text.Encoding.UTF8.GetBytes(textMsg), WebSocketMessageType.Text, true, token);
 
 				// Nhận dữ liệu và ghi ra file - xử lý header tách gói
-				using var fs = File.Create(filePath);
+				// Ghi ra .part rồi rename atomically để tránh cache file dở dang (tiếng rè/méo)
+				var tmpPath = filePath + ".part";
+				using var fs = File.Create(tmpPath);
 				var buffer = new byte[1024 * 16];
 				bool hasAudio = false;
 
@@ -285,19 +341,20 @@ namespace LamToanLop1.Services
 						}
 					}
 				}
-				await fs.FlushAsync(token);
-				fs.Close();
-				// Kiểm tra file có audio thực sự không, nếu rỗng hoặc quá nhỏ thì xóa để tải lại
-				try
-				{
-					var info = new FileInfo(filePath);
-					if (!hasAudio || !info.Exists || info.Length < 1024)
-					{
-						try { if (File.Exists(filePath)) File.Delete(filePath); } catch { }
-						return false;
-					}
-				}
-				catch { return false; }
+                await fs.FlushAsync(token);
+                await fs.DisposeAsync();
+                // Kiểm tra sức khỏe file (byte thật + kích thước tối thiểu)
+                try
+                {
+                    var info = new FileInfo(tmpPath);
+                    if (!hasAudio || !info.Exists || info.Length < 1024)
+                    {
+                        try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+                        return false;
+                    }
+                    File.Move(tmpPath, filePath, overwrite: true);
+                }
+                catch { try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { } return false; }
 				return true;
 			}
 			catch (Exception ex)
@@ -305,6 +362,7 @@ namespace LamToanLop1.Services
 				System.Diagnostics.Debug.WriteLine($"Edge Error: {ex.Message}");
 				// Xóa file rác nếu tải lỗi để lần sau tải lại
 				try { if (File.Exists(filePath)) File.Delete(filePath); } catch { }
+				try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { }
 				return false;
 			}
 		}
@@ -327,11 +385,14 @@ namespace LamToanLop1.Services
 							|| (data[0] == 0xFF && (data[1] & 0xE0) == 0xE0));
 					if (!isMp3) return false;
 
-					await File.WriteAllBytesAsync(filePath, data, token);
+					// Ghi ra .part rồi rename atomic — tránh cache file dở dang (tiếng rè/méo)
+				var tmpPath = filePath + ".part";
+				await File.WriteAllBytesAsync(tmpPath, data, token);
+				try { File.Move(tmpPath, filePath, overwrite: true); } catch { try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { } return false; }
 					return true;
 				}
 			}
-			catch { }
+			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
 			return false;
 		}
 
@@ -355,19 +416,12 @@ namespace LamToanLop1.Services
             // ĐỘNG VẬT (từ GameData)
             // ============================
             var animalName = NormalizeAnimalName(text);
-
             if (IsLikelyAnimalName(animalName))
             {
                 var (basePitch, baseRate) = GetAnimalVoiceProfile(animalName);
-
-                var pitch = Randomize(basePitch);
-                var rate = Randomize(baseRate);
-
+                // Giọng nhẹ nhàng, tự nhiên — bỏ emphasis/ngẫu nhiên làm giọng méo
                 return
-                    $@"<prosody pitch='{pitch}%' rate='{rate}%'>
-						<emphasis level='moderate'>{animalName}</emphasis>!
-					</prosody>
-					<break time='300ms'/>";
+                    $"<prosody pitch='{basePitch}%' rate='{baseRate}%'>{animalName}</prosody><break time='150ms'/>";
             }
 
             // ============================
@@ -633,7 +687,7 @@ namespace LamToanLop1.Services
                     try { _player = _audioManager.CreatePlayer(_stream); }
                     catch (Exception ex) { Debug.WriteLine($"[TTS] CreatePlayer failed: {ex.Message}"); fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
                     if (_player == null) { fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
-                    try { _player.Volume = 1.0; } catch { }
+                    try { _player.Volume = 0.9; } catch { }
 
                     // LƯU HANDLER VÀ SUBSCRIBE
                     _currentPlaybackHandler = OnPlaybackEnded;

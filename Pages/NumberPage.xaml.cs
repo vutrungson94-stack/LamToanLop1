@@ -35,6 +35,9 @@ public partial class NumberPage : ContentPage
         Color.FromArgb("#FFCCBC"), // cam nhạt
     };
 
+    // 🎲 Dãy số ngẫu nhiên hiện tại (chỉ khi ở chế độ random 21-100)
+    private bool _isRandomMode;
+
     public NumberPage(ITtsService tts)
     {
         InitializeComponent();
@@ -66,7 +69,19 @@ public partial class NumberPage : ContentPage
             if (backBtn == null)
             {
                 var gridBtn = NumbersDisplayLayout.Children.OfType<Button>().FirstOrDefault();
-                if (gridBtn != null) { gridBtn.WidthRequest = ResponsiveHelper.W(260); gridBtn.HeightRequest = ResponsiveHelper.H(55); gridBtn.FontSize = ResponsiveHelper.Font(18); }
+                if (gridBtn != null) { gridBtn.WidthRequest = ResponsiveHelper.W(200); gridBtn.HeightRequest = ResponsiveHelper.H(55); gridBtn.FontSize = ResponsiveHelper.Font(16); }
+            }
+            else
+            {
+                // Cả hai nút trong hàng (CHỌN PHẠM VI KHÁC + DÃY SỐ NGẪU NHIÊN KHÁC) đều scale
+                var newBtn = NumbersDisplayLayout.FindByName<Button>("GenerateRandomButton");
+                if (newBtn != null)
+                {
+                    newBtn.HeightRequest = ResponsiveHelper.H(55);
+                    newBtn.FontSize = ResponsiveHelper.Font(14);
+                }
+                backBtn.HeightRequest = ResponsiveHelper.H(55);
+                backBtn.FontSize = ResponsiveHelper.Font(14);
             }
         }
         catch { }
@@ -132,8 +147,7 @@ public partial class NumberPage : ContentPage
         try
         {
             // Hiển thị 12 số ngẫu nhiên 21-100 để tránh quá tải 80 thẻ gây blank/OOM
-            var rnd = System.Random.Shared;
-            var picks = Enumerable.Range(21, 80).OrderBy(_ => rnd.Next()).Take(12).OrderBy(n => n).ToList();
+            var picks = RandomPicks(21, 100, 12);
             await ShowNumbersForListAsync(picks);
         }
         catch (Exception ex)
@@ -143,17 +157,39 @@ public partial class NumberPage : ContentPage
         }
     }
 
+    private static List<int> RandomPicks(int min, int max, int count)
+    {
+        var rnd = System.Random.Shared;
+        return Enumerable.Range(min, max - min + 1).OrderBy(_ => rnd.Next()).Take(count).OrderBy(n => n).ToList();
+    }
+
+    private async void OnGenerateRandomClicked(object sender, EventArgs e)
+    {
+        if (_isBusy || !_isRandomMode) return;
+        try
+        {
+            // Sinh dãy số ngẫu nhiên MỚI (khác hoàn toàn dãy cũ)
+            var picks = RandomPicks(21, 100, 12);
+            await ShowNumbersForListAsync(picks);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"OnGenerateRandomClicked: {ex}");
+        }
+    }
+
     private async Task ShowNumbersForListAsync(List<int> numbers)
     {
         if (_isBusy) return;
         _isBusy = true;
-        List<Border> snapshot = new();
         try
         {
             if (numbers == null || numbers.Count == 0) return;
+            _isRandomMode = true;
             RangeTitleLabel.Text = $"🎯 SỐ NGẪU NHIÊN";
-            NumbersGrid.Children.Clear();
-            NumbersGrid.RowDefinitions.Clear();
+            if (this.FindByName<Button>("GenerateRandomButton") is { } genBtn)
+                genBtn.IsVisible = true;
+            await ZoomOutThenClearAsync();
             int count = numbers.Count;
             int rowCount = (count + 2) / 3;
             for (int r = 0; r < rowCount; r++)
@@ -187,12 +223,11 @@ public partial class NumberPage : ContentPage
             NumbersDisplayLayout.IsVisible = true;
             NumbersDisplayLayout.Opacity = 1;
             ApplyCardLayout();
-            snapshot = new List<Border>(cards);
+            // Zoom-in tất cả cùng lúc (mờ -> rõ)
+            await AnimateCardsInAsync(cards);
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ShowNumbersForListAsync: {ex}"); }
         finally { _isBusy = false; }
-
-        foreach (var c in snapshot) { try { await c.FadeToAsync(1, 120); await c.ScaleToAsync(1.0, 150, Easing.SpringOut); } catch { } }
     }
 
     private async void OnBackToMenuClicked(object sender, EventArgs e)
@@ -206,14 +241,16 @@ public partial class NumberPage : ContentPage
     {
         if (_isBusy) return;
         _isBusy = true;
-        List<Border> cardsSnapshot = new();
         try
         {
+            _isRandomMode = false;
+            if (this.FindByName<Button>("GenerateRandomButton") is { } genBtn)
+                genBtn.IsVisible = false;
+
             RangeTitleLabel.Text = $"🎯 SỐ TỪ {min} ĐẾN {max}";
 
-            // Dọn sạch thẻ cũ
-            NumbersGrid.Children.Clear();
-            NumbersGrid.RowDefinitions.Clear();
+            // Dọn sạch thẻ cũ (zoom hết cỡ + mờ dần rồi Xóa)
+            await ZoomOutThenClearAsync();
 
         // Đủ số hàng cho 3 cột
         int count = max - min + 1;
@@ -308,21 +345,12 @@ public partial class NumberPage : ContentPage
             NumbersDisplayLayout.IsVisible = true;
             NumbersDisplayLayout.Opacity = 1;
             ApplyCardLayout();
-            cardsSnapshot = cards;
+            // Zoom-in tất cả cùng lúc (mờ -> rõ)
+            await AnimateCardsInAsync(cards);
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ShowNumbersAsync: {ex}"); }
         finally { _isBusy = false; }
 
-        // 🎬 Animation stagger - ngoài lock để Back không bị chặn
-        foreach (var card in cardsSnapshot)
-        {
-            try
-            {
-                await card.FadeToAsync(1, 180, Easing.CubicOut);
-                await card.ScaleToAsync(1.0, 220, Easing.SpringOut);
-            }
-            catch { }
-        }
     }
 
     private async Task SpeakNumberAsync(int number)
@@ -345,16 +373,51 @@ public partial class NumberPage : ContentPage
         _isBusy = true;
         try
         {
-            await NumbersDisplayLayout.FadeToAsync(0, 200);
+            await ZoomOutThenClearAsync();
             NumbersDisplayLayout.IsVisible = false;
-            NumbersDisplayLayout.Opacity = 1; // reset để lần sau hiện lại không bị mờ
-            NumbersGrid.Children.Clear();
-            NumbersGrid.RowDefinitions.Clear();
-            _cardRefs.Clear();
+            NumbersDisplayLayout.Opacity = 1;
             RangeSelectionLayout.Opacity = 0;
             RangeSelectionLayout.IsVisible = true;
             await RangeSelectionLayout.FadeToAsync(1, 250);
         }
         finally { _isBusy = false; }
     }
-}
+    // Thu nhỏ thẻ hiện tại về 1.8x rồi mờ dần cho đến khi biến mất hẳn
+    private async Task ZoomOutThenClearAsync()
+    {
+        var oldCards = NumbersGrid.Children.OfType<View>().OfType<Border>().ToList();
+        if (oldCards.Count > 0)
+        {
+            var tasks = oldCards.Select(async c =>
+            {
+                try
+                {
+                    await Task.WhenAll(
+                        c.FadeToAsync(0, 260, Easing.CubicIn),
+                        c.ScaleToAsync(1.8, 300, Easing.CubicIn));
+                }
+                catch { }
+            }).ToArray();
+            try { await Task.WhenAll(tasks); } catch { }
+        }
+        NumbersGrid.Children.Clear();
+        NumbersGrid.RowDefinitions.Clear();
+        _cardRefs.Clear();
+    }
+
+    // Zoom thẻ: từ mờ (opacity 0) + nhỏ (scale 0.7) -> rõ (1) + đúng kích thước (1.0) cùng lúc
+    private async Task AnimateCardsInAsync(List<Border> cards)
+    {
+        var tasks = cards.Select(async c =>
+        {
+            try
+            {
+                await Task.WhenAll(
+                    c.FadeToAsync(1, 320, Easing.CubicOut),
+                    c.ScaleToAsync(1.0, 380, Easing.SpringOut));
+            }
+            catch { }
+        }).ToArray();
+        try { await Task.WhenAll(tasks); } catch { }
+    }
+    }
