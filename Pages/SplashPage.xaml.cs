@@ -1,7 +1,5 @@
-using LamToanLop1.Models;
 using LamToanLop1.Services;
 using System.Diagnostics;
-using System.Linq;
 
 namespace LamToanLop1.Pages;
 
@@ -39,8 +37,12 @@ public partial class SplashPage : ContentPage
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                PreloadProgressBar.Progress = p / 100.0;
-                ProgressLabel.Text = p < 100 ? $"Đang tải... {p}%" : "OK!";
+                try
+                {
+                    if (PreloadProgressBar != null) PreloadProgressBar.Progress = p / 100.0;
+                    if (ProgressLabel != null) ProgressLabel.Text = p < 100 ? $"Đang tải... {p}%" : "OK!";
+                }
+                catch { }
             });
         });
 
@@ -49,8 +51,8 @@ public partial class SplashPage : ContentPage
         {
             try
             {
-                var animals = GameData.AnimalList.Select(x => x.Value).ToList();
-                await _ttsService.PreCacheAnimalVoicesAsync(animals, progress);
+                // Pre-cache toàn bộ giọng đọc: số, con vật, câu hỏi/đáp án, lời khen
+                await _ttsService.PreCacheAllGameVoicesAsync(progress);
             }
             catch (Exception ex)
             {

@@ -1,4 +1,5 @@
-﻿using LamToanLop1.Models;
+﻿using LamToanLop1.Helpers;
+using LamToanLop1.Models;
 using LamToanLop1.Services;
 using System.Diagnostics;
 
@@ -20,6 +21,39 @@ public partial class AnimalPage : ContentPage
     {
         InitializeComponent();
         _tts = tts;
+        this.SizeChanged += (_, __) => ApplyResponsive();
+    }
+
+    private void ApplyResponsive()
+    {
+        if (Width <= 0) return;
+        try
+        {
+            // Border ảnh 300 -> scale
+            var border = this.FindByName<Border>("AnimalBorder");
+            if (border != null) border.HeightRequest = ResponsiveHelper.H(300);
+            // Nút Home 110x44
+            var btnHome = this.FindByName<Button>("BtnHome");
+            if (btnHome != null) { btnHome.WidthRequest = ResponsiveHelper.W(110); btnHome.HeightRequest = ResponsiveHelper.H(44); btnHome.FontSize = ResponsiveHelper.Font(14); }
+            // Loa 48x48
+            var btnLoa = this.FindByName<ImageButton>("BtnLoa");
+            if (btnLoa != null) { btnLoa.WidthRequest = ResponsiveHelper.W(48); btnLoa.HeightRequest = ResponsiveHelper.H(48); }
+            // Tên 32
+            var lbl = this.FindByName<Label>("AnimalName");
+            if (lbl != null) lbl.FontSize = ResponsiveHelper.Font(32);
+            // Nút Back/Next 55 height
+            var bBack = this.FindByName<Button>("BtnBack");
+            var bNext = this.FindByName<Button>("BtnNext");
+            if (bBack != null) { bBack.HeightRequest = ResponsiveHelper.H(55); bBack.FontSize = ResponsiveHelper.Font(16); }
+            if (bNext != null) { bNext.HeightRequest = ResponsiveHelper.H(55); bNext.FontSize = ResponsiveHelper.Font(16); }
+        }
+        catch { }
+    }
+
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        if (width > 0) ApplyResponsive();
     }
 
     private static void AbortSpecificAnimations(VisualElement view)

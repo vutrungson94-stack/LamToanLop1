@@ -21,33 +21,36 @@ public static class MauiProgram
             .UseMauiApp<App>()
             .ConfigureFonts(fonts =>
             {
-                // ✅ Thêm kiểm tra tồn tại file để tránh crash khi thiếu font
-                var fontDir = Path.Combine(FileSystem.AppDataDirectory, "..", "Resources", "Fonts");
-                if (Directory.Exists(fontDir))
-                {
-                    fonts.AddFont("Nunito-ExtraBold.ttf", "NunitoExtraBold");
-                    fonts.AddFont("PatrickHand-Regular.ttf", "PatrickHandRegular");
-                    fonts.AddFont("BalooTammudu2-ExtraBold.ttf", "BalooTammudu2ExtraBold");
-                    fonts.AddFont("Fredoka-Bold.ttf", "FredokaBold");
-                }
+                // ✅ Thêm font khi build (Resources/Fonts luôn có sẵn)
+                fonts.AddFont("Nunito-ExtraBold.ttf", "NunitoExtraBold");
+                fonts.AddFont("PatrickHand-Regular.ttf", "PatrickHandRegular");
+                fonts.AddFont("BalooTammudu2-ExtraBold.ttf", "BalooTammudu2ExtraBold");
+                fonts.AddFont("Fredoka-Bold.ttf", "FredokaBold");
             });
 
-        // 🎵 DI Audio Manager an toàn (tránh ném null reference)
+        // 🎵 DI Audio Manager - resilient cho mọi thiết bị (cũ/mới, API 21+)
+        // Trên một số máy cũ / emulator không có audio hardware, AudioManager.Current có thể null/throw.
+        // Trả về null! nhưng SoundService/GoogleTtsService đã check null nên app vẫn chạy (chỉ mất tiếng), không crash.
         builder.Services.AddSingleton<IAudioManager>(_ =>
         {
-            try 
-            { 
+            try
+            {
                 var audioManager = AudioManager.Current;
-                return audioManager ?? throw new InvalidOperationException("AudioManager not available on this device.");
+                if (audioManager != null) return audioManager;
+                Debug.WriteLine("[Audio] AudioManager.Current null -> dùng fallback silent (không crash)");
+                return null!; // fallback silent, SoundService sẽ bỏ qua phát tiếng
             }
-            catch (Exception ex) 
-            { 
-                Debug.WriteLine($"AudioManager Init Failed: {ex.Message}"); 
-                return null!; 
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Audio] AudioManager Init Failed (fallback silent): {ex.Message}");
+                return null!; // không throw để app vẫn mở được trên máy cũ
             }
         });
 
         // 🔊 Đăng ký Service với Null-Safety
+        // Self-healing service (L5): crash logging, recovery, retry
+        builder.Services.AddSingleton<ISelfHealingService, SelfHealingService>();
+
         builder.Services.AddSingleton<ISoundService, SoundService>();
         builder.Services.AddSingleton<ITtsService, GoogleTtsService>();
 
@@ -57,6 +60,7 @@ public static class MauiProgram
         builder.Services.AddTransient<MenuPage>();
         builder.Services.AddTransient<GamePage>();
         builder.Services.AddTransient<AnimalPage>();
+        builder.Services.AddTransient<NumberPage>();
         builder.Services.AddTransient<GameViewModel>();
 
         return builder.Build();

@@ -13,7 +13,7 @@ namespace LamToanLop1.Services
     public class SoundService(IAudioManager audioManager) : ISoundService
     {
         private readonly IAudioManager? _audioManager = audioManager;
-        private readonly List<IAudioPlayer> _activePlayers = [];
+        private readonly List<(IAudioPlayer player, Stream stream)> _active = [];
         private readonly Lock _lock = new();
 
         public async Task PlayPhaoAsync() => await PlaySoundOneShotAsync("tieng_phao_no.mp3");
@@ -21,42 +21,51 @@ namespace LamToanLop1.Services
 
         public void StopAll()
         {
-            lock (_lock)
+            List<(IAudioPlayer player, Stream stream)> copy;
+            lock (_lock) { copy = [.. _active]; _active.Clear(); }
+            foreach (var (p, s) in copy)
             {
-                foreach (var p in _activePlayers)
-                {
-                    try { if (p.IsPlaying) p.Stop(); p.Dispose(); } catch { }
-                }
-                _activePlayers.Clear();
+                try { if (p.IsPlaying) p.Stop(); } catch { }
+                try { p.Dispose(); } catch { }
+                try { s.Dispose(); } catch { }
             }
         }
 
         private async Task PlaySoundOneShotAsync(string soundFileName)
         {
-            if (_audioManager == null) { Debug.WriteLine("AudioManager is null"); return; }
+            if (_audioManager == null) { Debug.WriteLine("AudioManager is null (silent)"); return; }
+            Stream? stream = null;
+            IAudioPlayer? player = null;
             try
             {
-                if (await FileSystem.AppPackageFileExistsAsync(soundFileName))
+                if (!await FileSystem.AppPackageFileExistsAsync(soundFileName)) return;
+                stream = await FileSystem.OpenAppPackageFileAsync(soundFileName);
+                // Plugin.Maui.Audio yêu cầu CreatePlayer trên MainThread (API 21) - hiệu ứng nhỏ hơn giọng đọc
+                player = await MainThread.InvokeOnMainThreadAsync(() => _audioManager.CreatePlayer(stream));
+                if (player == null) { try { stream.Dispose(); } catch { } return; }
+                try { player.Volume = 0.75; } catch { }
+
+                lock (_lock) _active.Add((player, stream!));
+
+                // Giữ stream sống cùng player, dispose cả hai khi xong
+                var capturedStream = stream;
+                var capturedPlayer = player;
+                player.PlaybackEnded += (s, e) =>
                 {
-                    using var stream = await FileSystem.OpenAppPackageFileAsync(soundFileName);
-                    var player = _audioManager.CreatePlayer(stream);
+                    lock (_lock) _active.Remove((capturedPlayer, capturedStream));
+                    try { capturedPlayer.Dispose(); } catch { }
+                    try { capturedStream.Dispose(); } catch { }
+                };
 
-                    lock (_lock) _activePlayers.Add(player);
-
-                    player.PlaybackEnded += (s, e) =>
-                    {
-                        lock (_lock)
-                        {
-                            if (_activePlayers.Remove(player))
-                            {
-                                try { player.Dispose(); } catch { }
-                            }
-                        }
-                    };
-                    player.Play();
-                }
+                player.Play();
             }
-            catch (Exception ex) { Debug.WriteLine($"Sound Error: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Sound Error: {ex.Message}");
+                try { player?.Dispose(); } catch { }
+                try { stream?.Dispose(); } catch { }
+                if (player != null && stream != null) lock (_lock) _active.Remove((player, stream));
+            }
         }
     }
 }

@@ -163,3 +163,60 @@ secrets.json
 .sdkcache.json
 # [IDE & TEMP]
 .vscode/
+
+# Auto-added by gtest (project gitignore patterns)
+node_modules/
+build-reports/
+logs/
+
+# Auto-added by gbuild (project gitignore patterns)
+_Build/
+.gbuild/
+.gbuildcache/
+.gbuild-state.gbuildstate
+*.gbuildstate
+.gbuild-circuitbreaker.gbuildstate
+*.lock
+distributed-report/
+reports/
+Tests/TestResults/
+test-results*.xml
+testResults.xml
+suite-progress-*.log
+Tests/suite-progress-*.log
+vault.key
+*.vault.key
+*.vault.salt
+*.salt
+gbuild-standalone-*/
+nul*
+
+# Build release artifacts (gbuild release zip)
+release/
+.gbuild-state.gbuildstate.lock
+
+# Auto-added by gsync (project gitignore patterns)
+test-*.txt
+test-out*.txt
+*-output.txt
+test-final.txt
+coverage.xml
+
+# --- added by gsync security gate ---
+*.pdb
+*.dll
+*.exe
+appsettings.Development.json
+appsettings.*.json
+*.pubxml
+*.nupkg
+*.snk
+*.swp
+*~
+*.rej
+.cache/
+# === SECURITY ===
+*.apk
+*.aab
+.gsync.state
+sync-outputs/

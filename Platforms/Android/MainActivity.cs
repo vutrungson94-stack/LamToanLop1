@@ -5,6 +5,7 @@
         Theme = "@style/Maui.MainTheme",
         MainLauncher = true,
         LaunchMode = global::Android.Content.PM.LaunchMode.SingleTop,
+        ScreenOrientation = global::Android.Content.PM.ScreenOrientation.Portrait,
         ConfigurationChanges = global::Android.Content.PM.ConfigChanges.ScreenSize |
                                global::Android.Content.PM.ConfigChanges.Orientation |
                                global::Android.Content.PM.ConfigChanges.UiMode |

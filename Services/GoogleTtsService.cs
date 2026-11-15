@@ -1,4 +1,6 @@
-﻿using Plugin.Maui.Audio;
+﻿using LamToanLop1.Models;
+using Plugin.Maui.Audio;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 
@@ -33,13 +35,19 @@ namespace LamToanLop1.Services
         private const string VOICE_EDGE = "vi-VN-HoaiMyNeural";
 		// Token này giả lập trình duyệt Edge chính chủ
 		private const string EDGE_URL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-        private const string PREF_ANIMAL_CACHE_READY = "animal_voice_cache_ready";
+        private const string PREF_NUMBER_CACHE_READY = "number_voice_cache_ready";
+        private const string PREF_GAME_CACHE_READY = "game_voice_cache_ready";
+
+        // Hộp thoại chúc mừng hiển thị "GIỎI QUÁ!" + "Bé làm tốt lắm!" - đọc đúng nội dung hộp thoại
+        public const string PRAISE_PHRASE = "Giỏi quá! Bé làm tốt lắm!";
+        public const string WRONG_PHRASE = "Chưa đúng rồi, bé thử lại nhé!";
+        public const string SKIP_PHRASE = "Mình chuyển câu khác nhé!";
        
         private EventHandler? _currentPlaybackHandler;
 
         public GoogleTtsService(IAudioManager audioManager)
         {
-            _audioManager = audioManager;
+            _audioManager = audioManager; // có thể null trên máy cũ -> xử lý silent
             // Chạy cleanup an toàn trên threadpool, không block UI thread
             Task.Run(async () =>
             {
@@ -48,13 +56,13 @@ namespace LamToanLop1.Services
             });
         }
 
-        // Hàm dọn dẹp file rác quá hạn (mặc định 3 ngày)
+        // Hàm dọn dẹp file rác quá hạn (mặc định 3 ngày) - resilient cho máy cũ
         private static void CleanupOldCache(int maxAgeDays = 3)
         {
             try
             {
                 var cacheDir = FileSystem.CacheDirectory;
-                if (!Directory.Exists(cacheDir)) return;
+                if (string.IsNullOrEmpty(cacheDir) || !Directory.Exists(cacheDir)) return;
 
                 var dirInfo = new DirectoryInfo(cacheDir);
 
@@ -70,14 +78,51 @@ namespace LamToanLop1.Services
             catch { /* Bỏ qua lỗi nếu không xóa được */ }
         }
 
-        public async Task PreCacheAnimalVoicesAsync(
-            IEnumerable<string> animalNames,
+        // Pre-cache toàn bộ số 0-100 để khi mất mạng vẫn đọc được
+        public async Task PreCacheNumberVoicesAsync(
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            var numbers = Enumerable.Range(0, 101).Select(n => n.ToString()).ToList();
+            await PreCacheVoicesAsync(numbers, PREF_NUMBER_CACHE_READY, progress, cancellationToken);
+        }
+
+        // Pre-cache TOÀN BỘ giọng đọc của game: số, con vật, mọi câu hỏi/đáp án, lời khen
+        // Để khi mất mạng app vẫn đọc được hết
+        public async Task PreCacheAllGameVoicesAsync(
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            var texts = BuildAllGameVoiceTexts();
+            await PreCacheVoicesAsync(texts, PREF_GAME_CACHE_READY, progress, cancellationToken);
+        }
+
+        // Liệt kê mọi chuỗi mà app có thể đọc:
+        // - Số, con vật, câu hỏi/đáp án, đồng hồ → tận dụng nguồn dữ liệu trong MathEngine
+        // - Chỉ thêm phần nằm ngoài MathEngine (lời khen/phản hồi ở GamePage)
+        private static List<string> BuildAllGameVoiceTexts()
+        {
+            var texts = GameData.GetAllSpokenTexts();
+
+            // Phần nằm ngoài MathEngine: câu phản hồi duy nhất khi đúng/sai/bỏ qua
+            texts.AddRange([
+                PRAISE_PHRASE,
+                WRONG_PHRASE,
+                SKIP_PHRASE
+            ]);
+
+            return texts.Distinct().ToList();
+        }
+
+        private static async Task PreCacheVoicesAsync(
+            IEnumerable<string> texts,
+            string prefKey,
             IProgress<int>? progress = null,
             CancellationToken cancellationToken = default)
         {
             bool CacheReady = false;
             await MainThread.InvokeOnMainThreadAsync(() => {
-                CacheReady = Preferences.Get(PREF_ANIMAL_CACHE_READY, false);
+                CacheReady = Preferences.Get(prefKey, false);
             });
             if(CacheReady) { progress?.Report(100); return; }
 
@@ -87,20 +132,35 @@ namespace LamToanLop1.Services
             }
             catch { return; }
 
-            var list = animalNames.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
+            var list = texts.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
             int completed = 0;
             using var semaphore = new SemaphoreSlim(2);
 
             var tasks = list.Select(async name =>
             {
                 await semaphore.WaitAsync(cancellationToken);
-                try { await GoogleTtsService.PrepareAudioAsync(name, cancellationToken); }
+                try
+                {
+                    var path = GetCachePath(name);
+                    if (File.Exists(path)) return;
+
+                    // Ưu tiên Google TTS (miễn phí, ổn định, không token expired)
+                    // thất bại mới fallback sang Edge TTS (giọng Hoài My)
+                    bool ok = await DownloadGoogleTts(name, path, cancellationToken);
+                    if (!ok) await DownloadEdgeTts(name, path, cancellationToken);
+                }
                 finally { semaphore.Release(); progress?.Report(Interlocked.Increment(ref completed) * 100 / list.Count); }
             });
             await Task.WhenAll(tasks);
-            await MainThread.InvokeOnMainThreadAsync(() => {
-                Preferences.Set(PREF_ANIMAL_CACHE_READY, true);
-            });
+
+            // Chỉ đánh dấu ready khi đủ file (thiếu file nào lần sau tải lại file đó)
+            bool allExist = list.All(x => File.Exists(GetCachePath(x)));
+            if (allExist)
+            {
+                await MainThread.InvokeOnMainThreadAsync(() => {
+                    Preferences.Set(prefKey, true);
+                });
+            }
         }
 
         public async Task SpeakAsync(string text)
@@ -124,13 +184,16 @@ namespace LamToanLop1.Services
 
                 bool fileExists = await Task.Run(() => File.Exists(cachePath));
 
-                if (!fileExists && Connectivity.Current.NetworkAccess == NetworkAccess.Internet)
+                bool hasInternet = false;
+                try { hasInternet = Connectivity.Current.NetworkAccess == NetworkAccess.Internet; } catch { hasInternet = false; }
+                if (!fileExists && hasInternet)
                 {
-                    // Tải file (có hỗ trợ hủy ngang qua token)
-                    bool edgeSuccess = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
-                    if (!edgeSuccess)
+                    // ⭐ Thử Google TTS trước (miễn phí, ổn định, không token expired)
+                    bool googleSuccess = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
+                    if (!googleSuccess)
                     {
-                        await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
+                        // ⭐ Fallback sang Edge TTS (giọng Hoài My) khi Google thất bại
+                        await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
                     }
                 }
 
@@ -165,46 +228,76 @@ namespace LamToanLop1.Services
 
 				await client.ConnectAsync(new Uri(EDGE_URL), token);
 
-				// Gửi cấu hình (MP3 chất lượng cao)
-				string configMsg = MakeMsg("speech.config", "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}");
+                // MP3 48kHz/192kbps cho to/rõ, đỡ rè khi volume 90%
+				string configMsg = MakeMsg("speech.config", "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"audio-48khz-192kbitrate-mono-mp3\"}}}}");
 				await client.SendAsync(System.Text.Encoding.UTF8.GetBytes(configMsg), WebSocketMessageType.Text, true, token);
 
                 // Gửi nội dung cần đọc (SSML)
+                // Lưu ý: BuildNaturalSsmlText đã trả về các thẻ <prosody> riêng
+                // nên KHÔNG bọc thêm prosody ở ngoài để tránh lồng/nhân đôi pitch-rate
                 string ssml =
 					$@"<speak version='1.0'
 						xmlns='http://www.w3.org/2001/10/synthesis'
 						xml:lang='vi-VN'>
 						<voice name='{VOICE_EDGE}'>
-							<prosody rate='-5%' pitch='+8%'>
-								{BuildNaturalSsmlText(text)}
-							</prosody>
+							{BuildNaturalSsmlText(text)}
 						</voice>
 					</speak>";
 
                 string textMsg = MakeMsg("ssml", ssml);
 				await client.SendAsync(System.Text.Encoding.UTF8.GetBytes(textMsg), WebSocketMessageType.Text, true, token);
 
-				// Nhận dữ liệu và ghi ra file
+				// Nhận dữ liệu và ghi ra file - xử lý header tách gói
 				using var fs = File.Create(filePath);
 				var buffer = new byte[1024 * 16];
+				bool hasAudio = false;
 
 				while (client.State == WebSocketState.Open && !token.IsCancellationRequested)
 				{
 					var result = await client.ReceiveAsync(new ArraySegment<byte>(buffer), token);
 					if (result.MessageType == WebSocketMessageType.Close) break;
+					if (result.Count == 0) continue;
 
-					// Parse binary header của Edge
-					string header = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
+					string header = System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(result.Count, 512));
 					if (header.Contains("Path:audio"))
 					{
 						int headerEnd = LocateHeaderEnd(buffer, result.Count);
 						if (headerEnd > 0 && headerEnd < result.Count)
 						{
 							await fs.WriteAsync(buffer.AsMemory(headerEnd, result.Count - headerEnd), token);
+							hasAudio = true;
+						}
+						else if (headerEnd == -1)
+						{
+							// Header bị tách gói, bỏ gói này, gói sau sẽ chứa audio thuần
+							continue;
 						}
 					}
-					else if (header.Contains("Path:turn.end")) break; // Kết thúc
+					else if (header.Contains("Path:turn.end")) break;
+					else if (header.Contains("Path:turn.start") || header.Contains("Path:response")) { /* metadata, bỏ qua */ }
+					else
+					{
+						// Có thể là audio thuần không header (nếu header và audio gộp)
+						if (result.Count > 100 && buffer[0] == 0xFF) // MP3 sync byte
+						{
+							await fs.WriteAsync(buffer.AsMemory(0, result.Count), token);
+							hasAudio = true;
+						}
+					}
 				}
+				await fs.FlushAsync(token);
+				fs.Close();
+				// Kiểm tra file có audio thực sự không, nếu rỗng hoặc quá nhỏ thì xóa để tải lại
+				try
+				{
+					var info = new FileInfo(filePath);
+					if (!hasAudio || !info.Exists || info.Length < 1024)
+					{
+						try { if (File.Exists(filePath)) File.Delete(filePath); } catch { }
+						return false;
+					}
+				}
+				catch { return false; }
 				return true;
 			}
 			catch (Exception ex)
@@ -226,6 +319,14 @@ namespace LamToanLop1.Services
 				if (response.IsSuccessStatusCode)
 				{
 					var data = await response.Content.ReadAsByteArrayAsync(token);
+					// [FIX] Chỉ chấp nhận file MP3 thật (header ID3 hoặc sync byte 0xFF).
+					// Khi Google trả về trang CAPTCHA/HTML (vẫn 200 OK), phải từ chối để
+					// fallback sang Edge TTS, tránh lưu nhầm nội dung rác vào cache làm sai âm thanh.
+					bool isMp3 = data.Length > 128
+						&& ((data[0] == 'I' && data[1] == 'D' && data[2] == '3')
+							|| (data[0] == 0xFF && (data[1] & 0xE0) == 0xE0));
+					if (!isMp3) return false;
+
 					await File.WriteAllBytesAsync(filePath, data, token);
 					return true;
 				}
@@ -234,16 +335,6 @@ namespace LamToanLop1.Services
 			return false;
 		}
 
-        private static async Task PrepareAudioAsync(string text, CancellationToken token = default)
-        {
-            var cachePath = GetCachePath(text);
-
-            if (!File.Exists(cachePath) && Connectivity.Current.NetworkAccess.HasFlag(NetworkAccess.Internet))
-            {
-                await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
-            }
-        }
-
         // --- CÁC HÀM BỔ TRỢ ---
         private static string BuildNaturalSsmlText(string text)
         {
@@ -251,6 +342,14 @@ namespace LamToanLop1.Services
                 return string.Empty;
 
             text = text.Trim();
+
+            // ============================
+            // CON SỐ (0-100) - đọc tự nhiên theo điệu tiếng Việt
+            // ============================
+            if (text.All(char.IsDigit))
+            {
+                return BuildNumberSsml(text);
+            }
 
             // ============================
             // ĐỘNG VẬT (từ GameData)
@@ -284,6 +383,30 @@ namespace LamToanLop1.Services
             }
 
             // ============================
+            // CÂU SẮP XẾP SỐ - đọc Y HỆT thứ tự chữ trong câu hỏi,
+            // chậm + ngắt nghỉ + nhấn mạnh để bé phân biệt rõ "LỚN đến BÉ" / "BÉ đến LỚN"
+            // ============================
+            if (text.StartsWith("Sắp xếp các số từ", StringComparison.Ordinal))
+            {
+                int tu = text.IndexOf(" từ ", StringComparison.Ordinal);
+                int den = text.IndexOf(" đến ", StringComparison.Ordinal);
+                if (tu > 0 && den > tu)
+                {
+                    string from = text.Substring(tu + 4, den - tu - 4).Trim(); // "LỚN" hoặc "BÉ"
+                    string to = text.Substring(den + 5).Trim();                // "BÉ" hoặc "LỚN"
+                    // Đọc đúng theo đề: "Sắp xếp các số... từ <from>... đến <to>"
+                    return
+                        $@"<prosody rate='-20%' pitch='+4%'>
+							Sắp xếp các số
+							<break time='400ms'/>
+							từ <emphasis level='strong'>{from}</emphasis>
+							<break time='300ms'/>
+							đến <emphasis level='strong'>{to}</emphasis>
+						</prosody>";
+                }
+            }
+
+            // ============================
             // CÂU HỎI
             // ============================
             if (text.EndsWith('?'))
@@ -295,25 +418,104 @@ namespace LamToanLop1.Services
             }
 
             // ============================
-            // CÂU KHEN (trả lời đúng)
+            // CÂU KHEN (trả lời đúng) - to, rõ, không rè
             // ============================
             if (text.Contains("đúng") || text.Contains("giỏi") || text.Contains("tuyệt"))
             {
                 return
-					$@"<prosody pitch='+16%' rate='+5%'>
+					$@"<prosody pitch='+8%' rate='+3%' volume='+8dB'>
 						{text}
 					</prosody>
 					<break time='200ms'/>";
             }
 
             // ============================
-            // MẶC ĐỊNH
+            // MẶC ĐỊNH - to rõ
             // ============================
             return
-				$@"<prosody rate='-5%' pitch='+6%'>
+				$@"<prosody rate='0%' pitch='0%' volume='+6dB'>
 					{text}
 				</prosody>";
         }
+
+        // Đọc con số theo cách người Việt nói: "một trăm hai mươi ba"
+        private static string BuildNumberSsml(string num)
+        {
+            if (!int.TryParse(num, out int n))
+                return $@"<prosody rate='0%' pitch='0%'>{num}</prosody>";
+
+            if (n == 0) return "<prosody rate='0%'>không</prosody>";
+
+            var sb = new System.Text.StringBuilder();
+            int hundred = n / 100;
+            int remainder = n % 100;
+
+            if (hundred > 0)
+            {
+                sb.Append("<prosody rate='0%'>");
+                sb.Append(hundred == 1 ? "một trăm" : $"{GetDigitWord(hundred)} trăm");
+                sb.Append("</prosody>");
+                if (remainder > 0) sb.Append("<break time='300ms'/>");
+            }
+
+            if (remainder > 0)
+            {
+                if (remainder < 20)
+                {
+                    sb.Append("<prosody rate='0%'>");
+                    sb.Append(remainder switch
+                    {
+                        10 => "mười",
+                        11 => "mười một",
+                        12 => "mười hai",
+                        13 => "mười ba",
+                        14 => "mười bốn",
+                        15 => "mười lăm",
+                        _ => remainder.ToString()
+                    });
+                    sb.Append("</prosody>");
+                }
+                else
+                {
+                    int tens = remainder / 10;
+                    int ones = remainder % 10;
+
+                    sb.Append("<prosody rate='0%'>");
+                    sb.Append(tens switch
+                    {
+                        2 => "hai mươi",
+                        3 => "ba mươi",
+                        4 => "bốn mươi",
+                        5 => "năm mươi",
+                        6 => "sáu mươi",
+                        7 => "bảy mươi",
+                        8 => "tám mươi",
+                        9 => "chín mươi",
+                        _ => ""
+                    });
+                    if (ones > 0)
+                    {
+                        sb.Append(" ");
+                        sb.Append(ones switch
+                        {
+                            1 => "mốt",
+                            5 => "lăm",
+                            _ => GetDigitWord(ones)
+                        });
+                    }
+                    sb.Append("</prosody>");
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static string GetDigitWord(int d) => d switch
+        {
+            1 => "một", 2 => "hai", 3 => "ba", 4 => "bốn", 5 => "năm",
+            6 => "sáu", 7 => "bảy", 8 => "tám", 9 => "chín",
+            _ => ""
+        };
 
 
         private static string NormalizeAnimalName(string text)
@@ -374,24 +576,15 @@ namespace LamToanLop1.Services
 			return -1;
 		}
 
-        public Task SpeakWithMoodAsync(string text, VoiceMood mood)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-                return Task.CompletedTask;
-
-            string decoratedText = mood switch
-            {
-                VoiceMood.Happy => $"Giỏi quá! {text}",
-                VoiceMood.Sad => text,
-                _ => text
-            };
-
-            return SpeakAsync(decoratedText);
-        }
-
 
         private async Task PlayFile(string path, CancellationToken token)
         {
+            // Nếu máy cũ không có AudioManager thì bỏ qua phát tiếng (không crash)
+            if (_audioManager == null)
+            {
+                Debug.WriteLine("[TTS] AudioManager null -> skip PlayFile");
+                return;
+            }
             _playbackTcs = new TaskCompletionSource<bool>();
 
             // Đăng ký hủy: Nếu token bị cancel (do gọi Stop), ta set luôn kết quả để thoát hàm này
@@ -436,8 +629,11 @@ namespace LamToanLop1.Services
 
                     _stream = fileStream;
 
-                    // CreatePlayer bắt buộc chạy trên MainThread (tuỳ thư viện, nhưng an toàn nhất là để đây)
-                    _player = _audioManager.CreatePlayer(_stream);
+                    // CreatePlayer bắt buộc chạy trên MainThread
+                    try { _player = _audioManager.CreatePlayer(_stream); }
+                    catch (Exception ex) { Debug.WriteLine($"[TTS] CreatePlayer failed: {ex.Message}"); fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
+                    if (_player == null) { fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
+                    try { _player.Volume = 1.0; } catch { }
 
                     // LƯU HANDLER VÀ SUBSCRIBE
                     _currentPlaybackHandler = OnPlaybackEnded;
@@ -488,11 +684,21 @@ namespace LamToanLop1.Services
             }
         }
 
+        // ⭐ Phiên bản cache: đổi khi thay đổi giọng/SSML để ép tải lại giọng mới
+        // v5: sửa thứ tự đọc câu sắp xếp (đọc theo đúng đề: "từ LỚN đến BÉ" / "từ BÉ đến LỚN")
+        private const string CACHE_VERSION = "v5-ordering-tts";
+
         private static string GetCachePath(string text)
 		{
-			// Tạo tên file từ nội dung text để cache lại
-			var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
-			return Path.Combine(FileSystem.CacheDirectory, $"{hash}.mp3");
+			// Tạo tên file từ nội dung text + version để cache lại - fallback nếu CacheDirectory null (máy cũ chưa init)
+			var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(CACHE_VERSION + "|" + text)));
+			var cacheDir = FileSystem.CacheDirectory;
+			if (string.IsNullOrEmpty(cacheDir))
+			{
+				try { cacheDir = Path.GetTempPath(); } catch { cacheDir = "/tmp"; }
+				try { Directory.CreateDirectory(cacheDir); } catch { }
+			}
+			return Path.Combine(cacheDir, $"{hash}.mp3");
 		}
 
         public void Stop()
@@ -550,12 +756,5 @@ namespace LamToanLop1.Services
                 _stream = null;
             }
         }
-    }
-
-    public enum VoiceMood
-    {
-        Neutral,
-        Happy,
-        Sad
     }
 }

@@ -1,4 +1,5 @@
-﻿using LamToanLop1.Services;
+﻿using LamToanLop1.Helpers;
+using LamToanLop1.Services;
 
 namespace LamToanLop1.Pages;
 
@@ -21,9 +22,45 @@ public partial class MenuPage : ContentPage
         InitializeComponent();
         _tts = ttsService;
         _soundService = soundService;
-
-        // 🔥 ẨN NAV BAR
         Shell.SetNavBarIsVisible(this, false);
+        this.SizeChanged += (_, __) => ApplyResponsive();
+    }
+
+    private void ApplyResponsive()
+    {
+        if (Width <= 0) return;
+        try
+        {
+            double s = ResponsiveHelper.Scale;
+            // Style base 280x65 -> scale
+            foreach (var btn in new[] { btnNumber, btnAnimal, btnMath, btnCoBan, btnNangCao, btnDe, btnVua, btnKho })
+            {
+                if (btn == null) continue;
+                btn.WidthRequest = ResponsiveHelper.W(280);
+                btn.HeightRequest = ResponsiveHelper.H(65);
+                btn.FontSize = ResponsiveHelper.Font(18);
+                btn.CornerRadius = (int)ResponsiveHelper.S(25);
+            }
+            // Back buttons nhỏ hơn
+            foreach (var b in new[] { btnBackToMenu, btnBackToMode })
+            {
+                if (b == null) continue;
+                b.WidthRequest = ResponsiveHelper.W(150);
+                b.HeightRequest = ResponsiveHelper.H(50);
+                b.FontSize = ResponsiveHelper.Font(16);
+                b.CornerRadius = (int)ResponsiveHelper.S(25);
+            }
+            if (lblMainTitle != null) lblMainTitle.FontSize = ResponsiveHelper.Font(48);
+            if (lblModeTitle != null) lblModeTitle.FontSize = ResponsiveHelper.Font(36);
+            if (lblLevelTitle != null) lblLevelTitle.FontSize = ResponsiveHelper.Font(32);
+        }
+        catch { }
+    }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        ApplyResponsive();
     }
 
     // Xử lý nút Back vật lý để quay lại từng cấp Menu
@@ -50,41 +87,52 @@ public partial class MenuPage : ContentPage
     // --- 1. MỞ MENU PHẠM VI ---
     private async void OnOpenMathMenu(object sender, EventArgs e)
     {
-        // Hiệu ứng nút bấm
-        if (sender is Button btn)
+        try
         {
-            await btn.ScaleToAsync(0.9, 100);
-            await btn.ScaleToAsync(1.0, 100);
+            if (sender is Button btn)
+            {
+                try { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); } catch { }
+            }
+            MainMenuView.IsVisible = false;
+            ModeMenu.IsVisible = true;
         }
-
-        MainMenuView.IsVisible = false;
-        ModeMenu.IsVisible = true;
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"OnOpenMathMenu: {ex.Message}"); }
     }
 
     private async void OnAnimalDiscoveryClicked(object sender, EventArgs e)
     {
-        if (sender is Button btn)
+        try
         {
-            await btn.ScaleToAsync(0.9, 100);
-            await btn.ScaleToAsync(1.0, 100);
+            if (sender is Button btn)
+            {
+                try { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); } catch { }
+            }
+            if (Shell.Current != null) await Shell.Current.GoToAsync(nameof(AnimalPage));
         }
-
-        await Shell.Current.GoToAsync(nameof(AnimalPage));
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"OnAnimalDiscoveryClicked: {ex.Message}"); }
     }
 
     // --- 2. CHỌN PHẠM VI (RANGE) ---
     private async void OnBasicModeClicked(object sender, EventArgs e)
     {
-        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
-        _selectedRange = 1; // Tương đương Semester 1 (Phạm vi 10)
-        ShowLevelMenu("CƠ BẢN");
+        try
+        {
+            if (sender is Button btn) { try { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); } catch { } }
+            _selectedRange = 1;
+            ShowLevelMenu("CƠ BẢN");
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"OnBasicModeClicked: {ex.Message}"); }
     }
 
     private async void OnAdvancedModeClicked(object sender, EventArgs e)
     {
-        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
-        _selectedRange = 2; // Logic cũ: 2 là phạm vi 100
-        ShowLevelMenu("NÂNG CAO");
+        try
+        {
+            if (sender is Button btn) { try { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); } catch { } }
+            _selectedRange = 2;
+            ShowLevelMenu("NÂNG CAO");
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"OnAdvancedModeClicked: {ex.Message}"); }
     }
 
     private void ShowLevelMenu(string title)
@@ -97,23 +145,35 @@ public partial class MenuPage : ContentPage
     // --- 3. CHỌN ĐỘ KHÓ & VÀO GAME ---
     private async void OnLevelEasyClicked(object sender, EventArgs e)
     {
-        if (!CanNavigate()) return; // Chặn nếu bấm quá nhanh
-        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
-        await StartGame(1);
+        try
+        {
+            if (!CanNavigate()) return;
+            if (sender is Button btn) { try { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); } catch { } }
+            await StartGame(1);
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"OnLevelEasyClicked: {ex.Message}"); }
     }
 
     private async void OnLevelMediumClicked(object sender, EventArgs e)
     {
-        if (!CanNavigate()) return;
-        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
-        await StartGame(2);
+        try
+        {
+            if (!CanNavigate()) return;
+            if (sender is Button btn) { try { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); } catch { } }
+            await StartGame(2);
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"OnLevelMediumClicked: {ex.Message}"); }
     }
 
     private async void OnLevelHardClicked(object sender, EventArgs e)
     {
-        if (!CanNavigate()) return;
-        if (sender is Button btn) { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); }
-        await StartGame(3);
+        try
+        {
+            if (!CanNavigate()) return;
+            if (sender is Button btn) { try { await btn.ScaleToAsync(0.9, 100); await btn.ScaleToAsync(1.0, 100); } catch { } }
+            await StartGame(3);
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"OnLevelHardClicked: {ex.Message}"); }
     }
 
     // Kiểm tra xem có được phép chuyển trang không
@@ -147,14 +207,15 @@ public partial class MenuPage : ContentPage
     }
 
     private async void OnNumberDiscoveryClicked(object sender, EventArgs e)
-{
-    if (sender is Button btn)
     {
-        await btn.ScaleToAsync(0.9, 50);
-        await btn.ScaleToAsync(1.0, 50);
+        try
+        {
+            if (sender is Button btn)
+            {
+                try { await btn.ScaleToAsync(0.9, 50); await btn.ScaleToAsync(1.0, 50); } catch { }
+            }
+            if (Shell.Current != null) await Shell.Current.GoToAsync(nameof(NumberPage));
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"OnNumberDiscoveryClicked: {ex.Message}"); }
     }
-    
-    // Navigate đến trang chọn phạm vi
-    await Shell.Current.GoToAsync(nameof(NumberPage));
-}
 }

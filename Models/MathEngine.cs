@@ -1,4 +1,4 @@
-﻿namespace LamToanLop1.Models
+namespace LamToanLop1.Models
 {
     // ==========================================
     // 1. CƠ SỞ DỮ LIỆU (DATA)
@@ -7,54 +7,140 @@
     {
         public static readonly List<KeyValuePair<string, string>> AnimalList =
         [
-            new("convat_su_tu", "Sư tử"), new("convat_bach_tuoc", "Bạch tuộc"), new("convat_bo_canh_cam", "Bọ cánh cam"), new("convat_buom", "Con bướm"),
-            new("convat_ca_he", "Cá hề"), new("convat_ca_heo", "Cá heo"), new("convat_ca_map", "Cá mập"),
-            new("convat_ca_sau", "Cá sấu"), new("convat_ca_voi", "Cá voi"), new("convat_cao_tuyet", "Cáo tuyết"),
-            new("convat_chau_chau", "Châu chấu"), new("convat_chim_canh_cut", "Chim cánh cụt"), new("convat_cho_con", "Chó con"),
-            new("convat_cho_soi", "Chó sói"), new("convat_chon_hoi", "Chồn hôi"), new("convat_chuot_chui", "Chuột chũi"),
-            new("convat_chuot_tui", "Chuột túi"), new("convat_con_ca", "Con cá"), new("convat_con_cao", "Con cáo"),
-            new("convat_con_chuot", "Con chuột"), new("convat_con_cong", "Con công"), new("convat_con_cuu", "Con cừu"),
-            new("convat_con_de", "Con dê"), new("convat_con_ho", "Con hổ"), new("convat_con_khi", "Con khỉ"),
-            new("convat_con_luoi", "Con lười"), new("convat_con_meo", "Con mèo"), new("convat_con_nhai", "Con nhái"),
-            new("convat_con_qua", "Con quạ"), new("convat_con_ran", "Con rắn"), new("convat_con_tho", "Con thỏ"),
-            new("convat_con_tom", "Con tôm"), new("convat_con_trau", "Con trâu"), new("convat_con_vet", "Con vẹt"),
-            new("convat_con_vit", "Con vịt"), new("convat_con_voi", "Con voi"), new("convat_cu_meo", "Chim cú mèo"),
-            new("convat_cua", "Con cua"), new("convat_dai_bang", "Đại bàng"), new("convat_doi", "Con dơi"),
-            new("convat_ech", "Con ếch"), new("convat_ga_con", "Gà con"), new("convat_ga_mai", "Gà mái"),
-            new("convat_ga_trong", "Gà trống"), new("convat_gau_bac_cuc", "Gấu bắc cực"), new("convat_gau_nau", "Gấu nâu"),
-            new("convat_gau_truc", "Gấu trúc"), new("convat_gau_truc_do", "Gấu trúc đỏ"), new("convat_ha_ma", "Hà mã"),
-            new("convat_hai_cau", "Hải cẩu"), new("convat_hai_ly", "Hải ly"), new("convat_hong_hac", "Hồng hạc"),
-            new("convat_huou_cao_co", "Hươu cao cổ"), new("convat_huu_sao", "Hươu sao"), new("convat_lac_da", "Lạc đà"),
-            new("convat_linh_cau", "Linh cẩu"), new("convat_lon_con", "Lợn con"), new("convat_meo", "Con mèo"),
-            new("convat_nai_sung_tam", "Nai sừng tấm"), new("convat_ngua_van", "Ngựa vằn"), new("convat_nhim", "Con nhím"),
-            new("convat_oc_sen", "Ốc sên"), new("convat_ong", "Con ong"), new("convat_ong_bap_cay", "Ong bắp cày"),
-            new("convat_rua", "Con rùa"), new("convat_sao_bien", "Sao biển"), new("convat_sau_buom", "Sâu bướm"),
-            new("convat_soc", "Con sóc"), new("convat_soc_nau", "Sóc nâu"), new("convat_tac_ke_hoa", "Tắc kè hoa"),
-            new("convat_tatu", "Con tatu"), new("convat_te_giac", "Tê giác"), new("convat_te_te", "Con tê tê"),
-            new("convat_tuan_loc", "Tuần lộc")
+            new("cute_su_tu", "Sư tử"), new("cute_bach_tuoc", "Bạch tuộc"), new("cute_bo_canh_cam", "Bọ cánh cam"), new("cute_con_buom", "Con bướm"),
+            new("cute_ca_he", "Cá hề"), new("cute_ca_heo", "Cá heo"), new("cute_ca_map", "Cá mập"),
+            new("cute_ca_sau", "Cá sấu"), new("cute_ca_voi", "Cá voi"), new("cute_cao_tuyet", "Cáo tuyết"),
+            new("cute_chau_chau", "Châu chấu"), new("cute_chim_canh_cut", "Chim cánh cụt"), new("cute_cho_con", "Chó con"),
+            new("cute_soi_con", "Chó sói"), new("cute_chon_hoi", "Chồn hôi"), new("cute_chuot_chui", "Chuột chũi"),
+            new("cute_chuot_tui", "Chuột túi"), new("cute_con_ca", "Con cá"), new("cute_con_cao", "Con cáo"),
+            new("cute_con_chuot", "Con chuột"), new("cute_con_cong", "Con công"), new("cute_con_cuu", "Con cừu"),
+            new("cute_con_de", "Con dê"), new("cute_con_ho", "Con hổ"), new("cute_khi_con", "Con khỉ"),
+            new("cute_con_luoi", "Con lười"), new("cute_con_nhai", "Con nhái"),
+            new("cute_con_qua", "Con quạ"), new("cute_con_ran", "Con rắn"), new("cute_tho_con", "Con thỏ"),
+            new("cute_con_tom", "Con tôm"), new("cute_con_trau", "Con trâu"), new("cute_con_vet", "Con vẹt"),
+            new("cute_con_vit", "Con vịt"), new("cute_voi_con", "Con voi"), new("cute_chim_cu_meo", "Chim cú mèo"),
+            new("cute_con_cua", "Con cua"), new("cute_dai_bang", "Đại bàng"), new("cute_con_doi", "Con dơi"),
+            new("cute_con_ech", "Con ếch"), new("cute_ga_con", "Gà con"), new("cute_ga_mai", "Gà mái"),
+            new("cute_ga_trong", "Gà trống"), new("cute_gau_bac_cuc", "Gấu bắc cực"), new("cute_gau_nau", "Gấu nâu"),
+            new("cute_gau_truc", "Gấu trúc"), new("cute_gau_truc_do", "Gấu trúc đỏ"), new("cute_ha_ma", "Hà mã"),
+            new("cute_hai_cau", "Hải cẩu"), new("cute_hai_ly", "Hải ly"), new("cute_hong_hac", "Hồng hạc"),
+            new("cute_huou_cao_co", "Hươu cao cổ"), new("cute_huou_sao", "Hươu sao"), new("cute_lac_da", "Lạc đà"),
+            new("cute_linh_cau", "Linh cẩu"), new("cute_lon_con", "Lợn con"), new("cute_meo_con", "Con mèo"),
+            new("cute_nai_sung_tam", "Nai sừng tấm"), new("cute_ngua_van", "Ngựa vằn"), new("cute_con_nhim", "Con nhím"),
+            new("cute_oc_sen", "Ốc sên"), new("cute_con_ong", "Con ong"), new("cute_ong_bap_cay", "Ong bắp cày"),
+            new("cute_con_rua", "Con rùa"), new("cute_sao_bien", "Sao biển"), new("cute_sau_buom", "Sâu bướm"),
+            new("cute_con_soc", "Con sóc"), new("cute_soc_nau", "Sóc nâu"), new("cute_tac_ke_hoa", "Tắc kè hoa"),
+            new("cute_con_tatu", "Con tatu"), new("cute_te_giac", "Tê giác"), new("cute_te_te", "Con tê tê"),
+            new("cute_tuan_loc", "Tuần lộc")
         ];
 
         public static readonly Dictionary<string, double> AnimalScales = new()
         {
-            { "convat_bach_tuoc", 0.8 }, { "convat_bo_canh_cam", 0.45 }, { "convat_buom", 0.45 }, { "convat_ca_he", 0.5 },
-            { "convat_ca_heo", 1.4 }, { "convat_ca_map", 1.6 }, { "convat_ca_sau", 1.1 }, { "convat_ca_voi", 2.0 },
-            { "convat_cao_tuyet", 0.8 }, { "convat_chau_chau", 0.45 }, { "convat_chim_canh_cut", 0.8 }, { "convat_cho_con", 0.5 },
-            { "convat_cho_soi", 0.8 }, { "convat_chon_hoi", 0.6 }, { "convat_con_chuot", 0.46 }, { "convat_chuot_chui", 0.48 },
-            { "convat_chuot_tui", 1.1 }, { "convat_con_ca", 0.5 }, { "convat_con_cong", 1.15 }, { "convat_con_cuu", 1.1 },
-            { "convat_con_de", 1.1 }, { "convat_con_ho", 1.3 }, { "convat_con_khi", 0.85 }, { "convat_con_luoi", 0.85 },
-            { "convat_con_meo", 0.65 }, { "convat_con_nhai", 0.45 }, { "convat_con_qua", 0.5 }, { "convat_con_ran", 0.55 },
-            { "convat_con_tho", 0.7}, { "convat_con_tom", 0.45 }, { "convat_con_trau", 1.3 }, { "convat_con_vet", 0.5 },
-            { "convat_con_vit", 0.6 }, { "convat_con_voi", 1.8 }, { "convat_cu_meo", 0.7 }, { "convat_cua", 0.46 },
-            { "convat_dai_bang", 0.65 }, { "convat_doi", 0.45 }, { "convat_ech", 0.45 }, { "convat_ga_con", 0.45 },
-            { "convat_ga_mai", 0.48 }, { "convat_ga_trong", 0.49 }, { "convat_gau_bac_cuc", 1.4 }, { "convat_gau_nau", 1.4 },
-            { "convat_gau_truc", 1.3 }, { "convat_gau_truc_do", 1.0 }, { "convat_ha_ma", 1.6 }, { "convat_hai_cau", 1.6 },
-            { "convat_hai_ly", 0.8 }, { "convat_hong_hac", 0.9 }, { "convat_huou_cao_co", 1.8 }, { "convat_huu_sao", 1.1 },
-            { "convat_lac_da", 1.4 }, { "convat_linh_cau", 1.25 }, { "convat_lon_con", 0.75 }, { "convat_meo", 0.75 },
-            { "convat_nai_sung_tam", 1.5 }, { "convat_ngua_van", 1.45 }, { "convat_nhim", 0.6 }, { "convat_oc_sen", 0.45 },
-            { "convat_ong", 0.45 }, { "convat_ong_bap_cay", 0.46 }, { "convat_rua", 0.8 }, { "convat_sao_bien", 0.5 },
-            { "convat_sau_buom", 0.45 }, { "convat_soc", 0.6 }, { "convat_soc_nau", 0.6 }, { "convat_tac_ke_hoa", 0.47 },
-            { "convat_tatu", 0.7 }, { "convat_te_giac", 1.7 }, { "convat_te_te", 0.65 }, { "convat_tuan_loc", 1.3 }
+            { "cute_bach_tuoc", 0.8 }, { "cute_bo_canh_cam", 0.45 }, { "cute_con_buom", 0.45 }, { "cute_ca_he", 0.5 },
+            { "cute_ca_heo", 1.4 }, { "cute_ca_map", 1.6 }, { "cute_ca_sau", 1.1 }, { "cute_ca_voi", 2.0 },
+            { "cute_cao_tuyet", 0.8 }, { "cute_chau_chau", 0.45 }, { "cute_chim_canh_cut", 0.8 }, { "cute_cho_con", 0.5 },
+            { "cute_soi_con", 0.8 }, { "cute_chon_hoi", 0.6 }, { "cute_con_chuot", 0.46 }, { "cute_chuot_chui", 0.48 },
+            { "cute_chuot_tui", 1.1 }, { "cute_con_ca", 0.5 }, { "cute_con_cong", 1.15 }, { "cute_con_cuu", 1.1 },
+            { "cute_con_de", 1.1 }, { "cute_con_ho", 1.3 }, { "cute_khi_con", 0.85 }, { "cute_con_luoi", 0.85 },
+            { "cute_con_nhai", 0.45 }, { "cute_con_qua", 0.5 }, { "cute_con_ran", 0.55 },
+            { "cute_tho_con", 0.7}, { "cute_con_tom", 0.45 }, { "cute_con_trau", 1.3 }, { "cute_con_vet", 0.5 },
+            { "cute_con_vit", 0.6 }, { "cute_voi_con", 1.8 }, { "cute_chim_cu_meo", 0.7 }, { "cute_con_cua", 0.46 },
+            { "cute_dai_bang", 0.65 }, { "cute_con_doi", 0.45 }, { "cute_con_ech", 0.45 }, { "cute_ga_con", 0.45 },
+            { "cute_ga_mai", 0.48 }, { "cute_ga_trong", 0.49 }, { "cute_gau_bac_cuc", 1.4 }, { "cute_gau_nau", 1.4 },
+            { "cute_gau_truc", 1.3 }, { "cute_gau_truc_do", 1.0 }, { "cute_ha_ma", 1.6 }, { "cute_hai_cau", 1.6 },
+            { "cute_hai_ly", 0.8 }, { "cute_hong_hac", 0.9 }, { "cute_huou_cao_co", 1.8 }, { "cute_huou_sao", 1.1 },
+            { "cute_lac_da", 1.4 }, { "cute_linh_cau", 1.25 }, { "cute_lon_con", 0.75 }, { "cute_meo_con", 0.75 },
+            { "cute_nai_sung_tam", 1.5 }, { "cute_ngua_van", 1.45 }, { "cute_con_nhim", 0.6 }, { "cute_oc_sen", 0.45 },
+            { "cute_con_ong", 0.45 }, { "cute_ong_bap_cay", 0.46 }, { "cute_con_rua", 0.8 }, { "cute_sao_bien", 0.5 },
+            { "cute_sau_buom", 0.45 }, { "cute_con_soc", 0.6 }, { "cute_soc_nau", 0.6 }, { "cute_tac_ke_hoa", 0.47 },
+            { "cute_con_tatu", 0.7 }, { "cute_te_giac", 1.7 }, { "cute_te_te", 0.65 }, { "cute_tuan_loc", 1.3 }
         };
+
+        // Hình khối dùng trong bài Tìm hình (2D + 3D cho lớp 1)
+        public static readonly string[] ShapeList = ["TRÒN", "VUÔNG", "TAM GIÁC", "CHỮ NHẬT"];
+        public static readonly string[] BlockShapeList = ["KHỐI HỘP", "KHỐI LẬP PHƯƠNG"];
+
+        // Giới hạn số lượng bạn nhỏ trong bài "Có a bạn nhỏ, nếu thêm/bớt b bạn..." theo mức
+        public static int GetFarmMathLimit(int level) => level == 1 ? 6 : (level == 2 ? 12 : 18);
+
+        // Bỏ tiền tố "Con " để đọc tên động vật trong câu hỏi (khớp với code sinh câu hỏi)
+        public static string StripCon(string name)
+            => string.IsNullOrWhiteSpace(name)
+                ? name
+                : (name.StartsWith("Con ", StringComparison.OrdinalIgnoreCase) ? name[4..].Trim() : name);
+
+        // Liệt kê MỌI chuỗi mà game có thể đọc giọng (số, con vật, câu hỏi/đáp án, đồng hồ).
+        // Đây là nguồn dữ liệu duy nhất cho việc pre-cache để khi mất mạng vẫn đọc được hết.
+        public static List<string> GetAllSpokenTexts()
+        {
+            var list = new List<string>();
+
+            // 1. Số 0-100 (đáp án số, thẻ số)
+            list.AddRange(Enumerable.Range(0, 101).Select(n => n.ToString()));
+
+            // 2. Tên con vật + câu "Bé hãy tìm tất cả bạn X nhé!"
+            foreach (var animal in AnimalList)
+            {
+                list.Add(animal.Value);
+                list.Add($"Bé hãy tìm tất cả bạn {StripCon(animal.Value)} nhé!");
+            }
+
+            // 3. Hình khối + câu "Bé hãy tìm tất cả hình X nhé!"
+            foreach (var shape in ShapeList)
+                list.Add($"Bé hãy tìm tất cả hình {shape} nhé!");
+
+            // 4. Tiêu đề câu hỏi cố định
+            list.AddRange([
+                "Sắp xếp các số từ BÉ đến LỚN",
+                "Sắp xếp các số từ LỚN đến BÉ",
+                "Có tất cả bao nhiêu bạn nhỏ?",
+                "Bạn nào LỚN NHẤT?",
+                "Bạn nào BÉ NHẤT?",
+                "Bên nào nhiều hơn?",
+                "Hình nào còn thiếu?",
+                "Số nào còn thiếu?",
+                "Điền dấu thích hợp ( >, <, = )",
+                "Tính nhẩm: ",
+                "Tìm số thích hợp",
+                "Kết quả bằng mấy?",
+                "Phép tính này bằng mấy?",
+                "Đồng hồ chỉ mấy giờ?"
+            ]);
+
+            // 5. Câu hỏi "Có a bạn nhỏ, nếu thêm/bớt b bạn..." — mọi tổ hợp theo giới hạn từng mức
+            foreach (int limit in new[] { GetFarmMathLimit(1), GetFarmMathLimit(2), GetFarmMathLimit(3) })
+            {
+                for (int a = 1; a < limit; a++)
+                    for (int b = 1; b <= limit - a; b++)
+                        list.Add($"Có {a} bạn nhỏ, nếu thêm {b} bạn thì có tất cả bao nhiêu bạn?");
+
+                for (int a = 2; a <= limit; a++)
+                    for (int b = 1; b < a; b++)
+                        list.Add($"Có {a} bạn nhỏ, nếu bớt {b} bạn thì có tất cả bao nhiêu bạn?");
+            }
+
+            // 6. Đồng hồ: "1 giờ" ... "12 giờ", "1 giờ 30" ... "12 giờ 30"
+            for (int h = 1; h <= 12; h++)
+            {
+                list.Add($"{h} giờ");
+                list.Add($"{h} giờ 30");
+            }
+
+            // 7. Dạng mới lớp 1: Tách/gộp, liền trước/sau, đo độ dài
+            list.AddRange(["Tách số", "Số liền trước", "Số liền sau", "Thanh nào dài hơn?", "Trái", "Phải"]);
+            for (int n = 3; n <= 18; n++)
+            {
+                for (int p = 1; p < n; p++)
+                    list.Add($"{n} gồm {p} và mấy?");
+            }
+            for (int n = 1; n <= 20; n++)
+            {
+                list.Add($"Số liền trước của {n} là mấy?");
+                list.Add($"Số liền sau của {n} là mấy?");
+            }
+
+            return list.Distinct().ToList();
+        }
     }
 
     // ==========================================
@@ -142,48 +228,42 @@
             {
                 if (level == 1)
                 {
-                    // DỄ: Tập trung vào Đếm và Tìm (Nhìn là chính)
+                    // DỄ: Nhận biết - Tìm và đếm trong 10 (đầu HK1)
                     range = 10;
-                    // 0: Tìm thú, 1: Tìm hình, 2: Đếm tổng
-                    types.AddRange([0, 1, 2]);
+                    types.AddRange([0, 1, 2]); // Tìm thú, Tìm hình, Đếm tổng
                 }
                 else if (level == 2)
                 {
-                    // VỪA: Bắt đầu so sánh và cộng hình ảnh
+                    // VỪA: So sánh trực quan + sắp xếp 3 số trong 10 (giữa HK1)
                     range = 10;
-                    // 3: So sánh kích thước, 8: Phép tính hình (Gà + Gà), 4: So sánh số lượng
-                    types.AddRange([3, 4, 8]);
+                    types.AddRange([3, 4, 5]); // So sánh kích thước, So sánh số lượng, Sắp xếp
                 }
                 else
                 {
-                    // KHÓ: Thêm sắp xếp số và điền số thiếu
+                    // KHÓ: Vận dụng - cộng hình trong 20 + Tách/gộp số (cuối HK1, số 0-20)
                     range = 20;
-                    // 5: Sắp xếp số, 6: Quy luật hình, 7: Điền số thiếu
-                    types.AddRange([5, 6, 7]);
+                    types.AddRange([4, 8, 11]); // VisualCompare 1-10, FarmMath limit6, SplitNumber
                 }
             }
             else // NÂNG CAO
             {
                 if (level == 1)
                 {
-                    // DỄ: Tính toán số học cơ bản
+                    // DỄ: Số 0-20, tính nhẩm + liền trước/sau + giờ đúng (đầu HK2)
                     range = 20;
-                    // 9: Tính toán (+/-), 4: So sánh số lượng
-                    types.AddRange([4, 9]);
+                    types.AddRange([9, 12, 10]); // TextMath, PrevNext, Clock (giờ đúng)
                 }
                 else if (level == 2)
                 {
-                    // VỪA: Bắt đầu so sánh và cộng hình ảnh
+                    // VỪA: Số 0-50, tìm 12, sắp xếp 4 số, điền số thiếu, bài toán lời văn
                     range = 50;
-                    // 1: Tìm hình (nhiều hơn), 5: Sắp xếp (số to), 0: Tìm thú (nhiều con)
-                    types.AddRange([0, 1, 5]);
+                    types.AddRange([0, 1, 5, 7]); // Tìm thú/hình 12, Sắp xếp, Điền số
                 }
                 else
                 {
-                    // KHÓ: Thêm sắp xếp số và điền số thiếu
+                    // KHÓ: Số 0-100, tổng hợp + đo độ dài/khối
                     range = 100;
-                    // 10: Đồng hồ, 7: Quy luật số, 9: Tính toán (điền dấu), 8: Đố vui
-                    types.AddRange([7, 8, 9, 10]);
+                    types.AddRange([7, 8, 9, 13]); // Điền số (tăng), FarmMath limit18, TextMath, LengthCompare
                 }
             }
 
@@ -204,11 +284,14 @@
                 3 => new ScatterQuest(level, mode: 4, range), // So Sánh Kích Thước
                 4 => new ScatterQuest(level, mode: 5, range), // So Sánh Số Lượng
                 5 => new ScatterQuest(level, mode: 2, range), // Sắp Xếp Số
-                6 => new SequenceQuest(level, mode: 0),       // Quy Luật Hình
-                7 => new SequenceQuest(level, mode: 1),       // Điền Số Thiếu
-                8 => new ScatterQuest(level, mode: 6, range), // Phép Tính Hình (VisualMath)
-                9 => new TextMathQuest(range, level),         // Phép Tính Số (TextMath)
+                6 => new SequenceQuest(level, mode: 0),       // Quy Luật Hình (ABAB/AAB)
+                7 => new SequenceQuest(level, mode: 1),       // Điền Số Thiếu (chỉ tăng)
+                8 => new ScatterQuest(level, mode: 6, range), // Phép Tính Hình (FarmMath)
+                9 => new TextMathQuest(range, level),         // Phép Tính Số (2 số hạng)
                 10 => new ClockQuest(level),                  // Đồng Hồ
+                11 => new SplitNumberQuest(level),            // Tách/Gộp số (mới)
+                12 => new PrevNextQuest(level),               // Liền trước/sau (mới)
+                13 => new LengthCompareQuest(level),          // So sánh độ dài (mới)
                 _ => new ScatterQuest(1, 3)
             };
         }
@@ -242,14 +325,13 @@
                     if (isAnimal) source = GameData.AnimalList;
                     else
                     {
-                        string[] shapes = ["TRÒN", "VUÔNG", "TAM GIÁC", "CHỮ NHẬT"];
-                        source = [.. shapes.Select(s => new KeyValuePair<string, string>("", s))];
+                        source = [.. GameData.ShapeList.Select(s => new KeyValuePair<string, string>("", s))];
                     }
 
                     var targetPair = source[_rnd.Next(source.Count)];
                     CorrectAnswer = isAnimal ? targetPair.Key : targetPair.Value;
 
-                    string tName = targetPair.Value.StartsWith("Con ") ? targetPair.Value[4..] : targetPair.Value;
+                    string tName = GameData.StripCon(targetPair.Value);
                     Title = isAnimal ? $"Bé hãy tìm tất cả bạn {tName} nhé!" : $"Bé hãy tìm tất cả hình {tName} nhé!";
 
                     // [FIX] Scale thật của loài vật (Voi=1.8, Chuột=0.46...)
@@ -370,7 +452,7 @@
 
                 case 6: // PHÉP TÍNH HÌNH ẢNH (THÊM/BỚT)
                     VisualType = "FarmMath";
-                    int limit = level == 1 ? 6 : (level == 2 ? 12 : 18);
+                    int limit = GameData.GetFarmMathLimit(level);
                     bool isAdd = _rnd.Next(2) == 0;
                     int a, b;
                     
@@ -462,9 +544,9 @@
                     if (level == 2) 
                         patternType = _rnd.Next(2) == 0 ? "AAB" : "ABB";
                     else if (level == 3) 
-                        patternType = _rnd.Next(2) == 0 ? "ABC" : "AABB";
+                        patternType = _rnd.Next(2) == 0 ? "AAB" : "ABB"; // lớp 1 không dùng ABC/AABB 8 ô
 
-                    int len = (patternType == "AABB") ? 8 : 6;
+                    int len = 6;
                     if (patternType == "ABAB" && level == 1) len = 5;
 
                     int missingIndex = _rnd.Next(0, len);
@@ -479,10 +561,6 @@
                             target = (i % 3 == 2) ? b : a;
                         else if (patternType == "ABB") 
                             target = (i % 3 == 0) ? a : b;
-                        else if (patternType == "ABC") 
-                            target = (i % 3 == 0) ? a : (i % 3 == 1) ? b : c;
-                        else if (patternType == "AABB") 
-                            target = (i % 4 < 2) ? a : b;
 
                         if (i == missingIndex) 
                         { 
@@ -529,9 +607,9 @@
                     }
                     else 
                     { 
-                        isAsc = _rnd.Next(2) == 0;
-                        step = _rnd.Next(2, 6); 
-                        start = isAsc ? _rnd.Next(1, 50) : _rnd.Next(20, 90); 
+                        isAsc = true; // lớp 1 chỉ học tăng dần, bước nhỏ
+                        step = _rnd.Next(1, 3); 
+                        start = _rnd.Next(1, 30);
                     }
 
                     int mIndex = _rnd.Next(0, 5);
@@ -590,8 +668,8 @@
                 Title = "Tính nhẩm: ";
                 string equation = "";
                 string[] ops = (level == 1) ? ["+"] : ["+", "-"];
-                bool isBalanced = level == 3 && _rnd.Next(0, 3) == 2;
-                bool isThreeTerms = level == 3 && _rnd.Next(0, 3) == 1;
+                bool isBalanced = false; // lớp 1 không học 4 số cân bằng a+b=c+d
+                bool isThreeTerms = false; // chỉ 2 số hạng cho lớp 1
 
                 if (isBalanced)
                 {
@@ -716,6 +794,88 @@
                 opts.Add(isHalf ? $"{rH} giờ 30" : $"{rH} giờ");
             }
             Options = [.. opts.OrderBy(_ => _rnd.Next())];
+        }
+    }
+
+    // === DẠNG MỚI LỚP 1: TÁCH/GỘP SỐ ===
+    public class SplitNumberQuest : QuestionBase, IQuestion
+    {
+        public string Title { get; }
+        public string CorrectAnswer { get; }
+        public List<string> Options { get; }
+        public string VisualType => "Classic";
+        public object Data { get; }
+        public SplitNumberQuest(int level)
+        {
+            int max = level == 1 ? 10 : (level == 2 ? 15 : 18);
+            int whole = _rnd.Next(3, max + 1);
+            int part1 = _rnd.Next(1, whole);
+            int part2 = whole - part1;
+            bool askPart2 = _rnd.Next(2) == 0;
+            if (askPart2)
+            {
+                Title = $"Tách số: {whole} gồm {part1} và mấy?";
+                CorrectAnswer = part2.ToString();
+                Data = $"{whole} = {part1} + ?";
+            }
+            else
+            {
+                Title = $"Gộp số: {part1} và {part2} là mấy?";
+                CorrectAnswer = whole.ToString();
+                Data = $"{part1} + {part2} = ?";
+            }
+            Options = CreateOptions(CorrectAnswer, 0, max + 5);
+        }
+    }
+
+    // === DẠNG MỚI: SỐ LIỀN TRƯỚC/SAU ===
+    public class PrevNextQuest : QuestionBase, IQuestion
+    {
+        public string Title { get; }
+        public string CorrectAnswer { get; }
+        public List<string> Options { get; }
+        public string VisualType => "Classic";
+        public object Data { get; }
+        public PrevNextQuest(int level)
+        {
+            int max = level == 1 ? 10 : (level == 2 ? 20 : 100);
+            int n = _rnd.Next(1, max + 1);
+            bool isPrev = _rnd.Next(2) == 0;
+            if (n == 0) isPrev = false;
+            if (n == max) isPrev = true;
+            if (isPrev)
+            {
+                Title = $"Số liền trước của {n} là mấy?";
+                CorrectAnswer = (n - 1).ToString();
+                Data = $"{n} - 1 = ?";
+            }
+            else
+            {
+                Title = $"Số liền sau của {n} là mấy?";
+                CorrectAnswer = (n + 1).ToString();
+                Data = $"{n} + 1 = ?";
+            }
+            Options = CreateOptions(CorrectAnswer, Math.Max(0, n - 5), n + 5);
+        }
+    }
+
+    // === DẠNG MỚI: SO SÁNH ĐỘ DÀI ===
+    public class LengthCompareQuest : QuestionBase, IQuestion
+    {
+        public string Title => "Thanh nào dài hơn?";
+        public string CorrectAnswer { get; }
+        public List<string> Options { get; }
+        public string VisualType => "LengthCompare";
+        public object Data { get; }
+        public LengthCompareQuest(int level)
+        {
+            int maxLen = level == 1 ? 5 : (level == 2 ? 8 : 10);
+            int left = _rnd.Next(1, maxLen + 1);
+            int right = _rnd.Next(1, maxLen + 1);
+            while (left == right) right = _rnd.Next(1, maxLen + 1);
+            CorrectAnswer = left > right ? "Thanh 1" : "Thanh 2";
+            Options = ["Thanh 1", "Thanh 2"];
+            Data = new Tuple<int,int>(left, right);
         }
     }
 }

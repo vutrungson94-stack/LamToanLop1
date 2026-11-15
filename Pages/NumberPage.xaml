@@ -119,18 +119,18 @@
                        HorizontalTextAlignment="Center"/>
             </Border>
 
-            <!-- Vùng chứa các con số (cuộn được) -->
+            <!-- Vùng chứa các con số (cuộn được) - xếp 3 cột -->
             <ScrollView Grid.Row="1">
-                <FlexLayout x:Name="NumbersFlex" 
-                            Wrap="Wrap" 
-                            JustifyContent="SpaceAround" 
-                            AlignItems="Center"
-                            AlignContent="Start"
-                            Padding="10"/>
+                <Grid x:Name="NumbersGrid"
+                      ColumnDefinitions="*,*,*"
+                      ColumnSpacing="12"
+                      RowSpacing="12"
+                      Padding="4"/>
             </ScrollView>
 
             <!-- Nút quay lại chọn phạm vi -->
-            <Button Grid.Row="2" 
+            <Button x:Name="BackToRangesButton"
+                    Grid.Row="2" 
                     Text="🔁 CHỌN PHẠM VI KHÁC" 
                     Clicked="OnBackToRangesClicked"
                     BackgroundColor="#FF9800" 

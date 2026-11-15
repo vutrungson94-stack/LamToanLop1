@@ -21,6 +21,7 @@ public partial class GamePage : ContentPage
 
     // 🔒 [DEBOUNCE] Biến khóa thao tác để tránh spam nút
     private readonly SemaphoreSlim _navLock = new(1, 1);
+    private bool _isNavigatingBack; // Chặn bấm Back liên tục (không dùng semaphore để tránh bị kẹt)
     private readonly SemaphoreSlim _imageLoadSemaphore = new(4);
     private record PrecomputedItem(GameItem Item, Rect Bounds, double Depth);
 
@@ -140,7 +141,7 @@ public partial class GamePage : ContentPage
         if (string.IsNullOrEmpty(key)) return null;
 
         // Đơn giản hóa: Không tự động thêm đuôi file.
-        // Yêu cầu key truyền vào phải là tên file đầy đủ (ví dụ: "convat_ga.webp").
+        // Yêu cầu key truyền vào phải là tên file đầy đủ (ví dụ: "cute_ga_con.webp").
         string lowerKey = key.ToLower();
 
         // Nếu đã có cache trả ngay
@@ -434,26 +435,31 @@ public partial class GamePage : ContentPage
     // Xử lý nút Back Vật Lý
     protected override bool OnBackButtonPressed()
     {
-        // Được phép check nhanh bằng Wait(0) ở đây (không block lâu)
-        if (!_navLock.Wait(0)) return true; // Đang trong quá trình chuyển trang, chặn bấm liên tục
+        // Chặn bấm liên tục
+        if (_isNavigatingBack) return true;
+        _isNavigatingBack = true;
 
-        try
-        {
-            _isGameActive = false;
+        _isGameActive = false;
+        StopAllAudio();
 
-            StopAllAudio();
-            // dùng BeginInvokeOnMainThread để gọi async pop
-            MainThread.BeginInvokeOnMainThread(async () => {
-                try { await Navigation.PopAsync(); }
-                catch (Exception ex) { Debug.WriteLine($"OnBackButtonPressed PopAsync error: {ex}"); }
-            });
-        }
-        finally
+        // Quay về menu bằng chuẩn Shell (Navigation.PopAsync không hoạt động ổn định với Shell)
+        MainThread.BeginInvokeOnMainThread(async () =>
         {
-            _navLock.Release();
-        }
+            try { await GoBackAsync(); }
+            catch (Exception ex) { Debug.WriteLine($"OnBackButtonPressed error: {ex}"); }
+            finally { _isNavigatingBack = false; }
+        });
 
         return true; // Chặn hành vi mặc định
+    }
+
+    // Quay lại màn hình trước (dùng chuẩn Shell để luôn hoạt động trên mọi dạng bài)
+    private async Task GoBackAsync()
+    {
+        if (Shell.Current != null)
+            await Shell.Current.GoToAsync("..");
+        else
+            await Navigation.PopAsync();
     }
 
     private View GetViewFromPool(double size)
@@ -588,7 +594,7 @@ public partial class GamePage : ContentPage
                     case "FindItem":
                         // Tự động chọn hình nền dựa vào loại dữ liệu
                         // Nếu Item không có Key ảnh (Key rỗng) -> Là Hình Khối -> Dùng nền Giấy
-                        // Nếu Item có Key ảnh (convat_...) -> Là Con Vật -> Dùng nền Farm
+                        // Nếu Item có Key ảnh (cute_...) -> Là Con Vật -> Dùng nền Farm 
                         if (q.Data is List<GameItem> items)
                         {
                             bool isShapeGame = items.Any(x => string.IsNullOrEmpty(x.Key));
@@ -773,6 +779,17 @@ public partial class GamePage : ContentPage
                         MathBackground.IsVisible = true;
                         ClassicText.Text = q.Data?.ToString();
                         ClassicText.IsVisible = true;
+                        RenderStandardAnswers(q);
+                        break;
+
+                    case "LengthCompare":
+                        MathBackground.IsVisible = true;
+                        FarmBackground.IsVisible = false;
+                        FarmContainer.IsVisible = true;
+                        if (q.Data is Tuple<int,int> lenData)
+                        {
+                            RenderLengthCompare(lenData.Item1, lenData.Item2);
+                        }
                         RenderStandardAnswers(q);
                         break;
 
@@ -1169,8 +1186,9 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
         });
 
         if (token.IsCancellationRequested) return;
-        // 4) Optional: staggered fade-in for visible children (limit concurrency)
-        var children = FarmContainer.Children.OfType<View>().ToList() ?? [];
+        // 4) Optional: staggered fade-in for visible children (limit concurrency) - phải lấy children trên UI thread
+        var children = await MainThread.InvokeOnMainThreadAsync(() => FarmContainer?.Children.OfType<View>().ToList() ?? []);
+        if (children == null || children.Count == 0) return;
         _ = Task.Run(async () =>
         {
             int groupSize = 6;
@@ -1185,10 +1203,9 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                         if (token.IsCancellationRequested) return;
                         foreach (var v in group)
                         {
-                            v.Scale = 0;
-                            v.Opacity = 1;
+                            try { v.Scale = 0; v.Opacity = 1; } catch { }
                         }
-                        await Task.WhenAll(group.Select(v => v.ScaleToAsync(1.0, 280, Easing.SpringOut)));
+                        try { await Task.WhenAll(group.Select(v => v.ScaleToAsync(1.0, 280, Easing.SpringOut))); } catch { }
                     });
                 } catch { }
                 try { await Task.Delay(80, token); } catch { }
@@ -1377,7 +1394,7 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                                 await capturedImg.TranslateToAsync(10, 0, 50);
                                 await capturedImg.TranslateToAsync(-10, 0, 50);
                                 capturedImg.TranslationX = 0;
-                                _ = _tts.SpeakWithMoodAsync("Chưa đúng rồi, bé nhìn kỹ lại nhé!", VoiceMood.Sad);
+                                _ = _tts.SpeakAsync(GoogleTtsService.WRONG_PHRASE);
                             }
                         };
                         img.GestureRecognizers.Add(tap);
@@ -1535,7 +1552,7 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                 btn.TranslationX = 0;
 
                 StopAllAudio();
-                _ = _tts.SpeakWithMoodAsync("Sai rồi, thử lại nhé!", VoiceMood.Sad); 
+                _ = _tts.SpeakAsync(GoogleTtsService.WRONG_PHRASE); 
             }
         }
         catch (Exception ex)
@@ -1560,7 +1577,7 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
         {
             string answerText = q.Options[i];
             var kvp = GameData.AnimalList.FirstOrDefault(x => x.Value == answerText);
-            string imgKey = !string.IsNullOrEmpty(kvp.Key) ? kvp.Key : "convat_ga_con";
+            string imgKey = !string.IsNullOrEmpty(kvp.Key) ? kvp.Key : "cute_ga_con";
             var card = new Border { Stroke = Colors.Gray, StrokeThickness = 1, BackgroundColor = Colors.White, StrokeShape = new RoundRectangle { CornerRadius = 15 }, HeightRequest = 125, Margin = 4, Shadow = new Shadow { Brush = Colors.Black, Offset = new Point(2, 2), Opacity = 0.2f, Radius = 4 } };
             var stack = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center };
             var img = new Image { Source = $"{imgKey}.webp", HeightRequest = 60, Aspect = Aspect.AspectFit };
@@ -1617,7 +1634,7 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                 card.TranslationX = 0;
 
                 StopAllAudio();
-                _ = _tts.SpeakWithMoodAsync("Sai rồi, bé chọn lại nhé!", VoiceMood.Sad);
+                _ = _tts.SpeakAsync(GoogleTtsService.WRONG_PHRASE);
 
                 // [QUAN TRỌNG] MỞ KHÓA
                 _isProcessing = false;
@@ -1678,9 +1695,10 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                 double horizonY = ch * FARM_HORIZON_RATIO;
                 double bottomY = ch * FARM_BOTTOM_RATIO;
 
-                // Vùng trái và phải (chừa 5px ở giữa mỗi bên)
-                Rect leftZone = new(0, horizonY, halfW - 6, bottomY - horizonY);
-                Rect rightZone = new(halfW + 6, horizonY, halfW - 6, bottomY - horizonY);
+                // Vùng trái/phải inset 24px để không lọt ra ngoài viền giấy và không bị sông che
+                double inset = 24;
+                Rect leftZone = new(inset, horizonY + 12, halfW - inset - 6, bottomY - horizonY - 24);
+                Rect rightZone = new(halfW + 6 + 12, horizonY + 12, halfW - 24 - 6, bottomY - horizonY - 24);
 
                 var preLeft = await ComputeScatterLayoutAsync(left, renderToken, useFarmDepth: true, limitZone: leftZone);
 
@@ -1710,6 +1728,27 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
             }
             catch (Exception ex) { Debug.WriteLine($"RenderVisualCompareGame error: {ex}"); }
         });
+    }
+
+    private void RenderLengthCompare(int left, int right)
+    {
+        FarmContainer.Children.Clear();
+        // Hai thanh ngang so sánh độ dài - thanh dài nhất chiếm tối đa 70% bề ngang tờ giấy,
+        // căn giữa để luôn nằm gọn trong tờ giấy, không đè lên ô đáp án phía dưới
+        double maxW = FarmContainer.Width > 0 ? Math.Min(FarmContainer.Width * 0.7, 340) : 320;
+        double barH = 36;
+        double leftW = maxW * left / Math.Max(left, right);
+        double rightW = maxW * right / Math.Max(left, right);
+        var leftBar = new Border { BackgroundColor = Color.FromArgb("#4CAF50"), HeightRequest = barH, WidthRequest = leftW, HorizontalOptions = LayoutOptions.Start, StrokeThickness = 0, StrokeShape = new RoundRectangle { CornerRadius = 12 } };
+        var rightBar = new Border { BackgroundColor = Color.FromArgb("#2196F3"), HeightRequest = barH, WidthRequest = rightW, HorizontalOptions = LayoutOptions.Start, StrokeThickness = 0, StrokeShape = new RoundRectangle { CornerRadius = 12 } };
+        var leftLabel = new Label { Text = "Thanh 1", FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = Colors.Black, HorizontalOptions = LayoutOptions.Start };
+        var rightLabel = new Label { Text = "Thanh 2", FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = Colors.Black, HorizontalOptions = LayoutOptions.Start };
+        var leftStack = new VerticalStackLayout { Spacing = 6, Children = { leftLabel, leftBar } };
+        var rightStack = new VerticalStackLayout { Spacing = 6, Children = { rightLabel, rightBar } };
+        var container = new VerticalStackLayout { Spacing = 24, VerticalOptions = LayoutOptions.Center, HorizontalOptions = LayoutOptions.Center, Children = { leftStack, rightStack } };
+        FarmContainer.Children.Add(container);
+        AbsoluteLayout.SetLayoutBounds(container, new Rect(0.5, 0.5, -1, -1));
+        AbsoluteLayout.SetLayoutFlags(container, AbsoluteLayoutFlags.PositionProportional);
     }
 
     private void RenderInteractiveGame(List<GameItem> items)
@@ -1851,7 +1890,7 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
     }
 
     // --- HÀM RENDER SẮP XẾP SỐ (RenderOrderingGame) ---
-    private void RenderOrderingGame(List<int> numbers, string correctAnswer)
+    private async void RenderOrderingGame(List<int> numbers, string correctAnswer)
     {
         _orderingResult.Clear();
         _orderingTarget.Clear();
@@ -1893,17 +1932,60 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
 
         if (cw <= 0 || ch <= 0)
         {
-            cw = DeviceDisplay.MainDisplayInfo.Width / DeviceDisplay.MainDisplayInfo.Density - 20;
-            ch = DeviceDisplay.MainDisplayInfo.Height / DeviceDisplay.MainDisplayInfo.Density - 20;
+            cw = DeviceDisplay.MainDisplayInfo.Width / DeviceDisplay.MainDisplayInfo.Density - 40;
+            ch = DeviceDisplay.MainDisplayInfo.Height / DeviceDisplay.MainDisplayInfo.Density - 120; // trừ Row0+Row2
         }
 
-        double safeHeight = ch * 0.65; // Chỉ rải số trong 75% chiều cao đầu, để tránh trùng với ô đáp án bên dưới
-        double answerAreaHeight = OrderingSlots.HeightRequest + 150; // Dự kiến chiều cao khu vực ô đáp án + khoảng cách an toàn
-        // 🔥 Tính toán vùng rải số động dựa trên kích thước thực tế của container, đảm bảo không rải vào khu vực ô đáp án
-        Rect scatterZone = new(20, 20, cw - 40, safeHeight - 40);
-        
-        var occupied = new List<Rect>();
-        // 🔥 Shuffle đúng số lượng số có trong đề
+        // Chờ layout xong để Bounds chính xác
+        await Task.Delay(30);
+        Rect forbiddenRect = Rect.Zero;
+        try
+        {
+            var slotsBounds = OrderingSlots.Bounds;
+            if (slotsBounds.Width > 0 && slotsBounds.Height > 0 && slotsBounds.Y > 0)
+            {
+                // Mở rộng 28px để số không sít mép ô đứt
+                forbiddenRect = new Rect(0, slotsBounds.Y - 28, cw, slotsBounds.Height + 56);
+            }
+            else
+            {
+                double slotsH = OrderingSlots.HeightRequest > 0 ? OrderingSlots.HeightRequest : 90;
+                double midY = ch * 0.56;
+                forbiddenRect = new(0, Math.Max(0, midY - slotsH/2 - 28), cw, slotsH + 56);
+            }
+        }
+        catch { forbiddenRect = new(0, ch*0.45, cw, 140); }
+
+        // 🔒 Giới hạn an toàn theo TỜ GIẤY (ảnh nền parchment):
+        // Tờ giấy chỉ chiếm từ ~9% đến ~90% chiều cao màn hình, khung hoa văn trong giấy
+        // nằm trong khoảng ~13%-17% (trên) và ~85% (dưới). Số phải nằm BÊN TRONG khung này,
+        // không được rải ra vùng gỗ/mép xé rách ngoài tờ giấy.
+        double safeTopY, safeBottomY;
+        try
+        {
+            var containerPos = GetScreenCoordinates(SourceNumberContainer);
+            double screenH = DeviceDisplay.MainDisplayInfo.Height / DeviceDisplay.MainDisplayInfo.Density;
+            double paperInnerTop = screenH * 0.17;    // dưới khung hoa văn đỉnh giấy
+            double paperInnerBottom = screenH * 0.82; // trên khung hoa văn đáy giấy (tránh mép xé rách)
+            safeTopY = Math.Max(0, paperInnerTop - containerPos.Y);
+            safeBottomY = Math.Min(ch, Math.Max(safeTopY + 100, paperInnerBottom - containerPos.Y));
+        }
+        catch { safeTopY = 0; safeBottomY = ch * 0.85; }
+
+        // Inset hai bên để số không chạm viền hoa văn dọc của tờ giấy, chia 2 vùng trên/dưới ô kẻ nét đứt
+        double sideInset = Math.Max(40, cw * 0.05);
+        double topH = Math.Max(0, forbiddenRect.Y - 24 - safeTopY);
+        double bottomY = forbiddenRect.Y + forbiddenRect.Height + 24;
+        double bottomH = Math.Max(0, safeBottomY - bottomY - 8);
+        Rect topZone = new(sideInset, safeTopY, Math.Max(0, cw - sideInset * 2), topH);
+        Rect bottomZone = new(sideInset, bottomY, Math.Max(0, cw - sideInset * 2), bottomH);
+        Rect scatterZone = topH > bottomH ? topZone : (bottomH > 60 ? bottomZone : topZone);
+        if (scatterZone.Height < 90)
+        {
+            // Dự phòng: rải trong toàn bộ phần giấy an toàn (vẫn tránh ô nét đứt nhờ kiểm tra va chạm bên dưới)
+            scatterZone = new(sideInset, safeTopY, Math.Max(0, cw - sideInset * 2), Math.Max(0, safeBottomY - safeTopY));
+        }
+        var occupied = new List<Rect> { forbiddenRect };
         var shuffled = numbers.OrderBy(_ => rand.Next()).ToList();
 
         for (int i = 0; i < shuffled.Count; i++)
@@ -1914,14 +1996,14 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
             Rect pos = Rect.Zero;
             bool placed = false;
             
-            for (int attempt = 0; attempt < 100; attempt++)
+            for (int attempt = 0; attempt < 150; attempt++)
             {
                 double x = scatterZone.X + rand.NextDouble() * Math.Max(0, scatterZone.Width - size);
                 double y = scatterZone.Y + rand.NextDouble() * Math.Max(0, scatterZone.Height - size);
                 Rect candidate = new(x, y, size, size);
                 
-                // Kiểm tra va chạm với các số đã đặt
                 bool isColliding = occupied.Any(o => o.IntersectsWith(candidate));
+                if (forbiddenRect.Width > 0 && forbiddenRect.IntersectsWith(candidate)) isColliding = true;
                 if (!isColliding)
                 {
                     pos = candidate;
@@ -1934,7 +2016,10 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
             {
                 double offsetX = (i % 3) * 80;
                 double offsetY = (i / 3) * 90;
-                pos = new Rect(scatterZone.X + offsetX, scatterZone.Y + offsetY, size, size);
+                // 🔒 Kẹp vị trí dự phòng để số luôn nằm trọn trong vùng giấy an toàn
+                double fx = Math.Min(scatterZone.X + offsetX, Math.Max(scatterZone.X, scatterZone.X + scatterZone.Width - size));
+                double fy = Math.Min(scatterZone.Y + offsetY, Math.Max(scatterZone.Y, scatterZone.Y + scatterZone.Height - size));
+                pos = new Rect(Math.Max(scatterZone.X, fx), Math.Max(scatterZone.Y, fy), size, size);
             }
 
             occupied.Add(pos);
@@ -2020,7 +2105,7 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                 }
                 else
                 {
-                    _ = _tts.SpeakWithMoodAsync("Sai rồi, thử lại nhé!", VoiceMood.Sad);
+                    _ = _tts.SpeakAsync(GoogleTtsService.WRONG_PHRASE);
                     await Task.Delay(900);
                     RenderQuestion(); // Vẽ lại câu hỏi
                 }
@@ -2117,7 +2202,8 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
     // Nút Back trên màn hình
     private async void OnBack(object sender, EventArgs e)
     {
-        if (!await _navLock.WaitAsync(0)) return;
+        if (_isNavigatingBack) return;
+        _isNavigatingBack = true;
 
         try
         {
@@ -2128,13 +2214,11 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                 await btn.ScaleToAsync(1.0, 100);
             }
             StopAllAudio();
-            await Navigation.PopAsync();
+            _isGameActive = false;
+            await GoBackAsync();
         }
         catch (Exception ex) { Debug.WriteLine($"OnBack error: {ex}"); }
-        finally
-        {
-            _navLock.Release();
-        }
+        finally { _isNavigatingBack = false; }
     }
 
     private async void OnReplayQuestion(object sender, EventArgs e)
@@ -2182,7 +2266,7 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
                 await btn.ScaleToAsync(1.0, 100);
             }
             StopAllAudio();
-            _ = _tts.SpeakWithMoodAsync("Không sao, mình làm câu khác nhé!", VoiceMood.Happy);
+            _ = _tts.SpeakAsync(GoogleTtsService.SKIP_PHRASE);
             _currentFoundCount = 0;
             _vm.NextQuestion();
         }
@@ -2251,17 +2335,19 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
 
         try
         {
-            // Chạy song song âm thanh và animation để tiết kiệm thời gian
-            var soundTask = Task.Run(async () =>
+            // Âm thanh chúc mừng: pháo -> vỗ tay -> đọc "Giỏi quá! Bé làm tốt lắm!" tuần tự để không rè do chồng tiếng
+            var audioTask = Task.Run(async () =>
             {
                 await _soundService.PlayPhaoAsync();
                 if (token.IsCancellationRequested) return;
                 await Task.Delay(300, token);
                 if (token.IsCancellationRequested) return;
                 await _soundService.PlayVoTayAsync();
+                if (token.IsCancellationRequested) return;
+                await Task.Delay(250, token);
+                if (token.IsCancellationRequested) return;
+                await _tts.SpeakAsync(GoogleTtsService.PRAISE_PHRASE);
             }, token);
-
-            var ttsTask = _tts.SpeakWithMoodAsync("Bé làm tốt lắm!", VoiceMood.Happy); // Đọc đúng text
 
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
@@ -2273,8 +2359,8 @@ private async Task<List<PrecomputedItem>> ComputeScatterLayoutAsync(List<GameIte
 
             if (token.IsCancellationRequested || !_isGameActive) return;
 
-            // Đợi các tác vụ nền hoàn thành và thêm thời gian hiển thị
-            await Task.WhenAll(soundTask, ttsTask, Task.Delay(1500, token));
+            // Đợi audio (đã tuần tự) và thêm thời gian hiển thị để bé đọc kịp chữ trong hộp thoại
+            await Task.WhenAll(audioTask, Task.Delay(1200, token));
 
             if (token.IsCancellationRequested || !_isGameActive) return;
 

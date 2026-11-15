@@ -28,6 +28,7 @@
         <Grid x:Name="MainMenuView" IsVisible="True" RowDefinitions="Auto, *, Auto" VerticalOptions="Center" HorizontalOptions="Center" Padding="20">
             <VerticalStackLayout Grid.Row="0" Spacing="15" VerticalOptions="Center">
                 <Label 
+                    x:Name="lblMainTitle"
                     Text="BÉ HỌC VUI" 
                     FontFamily="BalooTammudu2ExtraBold"
                     TextColor="#1565C0" 
@@ -39,15 +40,16 @@
                     </Label.Shadow>
                 </Label>
 
-                <Button Text="🔢 KHÁM PHÁ CON SỐ" Clicked="OnNumberDiscoveryClicked" BackgroundColor="#E91E63" Style="{StaticResource MenuButtonStyle}" />
-                <Button Text="🐾 KHÁM PHÁ ĐỘNG VẬT" Clicked="OnAnimalDiscoveryClicked" BackgroundColor="#4CAF50" Style="{StaticResource MenuButtonStyle}" />
-                <Button Text="🧮 BÉ LUYỆN TOÁN" Clicked="OnOpenMathMenu" BackgroundColor="#2196F3" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnNumber" Text="🔢 KHÁM PHÁ CON SỐ" Clicked="OnNumberDiscoveryClicked" BackgroundColor="#E91E63" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnAnimal" Text="🐾 KHÁM PHÁ ĐỘNG VẬT" Clicked="OnAnimalDiscoveryClicked" BackgroundColor="#4CAF50" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnMath" Text="🧮 BÉ LUYỆN TOÁN" Clicked="OnOpenMathMenu" BackgroundColor="#2196F3" Style="{StaticResource MenuButtonStyle}" />
             </VerticalStackLayout>
         </Grid>
 
         <Grid x:Name="ModeMenu" IsVisible="False" BackgroundColor="#DDFFFFFF" Padding="20">
             <VerticalStackLayout Spacing="20" VerticalOptions="Center" HorizontalOptions="Center">
                 <Label 
+                    x:Name="lblModeTitle"
                     Text="CHỌN CẤP ĐỘ" 
                     FontFamily="PatrickHandRegular"
                     TextColor="#333" 
@@ -55,9 +57,9 @@
                     FontAttributes="Bold" 
                     HorizontalOptions="Center" />
 
-                <Button Text="🌟 CƠ BẢN" Clicked="OnBasicModeClicked" BackgroundColor="#FF9800" Style="{StaticResource MenuButtonStyle}" />
-                <Button Text="🚀 NÂNG CAO" Clicked="OnAdvancedModeClicked" BackgroundColor="#9C27B0" Style="{StaticResource MenuButtonStyle}" />
-                <Button Text="🔙 QUAY LẠI" Clicked="OnBackToMenuClicked" BackgroundColor="#757575" WidthRequest="150" HeightRequest="50" CornerRadius="25" FontAttributes="Bold" TextColor="White"/>
+                <Button x:Name="btnCoBan" Text="🌟 CƠ BẢN" Clicked="OnBasicModeClicked" BackgroundColor="#FF9800" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnNangCao" Text="🚀 NÂNG CAO" Clicked="OnAdvancedModeClicked" BackgroundColor="#9C27B0" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnBackToMenu" Text="🔙 QUAY LẠI" Clicked="OnBackToMenuClicked" BackgroundColor="#757575" WidthRequest="150" HeightRequest="50" CornerRadius="25" FontAttributes="Bold" TextColor="White"/>
             </VerticalStackLayout>
         </Grid>
 
@@ -65,11 +67,11 @@
             <VerticalStackLayout VerticalOptions="Center" Spacing="20" HorizontalOptions="Center">
                 <Label x:Name="lblLevelTitle" Text="CHỌN ĐỘ KHÓ" TextColor="#333" FontSize="32" FontAttributes="Bold" HorizontalOptions="Center" />
 
-                <Button Text="⭐ DỄ" Clicked="OnLevelEasyClicked" BackgroundColor="#8BC34A" Style="{StaticResource MenuButtonStyle}" />
-                <Button Text="⭐⭐ VỪA" Clicked="OnLevelMediumClicked" BackgroundColor="#FFC107" Style="{StaticResource MenuButtonStyle}" />
-                <Button Text="⭐⭐⭐ KHÓ" Clicked="OnLevelHardClicked" BackgroundColor="#F44336" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnDe" Text="⭐ DỄ" Clicked="OnLevelEasyClicked" BackgroundColor="#8BC34A" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnVua" Text="⭐⭐ VỪA" Clicked="OnLevelMediumClicked" BackgroundColor="#FFC107" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnKho" Text="⭐⭐⭐ KHÓ" Clicked="OnLevelHardClicked" BackgroundColor="#F44336" Style="{StaticResource MenuButtonStyle}" />
 
-                <Button Text="🔙 QUAY LẠI" Clicked="OnBackToModeClicked" BackgroundColor="#757575" WidthRequest="150" HeightRequest="50" CornerRadius="25" FontAttributes="Bold" TextColor="White" />
+                <Button x:Name="btnBackToMode" Text="🔙 QUAY LẠI" Clicked="OnBackToModeClicked" BackgroundColor="#757575" WidthRequest="150" HeightRequest="50" CornerRadius="25" FontAttributes="Bold" TextColor="White" />
             </VerticalStackLayout>
         </Grid>
     </Grid>
