@@ -430,8 +430,10 @@ namespace LamToanLop1.Services
 		// --- FPT AI TTS (HTTP - FREE TIER, CẦN API KEY) ---
 		private static async Task<bool> DownloadFptAiTts(string text, string filePath, CancellationToken token)
 		{
-			try
+try
 			{
+				// Ưu tiên key từ Preferences (người dùng set qua app cài đặt)
+				// Nếu không có key → tự động skip, dùng Edge TTS/Google TTS
 				string apiKey = "";
 				await MainThread.InvokeOnMainThreadAsync(() => {
 					apiKey = Preferences.Get("fpt_ai_api_key", "");
