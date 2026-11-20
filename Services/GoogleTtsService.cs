@@ -243,29 +243,46 @@ namespace LamToanLop1.Services
                 bool hasInternet = false;
                 try { hasInternet = Connectivity.Current.NetworkAccess == NetworkAccess.Internet; } catch { hasInternet = false; }
                 bool usedEdgeTts = false;
-                if (!fileExists && hasInternet)
+                string preferredVoice = "auto";
+                await MainThread.InvokeOnMainThreadAsync(() => {
+                    preferredVoice = Preferences.Get("preferred_voice", "auto");
+                });
+
+                if (!fileExists && hasInternet && preferredVoice != "android")
                 {
-                    // Thử tất cả nguồn TTS miễn phí theo thứ tự ưu tiên:
-                    // 1. Edge TTS (48kHz/192kbps, neural, miễn phí) → chất lượng cao nhất
-                    // 2. Google TTS (24kHz/64kbps, miễn phí) → ổn định
-                    // 3. FPT AI TTS (free tier, cần API key trong Preferences "fpt_ai_api_key")
-                    // 4. Viettel AI TTS (free tier, cần API key trong Preferences "viettel_ai_api_key")
-                    bool edgeSuccess = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
-                    if (edgeSuccess)
+
+                    // Thử nguồn ưu tiên trước, sau đó fallback theo thứ tự
+                    // 1. Edge TTS (48kHz/192kbps, neural, miễn phí)
+                    // 2. Google TTS (24kHz/64kbps, miễn phí)
+                    // 3. FPT AI TTS (free tier, cần API key)
+                    // 4. Viettel AI TTS (free tier, cần API key)
+
+                    // Nếu người dùng chọn cụ thể → thử nguồn đó trước
+                    bool success = false;
+                    if (preferredVoice == "edge" || preferredVoice == "auto")
                     {
-                        usedEdgeTts = true;
+                        success = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
+                        if (success) usedEdgeTts = true;
                     }
-                    else
+                    if (!success && (preferredVoice == "google" || preferredVoice == "auto"))
                     {
-                        bool googleSuccess = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
-                        if (!googleSuccess)
-                        {
-                            bool fptSuccess = await GoogleTtsService.DownloadFptAiTts(text, cachePath, token);
-                            if (!fptSuccess)
-                            {
-                                await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
-                            }
-                        }
+                        success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
+                    }
+                    if (!success && (preferredVoice == "fpt" || preferredVoice == "auto"))
+                    {
+                        success = await GoogleTtsService.DownloadFptAiTts(text, cachePath, token);
+                    }
+                    if (!success && (preferredVoice == "viettel" || preferredVoice == "auto"))
+                    {
+                        success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
+                    }
+                    // Nếu chọn cụ thể mà fail → fallback về auto (thử tất cả còn lại)
+                    if (!success && preferredVoice != "auto")
+                    {
+                        if (!success) { success = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token); if (success) usedEdgeTts = true; }
+                        if (!success) success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
+                        if (!success) success = await GoogleTtsService.DownloadFptAiTts(text, cachePath, token);
+                        if (!success) success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
                     }
                 }
                 else if (fileExists)

@@ -43,6 +43,7 @@
                 <Button x:Name="btnNumber" Text="🔢 KHÁM PHÁ CON SỐ" Clicked="OnNumberDiscoveryClicked" BackgroundColor="#E91E63" Style="{StaticResource MenuButtonStyle}" />
                 <Button x:Name="btnAnimal" Text="🐾 KHÁM PHÁ ĐỘNG VẬT" Clicked="OnAnimalDiscoveryClicked" BackgroundColor="#4CAF50" Style="{StaticResource MenuButtonStyle}" />
                 <Button x:Name="btnMath" Text="🧮 BÉ LUYỆN TOÁN" Clicked="OnOpenMathMenu" BackgroundColor="#2196F3" Style="{StaticResource MenuButtonStyle}" />
+                <Button x:Name="btnVoice" Text="🎤 CHỌN GIỌNG ĐỌC" Clicked="OnVoiceSelectionClicked" BackgroundColor="#9C27B0" Style="{StaticResource MenuButtonStyle}" />
             </VerticalStackLayout>
         </Grid>
 

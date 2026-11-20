@@ -26,9 +26,42 @@ public partial class MenuPage : ContentPage
         this.SizeChanged += (_, __) => ApplyResponsive();
     }
 
+    private async void OnVoiceSelectionClicked(object? sender, EventArgs e)
+    {
+        var preferred = Preferences.Get("preferred_voice", "auto");
+        var options = new[]
+        {
+            "🤖 Tự động (tốt nhất)",
+            "Edge TTS (HoaiMy - Neural)",
+            "Google TTS (miễn phí)",
+            "FPT AI (cô giáo Ban Mai)",
+            "Viettel AI (cô giáo Quỳnh Anh)",
+            "Android TTS (thiết bị)"
+        };
+
+        var choice = await DisplayActionSheetAsync("Chọn giọng đọc", "Hủy", null, options);
+        if (choice == null || choice == "Hủy") return;
+
+        string pref = choice switch
+        {
+            "🤖 Tự động (tốt nhất)" => "auto",
+            "Edge TTS (HoaiMy - Neural)" => "edge",
+            "Google TTS (miễn phí)" => "google",
+            "FPT AI (cô giáo Ban Mai)" => "fpt",
+            "Viettel AI (cô giáo Quỳnh Anh)" => "viettel",
+            "Android TTS (thiết bị)" => "android",
+            _ => "auto"
+        };
+
+        Preferences.Set("preferred_voice", pref);
+
+        // Phát thử giọng đã chọn
+        string testText = "Xin chào! Bé làm toán vui lắm!";
+        await _tts.SpeakAsync(testText);
+    }
+
     private void ApplyResponsive()
     {
-        if (Width <= 0) return;
         try
         {
             double s = ResponsiveHelper.Scale;
