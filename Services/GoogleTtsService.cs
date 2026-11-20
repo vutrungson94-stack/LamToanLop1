@@ -144,10 +144,10 @@ namespace LamToanLop1.Services
                     var path = GetCachePath(name);
                     if (File.Exists(path)) return;
 
-                    // Ưu tiên Google TTS (miễn phí, ổn định, không token expired)
-                    // thất bại mới fallback sang Edge TTS (giọng Hoài My)
-                    bool ok = await DownloadGoogleTts(name, path, cancellationToken);
-                    if (!ok) await DownloadEdgeTts(name, path, cancellationToken);
+                    // Ưu tiên Edge TTS (48kHz/192kbps) để chất lượng cao, khớp sample rate host,
+                    // thất bại mới fallback sang Google TTS (miễn phí, ổn định)
+                    bool ok = await DownloadEdgeTts(name, path, cancellationToken);
+                    if (!ok) await DownloadGoogleTts(name, path, cancellationToken);
                 }
                 finally { semaphore.Release(); progress?.Report(Interlocked.Increment(ref completed) * 100 / list.Count); }
             });
@@ -242,12 +242,13 @@ namespace LamToanLop1.Services
                 try { hasInternet = Connectivity.Current.NetworkAccess == NetworkAccess.Internet; } catch { hasInternet = false; }
                 if (!fileExists && hasInternet)
                 {
-                    // ⭐ Thử Google TTS trước (miễn phí, ổn định, không token expired)
-                    bool googleSuccess = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
-                    if (!googleSuccess)
+                    // ⭐ Ưu tiên Edge TTS (48kHz/192kbps) để chất lượng cao, khớp sample rate host (48kHz),
+                    //    giảm resampling artifact gây dè trên emulator. Google TTS (24kHz/64kbps) làm fallback.
+                    bool edgeSuccess = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
+                    if (!edgeSuccess)
                     {
-                        // ⭐ Fallback sang Edge TTS (giọng Hoài My) khi Google thất bại
-                        await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
+                        // ⭐ Fallback sang Google TTS (miễn phí, ổn định, không token expired) khi Edge thất bại
+                        await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
                     }
                 }
 
@@ -739,8 +740,8 @@ namespace LamToanLop1.Services
         }
 
         // ⭐ Phiên bản cache: đổi khi thay đổi giọng/SSML để ép tải lại giọng mới
-        // v5: sửa thứ tự đọc câu sắp xếp (đọc theo đúng đề: "từ LỚN đến BÉ" / "từ BÉ đến LỚN")
-        private const string CACHE_VERSION = "v5-ordering-tts";
+        // v6: ưu tiên Edge TTS (48kHz/192kbps) trước Google TTS để giảm dè/resampling trên emulator
+        private const string CACHE_VERSION = "v6-edge-priority";
 
         private static string GetCachePath(string text)
 		{
