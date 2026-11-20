@@ -144,10 +144,12 @@ namespace LamToanLop1.Services
                     var path = GetCachePath(name);
                     if (File.Exists(path)) return;
 
-                    // Ưu tiên Edge TTS (48kHz/192kbps) để chất lượng cao, khớp sample rate host,
-                    // thất bại mới fallback sang Google TTS (miễn phí, ổn định)
+                    // Thử tất cả nguồn TTS miễn phí theo thứ tự ưu tiên:
+                    // 1. Edge TTS → 2. Google TTS → 3. FPT AI → 4. Viettel AI
                     bool ok = await DownloadEdgeTts(name, path, cancellationToken);
-                    if (!ok) await DownloadGoogleTts(name, path, cancellationToken);
+                    if (!ok) ok = await DownloadGoogleTts(name, path, cancellationToken);
+                    if (!ok) ok = await DownloadFptAiTts(name, path, cancellationToken);
+                    if (!ok) await DownloadViettelTts(name, path, cancellationToken);
                 }
                 finally { semaphore.Release(); progress?.Report(Interlocked.Increment(ref completed) * 100 / list.Count); }
             });
@@ -243,8 +245,11 @@ namespace LamToanLop1.Services
                 bool usedEdgeTts = false;
                 if (!fileExists && hasInternet)
                 {
-                    // ⭐ Ưu tiên Edge TTS (48kHz/192kbps) để chất lượng cao, khớp sample rate host (48kHz),
-                    //    giảm resampling artifact gây dè trên emulator. Google TTS (24kHz/64kbps) làm fallback.
+                    // Thử tất cả nguồn TTS miễn phí theo thứ tự ưu tiên:
+                    // 1. Edge TTS (48kHz/192kbps, neural, miễn phí) → chất lượng cao nhất
+                    // 2. Google TTS (24kHz/64kbps, miễn phí) → ổn định
+                    // 3. FPT AI TTS (free tier, cần API key trong Preferences "fpt_ai_api_key")
+                    // 4. Viettel AI TTS (free tier, cần API key trong Preferences "viettel_ai_api_key")
                     bool edgeSuccess = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
                     if (edgeSuccess)
                     {
@@ -252,8 +257,15 @@ namespace LamToanLop1.Services
                     }
                     else
                     {
-                        // ⭐ Fallback sang Google TTS (miễn phí, ổn định, không token expired) khi Edge thất bại
-                        await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
+                        bool googleSuccess = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
+                        if (!googleSuccess)
+                        {
+                            bool fptSuccess = await GoogleTtsService.DownloadFptAiTts(text, cachePath, token);
+                            if (!fptSuccess)
+                            {
+                                await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
+                            }
+                        }
                     }
                 }
                 else if (fileExists)
@@ -410,6 +422,93 @@ namespace LamToanLop1.Services
 				try { File.Move(tmpPath, filePath, overwrite: true); } catch { try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { } return false; }
 					return true;
 				}
+			}
+			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
+			return false;
+		}
+
+		// --- FPT AI TTS (HTTP - FREE TIER, CẦN API KEY) ---
+		private static async Task<bool> DownloadFptAiTts(string text, string filePath, CancellationToken token)
+		{
+			try
+			{
+				string apiKey = "";
+				await MainThread.InvokeOnMainThreadAsync(() => {
+					apiKey = Preferences.Get("fpt_ai_api_key", "");
+				});
+				if (string.IsNullOrWhiteSpace(apiKey)) return false;
+
+				var request = new HttpRequestMessage(HttpMethod.Post, "https://api.fpt.ai/hmi/tts/v5");
+				request.Headers.Add("api_key", apiKey);
+				request.Content = new StringContent(text, System.Text.Encoding.UTF8, "text/plain");
+
+				var response = await _httpClient.SendAsync(request, token);
+				if (!response.IsSuccessStatusCode) return false;
+
+				var json = await response.Content.ReadAsStringAsync(token);
+				int asyncIdx = json.IndexOf("\"async\"", StringComparison.Ordinal);
+				if (asyncIdx < 0) return false;
+				int colonIdx = json.IndexOf(':', asyncIdx);
+				if (colonIdx < 0) return false;
+				int quoteStart = json.IndexOf('"', colonIdx + 1);
+				if (quoteStart < 0) return false;
+				int quoteEnd = json.IndexOf('"', quoteStart + 1);
+				if (quoteEnd < 0) return false;
+				string audioUrl = json.Substring(quoteStart + 1, quoteEnd - quoteStart - 1);
+				if (string.IsNullOrWhiteSpace(audioUrl)) return false;
+
+				await Task.Delay(2000, token);
+				var audioResponse = await _httpClient.GetAsync(audioUrl, token);
+				if (!audioResponse.IsSuccessStatusCode) return false;
+
+				var data = await audioResponse.Content.ReadAsByteArrayAsync(token);
+				if (data.Length < 1024) return false;
+
+				bool isMp3 = data.Length > 128
+					&& ((data[0] == 'I' && data[1] == 'D' && data[2] == '3')
+						|| (data[0] == 0xFF && (data[1] & 0xE0) == 0xE0));
+				if (!isMp3) return false;
+
+				var tmpPath = filePath + ".part";
+				await File.WriteAllBytesAsync(tmpPath, data, token);
+				try { File.Move(tmpPath, filePath, overwrite: true); } catch { try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { } return false; }
+				return true;
+			}
+			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
+			return false;
+		}
+
+		// --- VIETTEL AI TTS (HTTP - FREE TIER, CẦN API KEY) ---
+		private static async Task<bool> DownloadViettelTts(string text, string filePath, CancellationToken token)
+		{
+			try
+			{
+				string apiKey = "";
+				await MainThread.InvokeOnMainThreadAsync(() => {
+					apiKey = Preferences.Get("viettel_ai_api_key", "");
+				});
+				if (string.IsNullOrWhiteSpace(apiKey)) return false;
+
+				var request = new HttpRequestMessage(HttpMethod.Post, "https://viettelgroup.ai/voice/api/tts/v1/rest/syn");
+				request.Headers.Add("token", apiKey);
+				var body = $"{{\"text\":\"{System.Net.WebUtility.UrlEncode(text)}\",\"voice\":\"hn_female_xuanthu\",\"speed\":1.0,\"tts_return_option\":3}}";
+				request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+
+				var response = await _httpClient.SendAsync(request, token);
+				if (!response.IsSuccessStatusCode) return false;
+
+				var data = await response.Content.ReadAsByteArrayAsync(token);
+				if (data.Length < 1024) return false;
+
+				bool isMp3 = data.Length > 128
+					&& ((data[0] == 'I' && data[1] == 'D' && data[2] == '3')
+						|| (data[0] == 0xFF && (data[1] & 0xE0) == 0xE0));
+				if (!isMp3) return false;
+
+				var tmpPath = filePath + ".part";
+				await File.WriteAllBytesAsync(tmpPath, data, token);
+				try { File.Move(tmpPath, filePath, overwrite: true); } catch { try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { } return false; }
+				return true;
 			}
 			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
 			return false;
@@ -707,8 +806,8 @@ namespace LamToanLop1.Services
         }
 
         // ⭐ Phiên bản cache: đổi khi thay đổi giọng/SSML để ép tải lại giọng mới
-        // v7: đơn giản hóa SSML (bỏ prosody artificial) để giọng neural HoaiMy tự nhiên hơn
-        private const string CACHE_VERSION = "v7-natural-ssml";
+        // v8: thêm FPT AI TTS + Viettel AI TTS vào fallback chain
+        private const string CACHE_VERSION = "v8-multi-source-tts";
 
         private static string GetCachePath(string text)
 		{
