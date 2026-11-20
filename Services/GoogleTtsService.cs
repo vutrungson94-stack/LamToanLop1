@@ -134,7 +134,7 @@ namespace LamToanLop1.Services
 
             var list = texts.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
             int completed = 0;
-            using var semaphore = new SemaphoreSlim(2);
+            using var semaphore = new SemaphoreSlim(4); // 4 luồng song song để tải nhanh hơn
 
             var tasks = list.Select(async name =>
             {

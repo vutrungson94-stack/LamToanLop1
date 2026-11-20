@@ -31,43 +31,40 @@ public partial class SplashPage : ContentPage
         }
     }
 
-    private async Task InitializeSplashAsync()
-    {
-        var progress = new Progress<int>(p =>
+private async Task InitializeSplashAsync()
         {
-            MainThread.BeginInvokeOnMainThread(() =>
+            // Hiển thị splash ngắn (500ms) để transition mượt
+            await Task.Delay(500);
+
+            // Preload TTS ở background — KHÔNG chặn navigation
+            _ = Task.Run(async () =>
             {
                 try
                 {
-                    if (PreloadProgressBar != null) PreloadProgressBar.Progress = p / 100.0;
-                    if (ProgressLabel != null) ProgressLabel.Text = p < 100 ? $"Đang tải... {p}%" : "OK!";
+                    var progress = new Progress<int>(p =>
+                    {
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            try
+                            {
+                                if (PreloadProgressBar != null) PreloadProgressBar.Progress = p / 100.0;
+                                if (ProgressLabel != null) ProgressLabel.Text = p < 100 ? $"Đang tải... {p}%" : "OK!";
+                            }
+                            catch { }
+                        });
+                    });
+
+                    await _ttsService.PreCacheAllGameVoicesAsync(progress);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[PreCache Error] {ex.Message}");
+                }
             });
-        });
 
-        // Preload TTS với timeout 8s
-        var preloadTask = Task.Run(async () =>
-        {
-            try
-            {
-                // Pre-cache toàn bộ giọng đọc: số, con vật, câu hỏi/đáp án, lời khen
-                await _ttsService.PreCacheAllGameVoicesAsync(progress);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[PreCache Error] {ex.Message}");
-            }
-        });
-
-        // Chờ preload hoặc timeout
-        await Task.WhenAny(preloadTask, Task.Delay(8000));
-        
-        // Đảm bảo splash hiển thị ít nhất 1s
-        await Task.Delay(1000);
-        
-        await SplashPage.NavigateToMenu();
-    }
+            // Navigate ngay lập tức — không chờ preload
+            await SplashPage.NavigateToMenu();
+        }
 
     private static async Task NavigateToMenu()
     {
