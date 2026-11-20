@@ -687,7 +687,7 @@ namespace LamToanLop1.Services
                     try { _player = _audioManager.CreatePlayer(_stream); }
                     catch (Exception ex) { Debug.WriteLine($"[TTS] CreatePlayer failed: {ex.Message}"); fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
                     if (_player == null) { fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
-                    try { _player.Volume = 0.9; } catch { }
+                    try { _player.Volume = 0.6; } catch { }
 
                     // LƯU HANDLER VÀ SUBSCRIBE
                     _currentPlaybackHandler = OnPlaybackEnded;

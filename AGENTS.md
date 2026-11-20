@@ -56,6 +56,7 @@
 
 > Workflow này áp dụng cho **mọi lần sửa** của project (nhỏ nhất cũng phải qua đủ 3 gate).
 > Ba bước `_Tests` → `_Build` → `_Sync` đều bắt buộc — **không** được báo "xong" khi thiếu hay bỏ qua bước nào.
+> 3 hệ thống build/test/sync luôn nằm trong thư mục `D:\HOC_TAP\backup` (`_Tests`, `_Build`, `_Sync`), **KHÔNG** recreate vào project.
 
 ```
 PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) → _Sync → BÁO CÁO
@@ -71,11 +72,11 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
    - (Lưu ý khi project sau này có `*.Tests.csproj`: `dotnet test` sẽ chạy thật và cũng phải xanh.)
    - Bước này PHẢI XANH trước khi gọi `_Build` — không có ngoại lệ.
 4. **`_Build` (gbuild) — toàn bộ gate L5 xanh (mục 8):** Security (3 phase) + Supply chain/SBOM + SAST + **Policy check**. Nếu một gate đỏ → sửa nguyên nhân (không nới gate), rồi chạy lại `_Tests` → `_Build`.
-   - Build nhanh cho mỗi lần sửa UI/code (mặc định):
+   - Build nhanh cho mỗi lần sửa UI/code (mặc định, dùng `-Target 1`):
    ```powershell
    pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "D:\HOC_TAP\backup\_Build\gbuild.ps1" -Project "D:\HOC_TAP\Android\LamToanLop1\LamToanLop1" -NonInteractive -Target 1
    ```
-   - ⚠️ **`-Target 1` có thể KHÔNG cài APK lên emulator** dù log báo "Deploying app to device..." + "[PIPELINE DONE] COMPLETED" (xác nhận 2026-11-15 23:10 và 2026-11-16 00:14 — `lastUpdateTime` không đổi, APK không đóng gói lại). Bước deploy của gbuild nuốt stdout nên lỗi im lặng. Sau mỗi lần Target 1 **kiểm chứng bắt buộc**:
+   ⚠️ `-Target 1` có thể KHÔNG cài APK lên emulator dù log báo "Deploying app to device...". Sau mỗi lần Target 1 **kiểm chứng bắt buộc**:
    ```powershell
    & "C:\Program Files\Android\platform-tools\adb.exe" -s emulator-5554 shell dumpsys package com.vutrungson.lamtoanlop1 | Select-String lastUpdateTime
    ```
@@ -105,6 +106,7 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
     & $adb -s emulator-5554 pull /sdcard/verify.png "$env:TEMP\ltl1_verify.png"
    ```
    Boot lần đầu mất 1–3 phút. Nút trên màn hình lấy bounds qua `uiautomator dump` rồi `input tap <x> <y>` (ví dụ nút "KHÁM PHÁ ĐỘNG VẬT": bounds `[121,1311][961,1507]` → tap `541 1409`).
+   - **Kiểm tra chất lượng âm thanh:** sau khi cài xong, mở app vào màn có giọng đọc (số/con vật/câu hỏi), người dùng **ghi âm chất lượng âm thanh bằng phần mềm máy tính** (ví dụ Audacity) khi lắng nghe trên emulator/máy thật, và so sánh trước/sau khi giảm volume TTS (`GoogleTtsService.cs` 0.9 → 0.75). AI CLI không có thiết bị âm thanh vật lý nên không tự thực hiện bước ghi âm này.
 7. **BÁO CÁO:** `git status --short`/`git diff --stat`, kết quả `_Tests` + `_Build` (kèm đường dẫn APK + gate nào đỏ nếu có) + kết quả `_Sync` (commit/push OK hay lỗi gì) + screenshot verify. **Không báo "xong" khi chưa qua đủ bước 3→5.**
 
 ## 4. Thủ tục thay/nén ảnh con vật (trạng thái hiện tại sau 2026-11-15)
