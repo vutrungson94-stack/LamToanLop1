@@ -240,22 +240,40 @@ namespace LamToanLop1.Services
 
                 bool hasInternet = false;
                 try { hasInternet = Connectivity.Current.NetworkAccess == NetworkAccess.Internet; } catch { hasInternet = false; }
+                bool usedEdgeTts = false;
                 if (!fileExists && hasInternet)
                 {
                     // ⭐ Ưu tiên Edge TTS (48kHz/192kbps) để chất lượng cao, khớp sample rate host (48kHz),
                     //    giảm resampling artifact gây dè trên emulator. Google TTS (24kHz/64kbps) làm fallback.
                     bool edgeSuccess = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
-                    if (!edgeSuccess)
+                    if (edgeSuccess)
+                    {
+                        usedEdgeTts = true;
+                    }
+                    else
                     {
                         // ⭐ Fallback sang Google TTS (miễn phí, ổn định, không token expired) khi Edge thất bại
                         await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
                     }
                 }
+                else if (fileExists)
+                {
+                    // File cache tồn tại — ước lượng nguồn TTS dựa vào kích thước file
+                    // Edge TTS: 48kHz/192kbps (lớn), Google TTS: 24kHz/64kbps (nhỏ)
+                    try
+                    {
+                        var fi = new FileInfo(cachePath);
+                        usedEdgeTts = fi.Length > 8192;
+                    }
+                    catch { usedEdgeTts = false; }
+                }
 
                 // Phát ngay nếu file tồn tại và hợp lệ (MP3 thật, không truncated)
                 if (await Task.Run(() => IsValidCachedMp3(cachePath)) && !token.IsCancellationRequested)
                 {
-                    await PlayFile(cachePath, token);
+                    // Volume theo nguồn TTS: Google TTS (chất lượng thấp) → 0.5, Edge TTS (chất lượng cao) → 0.6
+                    float ttsVolume = usedEdgeTts ? 0.6f : 0.5f;
+                    await PlayFile(cachePath, token, ttsVolume);
                 }
             }
             catch (OperationCanceledException) { /* Bỏ qua nếu bị hủy */ }
@@ -419,10 +437,8 @@ namespace LamToanLop1.Services
             var animalName = NormalizeAnimalName(text);
             if (IsLikelyAnimalName(animalName))
             {
-                var (basePitch, baseRate) = GetAnimalVoiceProfile(animalName);
-                // Giọng nhẹ nhàng, tự nhiên — bỏ emphasis/ngẫu nhiên làm giọng méo
-                return
-                    $"<prosody pitch='{basePitch}%' rate='{baseRate}%'>{animalName}</prosody><break time='150ms'/>";
+                // Giọng nhẹ nhàng, tự nhiên — để neural voice tự xử lý intonation
+                return $"{animalName}<break time='200ms'/>";
             }
 
             // ============================
@@ -430,16 +446,11 @@ namespace LamToanLop1.Services
             // ============================
             if (text.Contains('+') || text.Contains('-'))
             {
-                return
-					$@"<prosody rate='-15%' pitch='+6%'>
-						{text}
-					</prosody>
-					<break time='300ms'/>";
+                return $"{text}<break time='300ms'/>";
             }
 
             // ============================
-            // CÂU SẮP XẾP SỐ - đọc Y HỆT thứ tự chữ trong câu hỏi,
-            // chậm + ngắt nghỉ + nhấn mạnh để bé phân biệt rõ "LỚN đến BÉ" / "BÉ đến LỚN"
+            // CÂU SẮP XẾP SỐ
             // ============================
             if (text.StartsWith("Sắp xếp các số từ", StringComparison.Ordinal))
             {
@@ -447,17 +458,9 @@ namespace LamToanLop1.Services
                 int den = text.IndexOf(" đến ", StringComparison.Ordinal);
                 if (tu > 0 && den > tu)
                 {
-                    string from = text.Substring(tu + 4, den - tu - 4).Trim(); // "LỚN" hoặc "BÉ"
-                    string to = text.Substring(den + 5).Trim();                // "BÉ" hoặc "LỚN"
-                    // Đọc đúng theo đề: "Sắp xếp các số... từ <from>... đến <to>"
-                    return
-                        $@"<prosody rate='-20%' pitch='+4%'>
-							Sắp xếp các số
-							<break time='400ms'/>
-							từ <emphasis level='strong'>{from}</emphasis>
-							<break time='300ms'/>
-							đến <emphasis level='strong'>{to}</emphasis>
-						</prosody>";
+                    string from = text.Substring(tu + 4, den - tu - 4).Trim();
+                    string to = text.Substring(den + 5).Trim();
+                    return $"Sắp xếp các số từ {from} đến {to}<break time='300ms'/>";
                 }
             }
 
@@ -466,40 +469,30 @@ namespace LamToanLop1.Services
             // ============================
             if (text.EndsWith('?'))
             {
-                return
-					$@"<prosody rate='-10%' pitch='+8%'>
-						{text}
-					</prosody>";
+                return text; // Neural voice tự xử lý rising intonation cho câu hỏi
             }
 
             // ============================
-            // CÂU KHEN (trả lời đúng) - to, rõ, không rè
+            // CÂU KHEN (trả lời đúng)
             // ============================
             if (text.Contains("đúng") || text.Contains("giỏi") || text.Contains("tuyệt"))
             {
-                return
-					$@"<prosody pitch='+8%' rate='+3%' volume='+8dB'>
-						{text}
-					</prosody>
-					<break time='200ms'/>";
+                return $"{text}<break time='200ms'/>";
             }
 
             // ============================
-            // MẶC ĐỊNH - to rõ
+            // MẶC ĐỊNH
             // ============================
-            return
-				$@"<prosody rate='0%' pitch='0%' volume='+6dB'>
-					{text}
-				</prosody>";
+            return text;
         }
 
         // Đọc con số theo cách người Việt nói: "một trăm hai mươi ba"
         private static string BuildNumberSsml(string num)
         {
             if (!int.TryParse(num, out int n))
-                return $@"<prosody rate='0%' pitch='0%'>{num}</prosody>";
+                return num;
 
-            if (n == 0) return "<prosody rate='0%'>không</prosody>";
+            if (n == 0) return "không";
 
             var sb = new System.Text.StringBuilder();
             int hundred = n / 100;
@@ -507,17 +500,14 @@ namespace LamToanLop1.Services
 
             if (hundred > 0)
             {
-                sb.Append("<prosody rate='0%'>");
                 sb.Append(hundred == 1 ? "một trăm" : $"{GetDigitWord(hundred)} trăm");
-                sb.Append("</prosody>");
-                if (remainder > 0) sb.Append("<break time='300ms'/>");
+                if (remainder > 0) sb.Append(", ");
             }
 
             if (remainder > 0)
             {
                 if (remainder < 20)
                 {
-                    sb.Append("<prosody rate='0%'>");
                     sb.Append(remainder switch
                     {
                         10 => "mười",
@@ -528,14 +518,12 @@ namespace LamToanLop1.Services
                         15 => "mười lăm",
                         _ => remainder.ToString()
                     });
-                    sb.Append("</prosody>");
                 }
                 else
                 {
                     int tens = remainder / 10;
                     int ones = remainder % 10;
 
-                    sb.Append("<prosody rate='0%'>");
                     sb.Append(tens switch
                     {
                         2 => "hai mươi",
@@ -558,7 +546,6 @@ namespace LamToanLop1.Services
                             _ => GetDigitWord(ones)
                         });
                     }
-                    sb.Append("</prosody>");
                 }
             }
 
@@ -599,26 +586,6 @@ namespace LamToanLop1.Services
             return char.IsUpper(text[0]) && text.Split(' ').Length <= 4;
         }
 
-        private static (int pitch, int rate) GetAnimalVoiceProfile(string animalName)
-        {
-            animalName = animalName.ToLowerInvariant();
-
-            // Chim, cá nhỏ → cao, nhanh
-            if (animalName.Contains("chim") || animalName.Contains("cá "))
-                return (12, -3);
-
-            // Côn trùng → cao hơn nữa
-            if (animalName.Contains("bướm") || animalName.Contains("ong"))
-                return (14, 0);
-
-            // Thú to → trầm, chậm
-            if (animalName.Contains("voi") || animalName.Contains("hổ") || animalName.Contains("sư tử"))
-                return (-6, -10);
-
-            // Mặc định
-            return (8, -5);
-        }
-
         private static string MakeMsg(string path, string content)
         {
             return $"X-Timestamp:{DateTime.Now:O}\r\nContent-Type:application/json; charset=utf-8\r\nPath:{path}\r\n\r\n{content}";
@@ -632,7 +599,7 @@ namespace LamToanLop1.Services
 		}
 
 
-        private async Task PlayFile(string path, CancellationToken token)
+        private async Task PlayFile(string path, CancellationToken token, float volume = 0.6f)
         {
             // Nếu máy cũ không có AudioManager thì bỏ qua phát tiếng (không crash)
             if (_audioManager == null)
@@ -688,7 +655,7 @@ namespace LamToanLop1.Services
                     try { _player = _audioManager.CreatePlayer(_stream); }
                     catch (Exception ex) { Debug.WriteLine($"[TTS] CreatePlayer failed: {ex.Message}"); fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
                     if (_player == null) { fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
-                    try { _player.Volume = 0.6; } catch { }
+                    try { _player.Volume = volume; } catch { }
 
                     // LƯU HANDLER VÀ SUBSCRIBE
                     _currentPlaybackHandler = OnPlaybackEnded;
@@ -740,8 +707,8 @@ namespace LamToanLop1.Services
         }
 
         // ⭐ Phiên bản cache: đổi khi thay đổi giọng/SSML để ép tải lại giọng mới
-        // v6: ưu tiên Edge TTS (48kHz/192kbps) trước Google TTS để giảm dè/resampling trên emulator
-        private const string CACHE_VERSION = "v6-edge-priority";
+        // v7: đơn giản hóa SSML (bỏ prosody artificial) để giọng neural HoaiMy tự nhiên hơn
+        private const string CACHE_VERSION = "v7-natural-ssml";
 
         private static string GetCachePath(string text)
 		{
