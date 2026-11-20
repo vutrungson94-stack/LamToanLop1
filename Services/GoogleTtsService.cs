@@ -287,6 +287,12 @@ namespace LamToanLop1.Services
                     float ttsVolume = usedEdgeTts ? 0.6f : 0.5f;
                     await PlayFile(cachePath, token, ttsVolume);
                 }
+                else
+                {
+                    // ❌ Không có cache, không có internet hoặc tất cả HTTP sources đều fail
+                    // → Dùng Android built-in TTS (miễn phí, không cần key, offline)
+                    await SpeakAndroidTtsAsync(text, token);
+                }
             }
             catch (OperationCanceledException) { /* Bỏ qua nếu bị hủy */ }
             catch (Exception ex)
@@ -441,7 +447,7 @@ try
 				if (string.IsNullOrWhiteSpace(apiKey)) return false;
 
 				var request = new HttpRequestMessage(HttpMethod.Post, "https://api.fpt.ai/hmi/tts/v5");
-				request.Headers.Add("api_key", apiKey);
+				request.Headers.Add("api-key", apiKey); // FPT dùng "api-key" (có dấu gạch ngang), KHÔNG phải "api_key"
 				request.Headers.Add("voice", "banmai"); // Giọng nữ miền Bắc - cô giáo
 				request.Headers.Add("speed", "0");
 				request.Headers.Add("format", "mp3");
@@ -518,6 +524,41 @@ try
 			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
 			return false;
 		}
+
+        // --- DEVICE BUILT-IN TTS (MIỄN PHÍ, KHÔNG CẦN KEY, OFFLINE) ---
+        // Fallback cuối cùng khi tất cả HTTP sources đều fail và không có cache.
+        // Dùng Microsoft.Maui.Media.TextToSpeech (engine TTS sẵn có của thiết bị, tiếng Việt).
+        // Chất lượng phụ thuộc TTS engine của từng máy nhưng miễn phí, khách chỉ việc dùng.
+        private async Task<bool> SpeakAndroidTtsAsync(string text, CancellationToken token)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(text)) return false;
+
+                // Tìm locale tiếng Việt từ thiết bị
+                Microsoft.Maui.Media.Locale? viLocale = null;
+                try
+                {
+                    var locales = await Microsoft.Maui.Media.TextToSpeech.Default.GetLocalesAsync();
+                    viLocale = locales?.FirstOrDefault(l => l.Language?.StartsWith("vi") == true);
+                }
+                catch { }
+
+                var options = new Microsoft.Maui.Media.SpeechOptions
+                {
+                    Locale = viLocale,
+                    Pitch = 1.0f,
+                    Volume = 0.8f
+                };
+
+                await Microsoft.Maui.Media.TextToSpeech.Default.SpeakAsync(text, options, token);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         // --- CÁC HÀM BỔ TRỢ ---
         private static string BuildNaturalSsmlText(string text)
