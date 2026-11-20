@@ -440,6 +440,9 @@ namespace LamToanLop1.Services
 
 				var request = new HttpRequestMessage(HttpMethod.Post, "https://api.fpt.ai/hmi/tts/v5");
 				request.Headers.Add("api_key", apiKey);
+				request.Headers.Add("voice", "banmai"); // Giọng nữ miền Bắc - cô giáo
+				request.Headers.Add("speed", "0");
+				request.Headers.Add("format", "mp3");
 				request.Content = new StringContent(text, System.Text.Encoding.UTF8, "text/plain");
 
 				var response = await _httpClient.SendAsync(request, token);
@@ -491,7 +494,7 @@ namespace LamToanLop1.Services
 
 				var request = new HttpRequestMessage(HttpMethod.Post, "https://viettelgroup.ai/voice/api/tts/v1/rest/syn");
 				request.Headers.Add("token", apiKey);
-				var body = $"{{\"text\":\"{System.Net.WebUtility.UrlEncode(text)}\",\"voice\":\"hn_female_xuanthu\",\"speed\":1.0,\"tts_return_option\":3}}";
+				var body = $"{{\"text\":\"{System.Net.WebUtility.UrlEncode(text)}\",\"voice\":\"hn-quynhanh\",\"speed\":1.0,\"tts_return_option\":3}}";
 				request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
 
 				var response = await _httpClient.SendAsync(request, token);
