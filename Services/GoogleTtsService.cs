@@ -38,6 +38,11 @@ namespace LamToanLop1.Services
         private const string PREF_NUMBER_CACHE_READY = "number_voice_cache_ready";
         private const string PREF_GAME_CACHE_READY = "game_voice_cache_ready";
 
+        // Nguồn tùy chọn (free-tier nhưng cần key): tự bỏ qua nếu người dùng chưa nhập key.
+        private const string PREF_AZURE_SPEECH_KEY = "azure_speech_key";
+        private const string PREF_AZURE_SPEECH_REGION = "azure_speech_region";
+        private const string PREF_GOOGLE_TTS_KEY = "google_tts_api_key";
+
         // Hộp thoại chúc mừng hiển thị "GIỎI QUÁ!" + "Bé làm tốt lắm!" - đọc đúng nội dung hộp thoại
         public const string PRAISE_PHRASE = "Giỏi quá! Bé làm tốt lắm!";
         public const string WRONG_PHRASE = "Chưa đúng rồi, bé thử lại nhé!";
@@ -45,37 +50,90 @@ namespace LamToanLop1.Services
        
         private EventHandler? _currentPlaybackHandler;
 
+        // ── Lịch dọn cache định kỳ (tự chứa trong app, không dùng tool ngoài) ──
+        private const string PREF_LAST_CACHE_MAINTENANCE = "last_cache_maintenance_utc";
+        private const int CACHE_MAINTENANCE_INTERVAL_DAYS = 7;                // tối đa 1 lần / 7 ngày
+        private const int CACHE_MAX_AGE_DAYS = 14;                            // MP3 cũ hơn 14 ngày → xóa
+        private const long CACHE_SIZE_LIMIT_BYTES = 120L * 1024 * 1024;       // trần dung lượng 120 MB
+
         public GoogleTtsService(IAudioManager audioManager)
         {
             _audioManager = audioManager; // có thể null trên máy cũ -> xử lý silent
-            // Chạy cleanup an toàn trên threadpool, không block UI thread
-            Task.Run(async () =>
+            // Chạy sau 3s trên threadpool, không block UI thread.
+            _ = Task.Run(async () =>
             {
                 await Task.Delay(3000);
-                try { CleanupOldCache(3); } catch { }
+                try { await RunScheduledCacheMaintenanceAsync(); } catch { }
             });
         }
 
-        // Hàm dọn dẹp file rác quá hạn (mặc định 3 ngày) - resilient cho máy cũ
-        private static void CleanupOldCache(int maxAgeDays = 3)
+        // Kiểm tra mốc lần dọn cuối; nếu tới hạn thì dọn và lưu mốc mới.
+        private static async Task RunScheduledCacheMaintenanceAsync()
+        {
+            var lastRun = DateTime.MinValue;
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                var raw = Preferences.Get(PREF_LAST_CACHE_MAINTENANCE, "");
+                if (!string.IsNullOrWhiteSpace(raw) && DateTime.TryParse(raw, out var parsed))
+                    lastRun = parsed;
+            });
+
+            if ((DateTime.UtcNow - lastRun).TotalDays < CACHE_MAINTENANCE_INTERVAL_DAYS) return;
+
+            var deleted = PerformCacheMaintenance();
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                Preferences.Set(PREF_LAST_CACHE_MAINTENANCE, DateTime.UtcNow.ToString("o"));
+                if (deleted)
+                {
+                    // Có file bị xóa → cho preload tải lại đúng file thiếu (giữ khả năng đọc offline)
+                    Preferences.Set(PREF_GAME_CACHE_READY, false);
+                    Preferences.Set(PREF_NUMBER_CACHE_READY, false);
+                }
+            });
+        }
+
+        // Dọn file tạm, MP3 quá hạn và ép dung lượng về dưới trần (xóa cũ nhất trước).
+        private static bool PerformCacheMaintenance()
         {
             try
             {
                 var cacheDir = FileSystem.CacheDirectory;
-                if (string.IsNullOrEmpty(cacheDir) || !Directory.Exists(cacheDir)) return;
+                if (string.IsNullOrEmpty(cacheDir) || !Directory.Exists(cacheDir)) return false;
 
-                var dirInfo = new DirectoryInfo(cacheDir);
+                var dir = new DirectoryInfo(cacheDir);
+                var deleted = false;
 
-                // Lấy các file .mp3 chưa được truy cập trong 'maxAgeDays' ngày qua
-                var oldFiles = dirInfo.GetFiles("*.mp3")
-                                      .Where(f => f.LastAccessTime < DateTime.Now.AddDays(-maxAgeDays));
-
-                foreach (var file in oldFiles)
+                // 1. File tạm do tải bị ngắt — luôn xóa
+                foreach (var f in dir.EnumerateFiles("*.part").Concat(dir.EnumerateFiles("*.tmp")))
                 {
-                    try { file.Delete(); } catch { }
+                    try { f.Delete(); deleted = true; } catch { }
                 }
+
+                // 2. MP3 quá hạn (mốc mới nhất giữa access/write để tránh xóa nhầm file đang dùng)
+                var cutoff = DateTime.Now.AddDays(-CACHE_MAX_AGE_DAYS);
+                foreach (var f in dir.EnumerateFiles("*.mp3"))
+                {
+                    try
+                    {
+                        var stamp = f.LastAccessTime > f.LastWriteTime ? f.LastAccessTime : f.LastWriteTime;
+                        if (stamp < cutoff) { f.Delete(); deleted = true; }
+                    }
+                    catch { }
+                }
+
+                // 3. Vượt trần dung lượng → xóa cũ nhất cho đến dưới trần
+                var mp3 = dir.EnumerateFiles("*.mp3").OrderBy(f => f.LastWriteTime).ToList();
+                var total = mp3.Sum(f => f.Length);
+                foreach (var f in mp3)
+                {
+                    if (total <= CACHE_SIZE_LIMIT_BYTES) break;
+                    try { total -= f.Length; f.Delete(); deleted = true; } catch { }
+                }
+                return deleted;
             }
-            catch { /* Bỏ qua lỗi nếu không xóa được */ }
+            catch { return false; }
         }
 
         // Pre-cache toàn bộ số 0-100 để khi mất mạng vẫn đọc được
@@ -144,11 +202,14 @@ namespace LamToanLop1.Services
                     var path = GetCachePath(name);
                     if (File.Exists(path)) return;
 
-                    // Thử các nguồn TTS miễn phí theo thứ tự ưu tiên:
-                    // 1. Edge TTS → 2. Google TTS → 3. Viettel AI
+                    // Thử các nguồn TTS theo thứ tự ưu tiên:
+                    // 1. Edge TTS → 2. Google TTS → 3. Viettel AI → 4. Azure → 5. Google Cloud
+                    // (Azure/Google Cloud tự bỏ qua nếu chưa có key free-tier)
                     bool ok = await DownloadEdgeTts(name, path, cancellationToken);
                     if (!ok) ok = await DownloadGoogleTts(name, path, cancellationToken);
-                    if (!ok) await DownloadViettelTts(name, path, cancellationToken);
+                    if (!ok) ok = await DownloadViettelTts(name, path, cancellationToken);
+                    if (!ok) ok = await DownloadAzureTts(name, path, cancellationToken);
+                    if (!ok) await DownloadGoogleCloudTts(name, path, cancellationToken);
                 }
                 finally
                 {
@@ -261,7 +322,8 @@ namespace LamToanLop1.Services
                     // Thử nguồn ưu tiên trước, sau đó fallback theo thứ tự
                     // 1. Edge TTS (48kHz/192kbps, neural, miễn phí)
                     // 2. Google TTS (24kHz/64kbps, miễn phí)
-                    // 3. Viettel AI TTS (free tier, cần API key)
+                    // 3. Viettel AI TTS (free tier, cần token)
+                    // 4. Azure AI Speech F0 + 5. Google Cloud TTS (free tier, cần key — tự bỏ qua nếu trống)
                     // (FPT AI đã bị loại bỏ: họ ngừng cung cấp API cho tài khoản cá nhân)
 
                     // Nếu người dùng chọn cụ thể → thử nguồn đó trước
@@ -279,12 +341,19 @@ namespace LamToanLop1.Services
                     {
                         success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
                     }
+                    if (!success && preferredVoice == "auto")
+                    {
+                        success = await GoogleTtsService.DownloadAzureTts(text, cachePath, token);
+                        if (!success) success = await GoogleTtsService.DownloadGoogleCloudTts(text, cachePath, token);
+                    }
                     // Nếu chọn cụ thể mà fail → fallback về auto (thử tất cả còn lại)
                     if (!success && preferredVoice != "auto")
                     {
                         if (!success) { success = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token); if (success) usedEdgeTts = true; }
                         if (!success) success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
                         if (!success) success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
+                        if (!success) success = await GoogleTtsService.DownloadAzureTts(text, cachePath, token);
+                        if (!success) success = await GoogleTtsService.DownloadGoogleCloudTts(text, cachePath, token);
                     }
                 }
                 else if (fileExists)
@@ -486,6 +555,84 @@ namespace LamToanLop1.Services
 			}
 			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
 			return false;
+		}
+
+		// --- AZURE AI SPEECH F0 (free tier, cần key + region; tự bỏ qua nếu trống) ---
+		private static async Task<bool> DownloadAzureTts(string text, string filePath, CancellationToken token)
+		{
+			string key = "", region = "";
+			await MainThread.InvokeOnMainThreadAsync(() => {
+				key = Preferences.Get(PREF_AZURE_SPEECH_KEY, "");
+				region = Preferences.Get(PREF_AZURE_SPEECH_REGION, "eastase");
+			});
+			if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(region)) return false;
+			try
+			{
+				// Giọng neural tự nhiên, hợp đọc câu toán lớp 1 (SSML giữ nguyên dấu tiếng Việt).
+				var ssml = $"<speak version='1.0' xml:lang='vi-VN'><voice name='vi-VN-HoaiMyNeural'>{System.Net.WebUtility.HtmlEncode(text)}</voice></speak>";
+				using var request = new HttpRequestMessage(HttpMethod.Post, $"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1");
+				request.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", key);
+				var body = new StringContent(ssml, System.Text.Encoding.UTF8);
+				body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/ssml+xml");
+				request.Content = body;
+				var response = await _httpClient.SendAsync(request, token);
+				if (!response.IsSuccessStatusCode) return false;
+				var data = await response.Content.ReadAsByteArrayAsync(token);
+				return await SaveMp3CacheAsync(data, filePath, token);
+			}
+			catch { RemovePartFile(filePath); return false; }
+		}
+
+		// --- GOOGLE CLOUD TTS (free tier ~1M ký tự/tháng, cần key; tự bỏ qua nếu trống) ---
+		private static async Task<bool> DownloadGoogleCloudTts(string text, string filePath, CancellationToken token)
+		{
+			string key = "";
+			await MainThread.InvokeOnMainThreadAsync(() => {
+				key = Preferences.Get(PREF_GOOGLE_TTS_KEY, "");
+			});
+			if (string.IsNullOrWhiteSpace(key)) return false;
+			try
+			{
+				var payload = new {
+					input = new { text },
+					voice = new { languageCode = "vi-VN", name = "vi-VN-Neural2-A" },
+					audioConfig = new { audioEncoding = "MP3" }
+				};
+				var json = System.Text.Json.JsonSerializer.Serialize(payload);
+				using var request = new HttpRequestMessage(HttpMethod.Post, "https://texttospeech.googleapis.com/v1/text:synthesize");
+				request.Headers.TryAddWithoutValidation("X-Goog-Api-Key", key);
+				request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+				var response = await _httpClient.SendAsync(request, token);
+				if (!response.IsSuccessStatusCode) return false;
+				var raw = await response.Content.ReadAsStringAsync(token);
+				using var doc = System.Text.Json.JsonDocument.Parse(raw);
+				if (!doc.RootElement.TryGetProperty("audioContent", out var node)) return false;
+				var data = Convert.FromBase64String(node.GetString() ?? "");
+				return await SaveMp3CacheAsync(data, filePath, token);
+			}
+			catch { RemovePartFile(filePath); return false; }
+		}
+
+		// Lưu MP3 hợp lệ vào cache (ghi .part rồi rename atomic), tránh lưu nhầm HTML/CAPTCHA.
+		private static async Task<bool> SaveMp3CacheAsync(byte[] data, string filePath, CancellationToken token)
+		{
+			bool isMp3 = data.Length > 128
+				&& ((data[0] == 'I' && data[1] == 'D' && data[2] == '3')
+					|| (data[0] == 0xFF && (data[1] & 0xE0) == 0xE0));
+			if (!isMp3) return false;
+			var tmpPath = filePath + ".part";
+			try
+			{
+				await File.WriteAllBytesAsync(tmpPath, data, token);
+				File.Move(tmpPath, filePath, overwrite: true);
+				return true;
+			}
+			catch { RemovePartFile(filePath); return false; }
+		}
+
+		private static void RemovePartFile(string filePath)
+		{
+			try { var p = filePath + ".part"; if (File.Exists(p)) File.Delete(p); } catch { }
 		}
 
         // --- DEVICE BUILT-IN TTS (MIỄN PHÍ, KHÔNG CẦN KEY, OFFLINE) ---

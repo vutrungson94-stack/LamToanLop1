@@ -80,7 +80,7 @@ jobs:
 
     steps:
       - name: 🕒 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 🔍 Scan .csproj & TFMs
         id: scan
@@ -193,7 +193,7 @@ jobs:
       COMMIT_SHA:   ${{ github.sha }}
     steps:
       - name: 🕒 Checkout (full history cho provenance)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -205,7 +205,7 @@ jobs:
           "{ 'sdk': { 'version': '$latest', 'rollForward': 'latestMajor' } }" -replace "'", '"' | Out-File global.json -Force
 
       - name: 🛠️ Setup .NET ${{ env.DOTNET_VERSION }}
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -383,7 +383,7 @@ jobs:
             echo "- Gate 5/6 Provenance attestation"
             echo "- Gate 6/6 Compliance report"
             echo
-            echo "Báo cáo: \`build-reports/{sbom,provenance,compliance-report}.json\`"
+            echo "Báo cáo: build-reports/{sbom,provenance,compliance-report}.json"
           } >> $env:GITHUB_STEP_SUMMARY
 
 # ══════════════════════════════════════════════════════════════
@@ -398,7 +398,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 🔐 Patch global.json (rollForward)
         if: hashFiles('global.json') != ''
@@ -409,7 +409,7 @@ jobs:
           Write-Host "✅ GitHub Runner using SDK: $latest"
 
       - name: 🛠️ Setup .NET ${{ env.DOTNET_VERSION }}
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -458,7 +458,7 @@ jobs:
           }
 
       - name: 🕒 Cache NuGet
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-android-${{ hashFiles('**/*.csproj','**/global.json') }}
@@ -574,7 +574,7 @@ jobs:
           }
 
       - name: 📤 Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-${{ github.run_number }}
           path: publish-output/android/
@@ -619,7 +619,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 🔐 Patch global.json
         if: hashFiles('global.json') != ''
@@ -631,7 +631,7 @@ jobs:
           $j | ConvertTo-Json -Depth 10 | Set-Content global.json
 
       - name: 🛠️ Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -781,7 +781,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 🔐 Patch global.json
         if: hashFiles('global.json') != ''
@@ -793,7 +793,7 @@ jobs:
           $j | ConvertTo-Json -Depth 10 | Set-Content global.json
 
       - name: 🛠️ Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
