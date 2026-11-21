@@ -537,10 +537,21 @@ namespace LamToanLop1.Services
 				});
 				if (string.IsNullOrWhiteSpace(apiKey)) return false;
 
-				var request = new HttpRequestMessage(HttpMethod.Post, "https://viettelgroup.ai/voice/api/tts/v1/rest/syn");
-				request.Headers.Add("token", apiKey);
-				var body = $"{{\"text\":\"{System.Net.WebUtility.UrlEncode(text)}\",\"voice\":\"hn-quynhanh\",\"speed\":1.0,\"tts_return_option\":3}}";
-				request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+				// Endpoint mới theo tài liệu viettelai.vn (token nằm trong body, không phải header).
+				// Dùng JsonSerializer để mã hóa đúng tiếng Việt (không UrlEncode trong JSON).
+				var payload = new {
+					text = text,
+					voice = "hn-quynhanh",
+					speed = 1.0,
+					tts_return_option = 3,
+					token = apiKey,
+					without_filter = false
+				};
+				var request = new HttpRequestMessage(HttpMethod.Post, "https://viettelai.vn/tts/speech_synthesis");
+				request.Headers.TryAddWithoutValidation("accept", "*/*");
+				request.Content = new StringContent(
+					System.Text.Json.JsonSerializer.Serialize(payload),
+					System.Text.Encoding.UTF8, "application/json");
 
 				var response = await _httpClient.SendAsync(request, token);
 				if (!response.IsSuccessStatusCode) return false;
