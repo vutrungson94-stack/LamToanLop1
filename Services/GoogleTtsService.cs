@@ -300,7 +300,10 @@ namespace LamToanLop1.Services
                 // Chuẩn bị file (Tải nếu chưa có / nếu file cache bị hỏng)
                 var cachePath = GetCachePath(text);
 
+                // Chỉ quét file cache MỘT lần. Các hàm download bên dưới đã tự kiểm tra
+                // MP3 hợp lệ trước khi ghi vào cache, nên không cần quét lại lần 2.
                 bool fileExists = await Task.Run(() => IsValidCachedMp3(cachePath));
+                bool canPlayCache = fileExists;
                 if (!fileExists && File.Exists(cachePath))
                 {
                     try { File.Delete(cachePath); } catch { /* bỏ file cache hỏng để tải lại */ }
@@ -355,6 +358,8 @@ namespace LamToanLop1.Services
                         if (!success) success = await GoogleTtsService.DownloadAzureTts(text, cachePath, token);
                         if (!success) success = await GoogleTtsService.DownloadGoogleCloudTts(text, cachePath, token);
                     }
+                    // Download thành công ⇒ file đã hợp lệ (được validate trước khi ghi cache).
+                    if (success) canPlayCache = true;
                 }
                 else if (fileExists)
                 {
@@ -368,8 +373,8 @@ namespace LamToanLop1.Services
                     catch { usedEdgeTts = false; }
                 }
 
-                // Phát ngay nếu file tồn tại và hợp lệ (MP3 thật, không truncated)
-                if (await Task.Run(() => IsValidCachedMp3(cachePath)) && !token.IsCancellationRequested)
+                // Phát từ cache đã được xác thực ở đầu (hoặc vừa tải thành công)
+                if (canPlayCache && !token.IsCancellationRequested)
                 {
                     // Volume theo nguồn TTS: Google TTS (chất lượng thấp) → 0.5, Edge TTS (chất lượng cao) → 0.6
                     float ttsVolume = usedEdgeTts ? 0.6f : 0.5f;
