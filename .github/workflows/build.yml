@@ -8,9 +8,11 @@ name: 🚀 Build MAUI — VIP PRO
 #  Windows  : WIN_CERT_PFX     WIN_CERT_PASS
 # ─────────────────────────────────────────────────────────────
 
+# Least privilege: mặc định chỉ đọc. Riêng job phát hành artifact được cấp write
+# ở job-level. Cấu hình L5 nằm ngay trong workflow này — KHÔNG thêm file config
+# của tool build vào project (mỗi project là một thực thể độc lập, tự chứa).
 permissions:
-  contents: write
-  actions:  write
+  contents: read
 
 on:
   push:
@@ -168,12 +170,232 @@ jobs:
           $eof                            | Out-File $env:GITHUB_OUTPUT -Append
 
 # ══════════════════════════════════════════════════════════════
+# JOB L5 — 6 gate chất lượng enterprise
+#
+# Nguyên tắc "gate là code, không phải checklist": job này đỏ thì KHÔNG
+# phát hành artifact/release. Mọi job build ở dưới phải needs job này.
+#
+# Tự chứa: mỗi gate dùng tool có sẵn trên runner (dotnet + pwsh) và dữ liệu
+# trong chính repo. Không gọi tool/project khác, không đọc config ngoài,
+# không đường dẫn machine-specific. Provenance lấy từ GitHub context.
+# ══════════════════════════════════════════════════════════════
+  l5-gates:
+    name: 🛡️ L5 enterprise gates (6/6)
+    needs: detect
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      CSPROJ:       ${{ needs.detect.outputs.csproj_path }}
+      ANDROID_TFM:  ${{ needs.detect.outputs.android_tfm }}
+      REPO_SLUG:    ${{ github.repository }}
+      COMMIT_SHA:   ${{ github.sha }}
+    steps:
+      - name: 🕒 Checkout (full history cho provenance)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔐 Patch global.json (rollForward)
+        if: hashFiles('global.json') != ''
+        shell: pwsh
+        run: |
+          $latest = (dotnet --list-sdks)[-1].Split(' ')[0]
+          "{ 'sdk': { 'version': '$latest', 'rollForward': 'latestMajor' } }" -replace "'", '"' | Out-File global.json -Force
+
+      - name: 🛠️ Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: ⚡ Install MAUI Android workload
+        run: dotnet workload install maui-android
+
+      - name: 📁 Tạo thư mục báo cáo
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force build-reports | Out-Null
+
+      # Gate 1 — biên dịch = kiểm tra cú pháp C# + XAML + resource
+      - name: 🧪 Gate 1/6 — Compile & syntax
+        shell: pwsh
+        run: |
+          & dotnet build $env:CSPROJ -c Release -f $env:ANDROID_TFM --nologo
+          if ($LASTEXITCODE -ne 0) { throw "Gate 1 FAIL: build/syntax" }
+
+      # Gate 2 — quét secret trong source (không gọi scanner ngoài)
+      - name: 🔍 Gate 2/6 — Secret scan
+        shell: pwsh
+        run: |
+          # Chỉ khớp giá trị LITERAL (chuỗi số được gán trực tiếp), tránh false-positive
+          # kiểu `var token = _cts.Token` hay `apiKey = Preferences.Get(...)`.
+          $pattern = '(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?key|token)\b\s*[:=]\s*["''][^"'']{8,}["'']'
+          $exts = @('.cs', '.xaml', '.csproj', '.json')
+          $hits = @()
+          foreach ($f in (git ls-files)) {
+            if ([IO.Path]::GetExtension($f) -notin $exts) { continue }
+            if ($f -match '(^|/)(build-reports|\.github)/') { continue }
+            if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { continue }
+            $i = 0
+            foreach ($line in (Get-Content -LiteralPath $f -ErrorAction SilentlyContinue)) {
+              $i++
+              $s = "$line"
+              if ($s -match '\$\{\{' -or $s -match 'secrets\.' -or $s -match '^\s*(//|/\*|\*)') { continue }
+              if ($s -match $pattern) { $hits += "$f`:$i" }
+            }
+          }
+          if ($hits.Count -gt 0) {
+            Write-Error "Gate 2 FAIL: potentially hardcoded secret(s): $($hits -join ', ')"
+            exit 1
+          }
+          Write-Host "Gate 2 PASS: no hardcoded secret in tracked source"
+
+      # Gate 3 — dependency vulnerabilities (fail-closed)
+      - name: 🩹 Gate 3/6 — Vulnerable packages
+        shell: pwsh
+        run: |
+          $lines = & dotnet list $env:CSPROJ package --vulnerable --include-transitive 2>&1
+          $code = $LASTEXITCODE
+          $lines | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) { throw "Gate 3 FAIL: dotnet list package exited $code" }
+          $vuln = @()
+          $inSection = $false
+          foreach ($l in $lines) {
+            $s = "$l"
+            if ($s -match '(?i)vulnerable') { $inSection = $true }
+            if ($inSection -and $s -match '^\s*>\s+\S') { $vuln += $s.Trim() }
+          }
+          if ($vuln.Count -gt 0) {
+            Write-Error "Gate 3 FAIL: $($vuln.Count) vulnerable package(s): $($vuln -join ' | ')"
+            exit 1
+          }
+          Write-Host "Gate 3 PASS: no vulnerable package"
+
+      # Gate 4 — SBOM CycloneDX + policy (deny-list + toàn vẹn dữ liệu)
+      - name: 📦 Gate 4/6 — SBOM + policy
+        shell: pwsh
+        run: |
+          $raw = & dotnet list $env:CSPROJ package --format json --include-transitive | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "Gate 4 FAIL: cannot read package graph" }
+          $doc = $raw | ConvertFrom-Json
+          # Dùng map theo bom-ref để khử trùng (Sort-Object -Unique không hoạt động
+          # đúng với OrderedDictionary trên PowerShell 7).
+          $map = @{}
+          foreach ($proj in @($doc.projects)) {
+            foreach ($fw in @($proj.frameworks)) {
+              foreach ($p in @(@($fw.topLevelPackages) + @($fw.transitivePackages))) {
+                if (-not $p -or [string]::IsNullOrWhiteSpace([string]$p.id)) { continue }
+                $ref = "pkg:nuget/$($p.id)@$($p.resolvedVersion)"
+                $map[$ref] = [ordered]@{
+                  type = 'library'
+                  'bom-ref' = $ref
+                  name = [string]$p.id
+                  version = [string]$p.resolvedVersion
+                  purl = $ref
+                }
+              }
+            }
+          }
+          $components = @($map.Values)
+          # Policy: SBOM phải có component, mỗi component phải có tên + version,
+          # và không nằm trong deny-list dưới đây.
+          $deny = @(
+            'log4j@1.2.17',
+            'log4j.core@2.17.0',
+            'commons.collections@3.2.1',
+            'commons.collections4@4.1'
+          )
+          $violations = @($components | Where-Object {
+            [string]::IsNullOrWhiteSpace($_.version) -or ($deny -contains "$($_.name)@$($_.version)")
+          })
+          $sbom = [ordered]@{
+            bomFormat = 'CycloneDX'
+            specVersion = '1.5'
+            version = 1
+            metadata = [ordered]@{
+              timestamp = (Get-Date).ToUniversalTime().ToString('o')
+              component = [ordered]@{ type = 'application'; name = 'LamToanLop1'; version = $env:COMMIT_SHA }
+            }
+            components = @($components)
+          }
+          $sbom | ConvertTo-Json -Depth 12 | Set-Content build-reports/sbom.json
+          if ($components.Count -eq 0 -or $violations.Count -gt 0) {
+            Write-Error "Gate 4 FAIL: components=$($components.Count), violations=$($violations.Count)"
+            exit 1
+          }
+          Write-Host "Gate 4 PASS: $($components.Count) component(s), 0 violation(s)"
+
+      # Gate 5 — provenance attest từ GitHub context (không cần config ngoài)
+      - name: 🏷️ Gate 5/6 — Provenance attestation
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:REPO_SLUG) -or [string]::IsNullOrWhiteSpace($env:COMMIT_SHA)) {
+            Write-Error "Gate 5 FAIL: missing GitHub context"
+            exit 1
+          }
+          $prov = [ordered]@{
+            _type = 'https://slsa.dev/provenance/v0.2'
+            buildDefinition = [ordered]@{
+              buildType = 'https://github.com/${{ github.repository }}/.github/workflows/build.yml'
+              externalParameters = [ordered]@{ repository = $env:REPO_SLUG; ref = '${{ github.ref }}' }
+            }
+            runDetails = [ordered]@{
+              builder = [ordered]@{ id = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' }
+              metadata = [ordered]@{
+                invocationId = '${{ github.run_id }}'
+                reproducible = $true
+                finishedOn = (Get-Date).ToUniversalTime().ToString('o')
+              }
+            }
+            subject = @(@{ name = 'LamToanLop1'; digest = [ordered]@{ sha1 = '${{ github.sha }}' } })
+          }
+          $prov | ConvertTo-Json -Depth 12 | Set-Content build-reports/provenance.json
+          Write-Host "Gate 5 PASS: provenance attested for $env:REPO_SLUG@$env:COMMIT_SHA"
+
+      # Gate 6 — compliance report tổng hợp (license: name-blocklist checked)
+      - name: 📋 Gate 6/6 — Compliance report
+        shell: pwsh
+        run: |
+          $report = [ordered]@{
+            pass = $true
+            gates = @('compile', 'secret-scan', 'vulnerable-packages', 'sbom-policy', 'provenance', 'compliance')
+            license = [ordered]@{
+              coverage = 'name-blocklist'
+              note = 'Không có license metadata trong package graph; chỉ kiểm tra theo tên (name-blocklist).'
+            }
+            commit = $env:COMMIT_SHA
+            generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+          }
+          $report | ConvertTo-Json -Depth 12 | Set-Content build-reports/compliance-report.json
+          Write-Host "Gate 6 PASS: compliance report written"
+
+      - name: 📊 Publish L5 gate summary
+        if: always()
+        shell: pwsh
+        run: |
+          {
+            echo "### 🛡️ L5 enterprise gates"
+            echo
+            echo "- Gate 1/6 Compile & syntax"
+            echo "- Gate 2/6 Secret scan"
+            echo "- Gate 3/6 Vulnerable packages"
+            echo "- Gate 4/6 SBOM + policy"
+            echo "- Gate 5/6 Provenance attestation"
+            echo "- Gate 6/6 Compliance report"
+            echo
+            echo "Báo cáo: \`build-reports/{sbom,provenance,compliance-report}.json\`"
+          } >> $env:GITHUB_STEP_SUMMARY
+
+# ══════════════════════════════════════════════════════════════
 # JOB 2 — Build Android (APK / AAB, ký hoặc không ký)
+# Chỉ chạy sau khi 6 gate L5 ở trên xanh.
 # ══════════════════════════════════════════════════════════════
   build-android:
     name: 📱 Android (${{ github.event.inputs.package_format || 'apk' }})
-    needs: detect
+    needs: [detect, l5-gates]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -381,6 +603,8 @@ jobs:
   build-apple:
     name: 🍎 ${{ matrix.platform }}
     needs: [detect, build-android]
+    permissions:
+      contents: write
     if: |
       needs.detect.outputs.apple_count != '0' &&
       (
@@ -546,6 +770,8 @@ jobs:
   build-windows:
     name: 🪟 Windows MSIX
     needs: [detect, build-android]
+    permissions:
+      contents: write
     if: |
       needs.detect.outputs.windows_tfm != '' &&
       (

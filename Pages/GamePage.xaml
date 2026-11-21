@@ -11,7 +11,7 @@
     <Grid>
         <Image 
             x:Name="FarmBackground" 
-            Source="hinhnen_nong_trai.png" 
+            Source="hinhnen_nong_trai.webp" 
             Aspect="AspectFill" 
             IsVisible="False" 
             HorizontalOptions="Fill" 
@@ -19,7 +19,7 @@
 
         <Image 
             x:Name="MathBackground" 
-            Source="hinhnen_lam_toan.png" 
+            Source="hinhnen_lam_toan.webp" 
             Aspect="AspectFill" 
             IsVisible="False" 
             HorizontalOptions="Fill" 
@@ -37,7 +37,7 @@
                 <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" VerticalOptions="Center">
                     <ImageButton
                         Grid.Column="0"
-                        Source="bieutuong_loa.png"
+                        Source="bieutuong_loa.webp"
                         BackgroundColor="#FFE0B2"
                         CornerRadius="22"
                         HeightRequest="44"

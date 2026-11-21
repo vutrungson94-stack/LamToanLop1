@@ -34,7 +34,6 @@ public partial class MenuPage : ContentPage
             "🤖 Tự động (tốt nhất)",
             "Edge TTS (HoaiMy - Neural)",
             "Google TTS (miễn phí)",
-            "FPT AI (cô giáo Ban Mai)",
             "Viettel AI (cô giáo Quỳnh Anh)",
             "Android TTS (thiết bị)"
         };
@@ -47,7 +46,6 @@ public partial class MenuPage : ContentPage
             "🤖 Tự động (tốt nhất)" => "auto",
             "Edge TTS (HoaiMy - Neural)" => "edge",
             "Google TTS (miễn phí)" => "google",
-            "FPT AI (cô giáo Ban Mai)" => "fpt",
             "Viettel AI (cô giáo Quỳnh Anh)" => "viettel",
             "Android TTS (thiết bị)" => "android",
             _ => "auto"

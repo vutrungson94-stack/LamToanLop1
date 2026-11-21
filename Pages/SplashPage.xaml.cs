@@ -7,11 +7,18 @@ public partial class SplashPage : ContentPage
 {
     private readonly ITtsService _ttsService;
     private bool _isTransitioning;
+    private volatile bool progressStopped;
 
     public SplashPage(ITtsService ttsService)
     {
         InitializeComponent();
         _ttsService = ttsService;
+    }
+
+    protected override void OnDisappearing()
+    {
+        progressStopped = true;
+        base.OnDisappearing();
     }
 
     protected override async void OnAppearing()
@@ -33,20 +40,29 @@ public partial class SplashPage : ContentPage
 
 private async Task InitializeSplashAsync()
         {
-            // Hiển thị splash ngắn (500ms) để transition mượt
-            await Task.Delay(500);
+            // Delay ngắn để splash kịp hiển thị, rồi vào Menu ngay (không chờ preload TTS)
+            await Task.Delay(300);
 
-            // Preload TTS ở background — KHÔNG chặn navigation
+            // Navigate trước để giao diện chính render xong — preload chạy sau đó ở background.
+            // Trì hoãn 2s tránh cạnh tranh CPU/mạng/I/O với lúc MenuPage vừa khởi tạo (~950 file TTS).
+            await SplashPage.NavigateToMenu();
+
             _ = Task.Run(async () =>
             {
                 try
                 {
+                    await Task.Delay(2000);
+
+                    // Không cập nhật progress sau khi đã rời splash: tránh dispatch lên UI thread
+                    // của các control không còn hiển thị (churn trong suốt quá trình preload).
                     var progress = new Progress<int>(p =>
                     {
+                        if (progressStopped) return;
                         MainThread.BeginInvokeOnMainThread(() =>
                         {
                             try
                             {
+                                if (progressStopped) return;
                                 if (PreloadProgressBar != null) PreloadProgressBar.Progress = p / 100.0;
                                 if (ProgressLabel != null) ProgressLabel.Text = p < 100 ? $"Đang tải... {p}%" : "OK!";
                             }
@@ -61,9 +77,6 @@ private async Task InitializeSplashAsync()
                     System.Diagnostics.Debug.WriteLine($"[PreCache Error] {ex.Message}");
                 }
             });
-
-            // Navigate ngay lập tức — không chờ preload
-            await SplashPage.NavigateToMenu();
         }
 
     private static async Task NavigateToMenu()

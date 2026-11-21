@@ -66,11 +66,15 @@ public sealed class SelfHealingService : ISelfHealingService
     {
         try
         {
-            // Remove cached temp files that may cause repeated failures
+            // Chỉ xóa các file tạm chưa hoàn tất (do tải TTS bị ngắt) có thể gây lặp lỗi.
+            // Không xóa toàn bộ cache: giữ lại các file MP3 TTS hợp lệ đã tải (~950 file)
+            // để lần mở sau không phải tải lại từ đầu (tránh vòng lặp crash → xóa cache → load chậm).
             var cacheDir = FileSystem.CacheDirectory;
             if (Directory.Exists(cacheDir))
             {
-                foreach (var file in Directory.EnumerateFiles(cacheDir, "*", SearchOption.AllDirectories))
+                var tempFiles = Directory.EnumerateFiles(cacheDir, "*.part", SearchOption.AllDirectories)
+                    .Concat(Directory.EnumerateFiles(cacheDir, "*.tmp", SearchOption.AllDirectories));
+                foreach (var file in tempFiles)
                 {
                     try { File.Delete(file); } catch { }
                 }

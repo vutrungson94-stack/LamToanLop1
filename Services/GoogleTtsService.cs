@@ -144,14 +144,19 @@ namespace LamToanLop1.Services
                     var path = GetCachePath(name);
                     if (File.Exists(path)) return;
 
-                    // Thử tất cả nguồn TTS miễn phí theo thứ tự ưu tiên:
-                    // 1. Edge TTS → 2. Google TTS → 3. FPT AI → 4. Viettel AI
+                    // Thử các nguồn TTS miễn phí theo thứ tự ưu tiên:
+                    // 1. Edge TTS → 2. Google TTS → 3. Viettel AI
                     bool ok = await DownloadEdgeTts(name, path, cancellationToken);
                     if (!ok) ok = await DownloadGoogleTts(name, path, cancellationToken);
-                    if (!ok) ok = await DownloadFptAiTts(name, path, cancellationToken);
                     if (!ok) await DownloadViettelTts(name, path, cancellationToken);
                 }
-                finally { semaphore.Release(); progress?.Report(Interlocked.Increment(ref completed) * 100 / list.Count); }
+                finally
+                {
+                    semaphore.Release();
+                    // Chỉ báo tiến độ theo bước 5% để giảm dispatch lên UI thread (~20 lần thay vì ~950 lần)
+                    var percent = Interlocked.Increment(ref completed) * 100 / list.Count;
+                    if (percent % 5 == 0 || percent == 100) progress?.Report(percent);
+                }
             });
             await Task.WhenAll(tasks);
 
@@ -247,6 +252,8 @@ namespace LamToanLop1.Services
                 await MainThread.InvokeOnMainThreadAsync(() => {
                     preferredVoice = Preferences.Get("preferred_voice", "auto");
                 });
+                // Giọng FPT đã bị gỡ (họ ngừng API cá nhân) → pref cũ "fpt" dùng auto
+                if (preferredVoice == "fpt") preferredVoice = "auto";
 
                 if (!fileExists && hasInternet && preferredVoice != "android")
                 {
@@ -254,8 +261,8 @@ namespace LamToanLop1.Services
                     // Thử nguồn ưu tiên trước, sau đó fallback theo thứ tự
                     // 1. Edge TTS (48kHz/192kbps, neural, miễn phí)
                     // 2. Google TTS (24kHz/64kbps, miễn phí)
-                    // 3. FPT AI TTS (free tier, cần API key)
-                    // 4. Viettel AI TTS (free tier, cần API key)
+                    // 3. Viettel AI TTS (free tier, cần API key)
+                    // (FPT AI đã bị loại bỏ: họ ngừng cung cấp API cho tài khoản cá nhân)
 
                     // Nếu người dùng chọn cụ thể → thử nguồn đó trước
                     bool success = false;
@@ -268,10 +275,6 @@ namespace LamToanLop1.Services
                     {
                         success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
                     }
-                    if (!success && (preferredVoice == "fpt" || preferredVoice == "auto"))
-                    {
-                        success = await GoogleTtsService.DownloadFptAiTts(text, cachePath, token);
-                    }
                     if (!success && (preferredVoice == "viettel" || preferredVoice == "auto"))
                     {
                         success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
@@ -281,7 +284,6 @@ namespace LamToanLop1.Services
                     {
                         if (!success) { success = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token); if (success) usedEdgeTts = true; }
                         if (!success) success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
-                        if (!success) success = await GoogleTtsService.DownloadFptAiTts(text, cachePath, token);
                         if (!success) success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
                     }
                 }
@@ -445,62 +447,6 @@ namespace LamToanLop1.Services
 				try { File.Move(tmpPath, filePath, overwrite: true); } catch { try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { } return false; }
 					return true;
 				}
-			}
-			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
-			return false;
-		}
-
-		// --- FPT AI TTS (HTTP - FREE TIER, CẦN API KEY) ---
-		private static async Task<bool> DownloadFptAiTts(string text, string filePath, CancellationToken token)
-		{
-try
-			{
-				// Ưu tiên key từ Preferences (người dùng set qua app cài đặt)
-				// Nếu không có key → tự động skip, dùng Edge TTS/Google TTS
-				string apiKey = "";
-				await MainThread.InvokeOnMainThreadAsync(() => {
-					apiKey = Preferences.Get("fpt_ai_api_key", "");
-				});
-				if (string.IsNullOrWhiteSpace(apiKey)) return false;
-
-				var request = new HttpRequestMessage(HttpMethod.Post, "https://api.fpt.ai/hmi/tts/v5");
-				request.Headers.Add("api-key", apiKey); // FPT dùng "api-key" (có dấu gạch ngang), KHÔNG phải "api_key"
-				request.Headers.Add("voice", "banmai"); // Giọng nữ miền Bắc - cô giáo
-				request.Headers.Add("speed", "0");
-				request.Headers.Add("format", "mp3");
-				request.Content = new StringContent(text, System.Text.Encoding.UTF8, "text/plain");
-
-				var response = await _httpClient.SendAsync(request, token);
-				if (!response.IsSuccessStatusCode) return false;
-
-				var json = await response.Content.ReadAsStringAsync(token);
-				int asyncIdx = json.IndexOf("\"async\"", StringComparison.Ordinal);
-				if (asyncIdx < 0) return false;
-				int colonIdx = json.IndexOf(':', asyncIdx);
-				if (colonIdx < 0) return false;
-				int quoteStart = json.IndexOf('"', colonIdx + 1);
-				if (quoteStart < 0) return false;
-				int quoteEnd = json.IndexOf('"', quoteStart + 1);
-				if (quoteEnd < 0) return false;
-				string audioUrl = json.Substring(quoteStart + 1, quoteEnd - quoteStart - 1);
-				if (string.IsNullOrWhiteSpace(audioUrl)) return false;
-
-				await Task.Delay(2000, token);
-				var audioResponse = await _httpClient.GetAsync(audioUrl, token);
-				if (!audioResponse.IsSuccessStatusCode) return false;
-
-				var data = await audioResponse.Content.ReadAsByteArrayAsync(token);
-				if (data.Length < 1024) return false;
-
-				bool isMp3 = data.Length > 128
-					&& ((data[0] == 'I' && data[1] == 'D' && data[2] == '3')
-						|| (data[0] == 0xFF && (data[1] & 0xE0) == 0xE0));
-				if (!isMp3) return false;
-
-				var tmpPath = filePath + ".part";
-				await File.WriteAllBytesAsync(tmpPath, data, token);
-				try { File.Move(tmpPath, filePath, overwrite: true); } catch { try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { } return false; }
-				return true;
 			}
 			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
 			return false;
@@ -869,7 +815,8 @@ try
         }
 
         // ⭐ Phiên bản cache: đổi khi thay đổi giọng/SSML để ép tải lại giọng mới
-        // v8: thêm FPT AI TTS + Viettel AI TTS vào fallback chain
+        // v8: multi-source (Edge → Google → Viettel). Giữ nguyên version để không ép tải lại cache.
+        // (FPT AI đã bị loại bỏ vì ngừng cung cấp API cho tài khoản cá nhân.)
         private const string CACHE_VERSION = "v8-multi-source-tts";
 
         private static string GetCachePath(string text)

@@ -1,9 +1,16 @@
 # Changelog
 
+## [0.2.1] - 2026-11-21
+
+### Thay đổi
+- **Gỡ FPT AI TTS**: họ ngừng cung cấp API cho tài khoản cá nhân. Fallback giờ là Edge TTS → Google TTS → Viettel AI → Android TTS. Pref cũ `"fpt"` tự đổi về `"auto"`; giữ nguyên `CACHE_VERSION` để không ép tải lại cache.
+- **Tối ưu tốc độ load**: splash navigate sau 300ms, trì hoãn preload TTS 2s để MenuPage render trước; bỏ progress dispatch sau khi rời splash; giảm báo tiến độ theo bước 5%; `TryRecover` chỉ xóa file tạm `*.part`/`*.tmp` thay vì toàn bộ cache; sửa 3 tham chiếu ảnh `.png` → `.webp` trong GamePage.
+- **CI L5 enterprise**: thêm job `l5-gates` (6 gate: compile, secret scan, vulnerable packages, SBOM+policy, provenance, compliance) — mọi job build/release phải chờ gate xanh. Cấu hình nằm trong workflow, không thêm file config của tool vào project (các project độc lập, không chứa nhau).
+
 ## [0.2.0] - 2026-11-20
 
 ### Thêm mới
-- **TTS đa nguồn** (multi-source fallback): Edge TTS (48kHz/192kbps) → Google TTS (24kHz/64kbps) → FPT AI (cô giáo Ban Mai) → Viettel AI (cô giáo Quỳnh Anh) → Android TTS (thiết bị, miễn phí, offline)
+- **TTS đa nguồn** (multi-source fallback): Edge TTS (48kHz/192kbps) → Google TTS (24kHz/64kbps) → Viettel AI (cô giáo Quỳnh Anh) → Android TTS (thiết bị, miễn phí, offline)
 - **Nút "CHỌN GIỌNG ĐỌC"** trên MenuPage — action sheet 6 lựa chọn, lưu preference, phát thử
 - **Cache by ID** — SHA256 hash (text + version) = tên file cache. Mỗi câu hỏi có ID duy nhất
 - **Android TTS fallback** — miễn phí, không cần key, offline. Khách hàng chỉ việc dùng
@@ -15,8 +22,6 @@
 - SSML đơn giản hóa: bỏ prosody artificial (pitch/rate/volume) → giọng neural tự nhiên hơn
 - Cache version: v5 → v8 (v8-multi-source-tts)
 - PreCache song song: SemaphoreSlim(2) → SemaphoreSlim(4)
-- FPT AI header: `api_key` → `api-key` (theo sample code FPT)
-- Giọng FPT AI: `banmai` (cô giáo miền Bắc)
 - Giọng Viettel AI: `hn-quynhanh` (cô giáo miền Bắc)
 
 ### Sửa lỗi

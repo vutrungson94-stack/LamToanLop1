@@ -21,7 +21,7 @@
 | `Models/MathEngine.cs` | **Toàn bộ** logic sinh câu hỏi (section 4–6) + **Class game data `GameData` (section 1) — FROZEN** | Sửa đúng vùng được giao. Section 2/3 (interface, factory) chỉ đụng khi được yêu cầu rõ |
 | `Pages/GamePage.*` | Màn chơi chính (1000+ dòng) — ảnh load qua `GetImageSourceCachedAsync` | Đọc kỹ trước khi sửa |
 | `Pages/AnimalPage.*` | Trang khám phá động vật (AnimalImage 300dp) | Ảnh động vật hiện chính ở đây |
-| `Services/GoogleTtsService.cs` | TTS đa nguồn (Edge, Google, FPT AI, Viettel AI, Android TTS) + pre-cache + cache by ID (SHA256) | Thêm câu đọc mới → thêm vào `GameData.GetAllSpokenTexts()`; thêm nguồn TTS → thêm vào fallback chain |
+| `Services/GoogleTtsService.cs` | TTS đa nguồn (Edge, Google, Viettel AI, Android TTS) + pre-cache + cache by ID (SHA256) | Thêm câu đọc mới → thêm vào `GameData.GetAllSpokenTexts()`; thêm nguồn TTS → thêm vào fallback chain |
 
 
 | `Services/SelfHealingService.cs` | **L5 self-healing của app**: crash log + count + retry | Giữ; không tháo niềng |
@@ -126,12 +126,12 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
 - **Artifacts của tool không còn nằm trong project (từ 2026-11-15):** `.gbuildcache/` và `.gbuild-state.gbuildstate` không sinh trong project nữa — bản `_Build` trong `D:\HOC_TAP\backup\_Build` đã được sửa để đặt runtime data per-project vào thư mục tool tree: `.gbuildcache/<projectKey>` và `.gbuildstate/<projectKey>` (projectKey = tên thư mục + SHA256 của path tuyệt đối). Muốn quay về layout cũ: set `build.cacheDirectory` / `paths.stateDirectory` = `project` trong `gbuild.config.json` (constant BuildConstants `CacheDir` / `StateDirectory`).
 - **Emulator Pixel 8 (`Pixel8Launcher`):** audio đã được bật lại từ 2026-11-15 (trước đó `-no-audio` khiến mọi app trên emulator im — root cause của "toàn bộ project bị tắt tiếng"). Đừng khôi phục `-no-audio` nếu không được chủ project yêu cầu.
 - **Audio đã đo 2026-11-16:** emulator audio đi qua host (QEMU → WASAPI Windows), nên nghe "dè" trên emulator là vấn đề đường đi (resample giữa 48 kHz host ↔ stream), KHÔNG phải file MP3 hỏng hay app lỗi — Android side sạch: `dumpsys media.audio_flinger` → 48000 Hz, underrun `partial=0 empty=0`, audio track stop/release bình thường. Mẫu 25 file MP3 cache của app hợp lệ 100% (MPEG2 Layer III, 24 kHz, 64 kbps, frame-locked). Kỳ vọng: trên **điện thoại thật** lời đọc không bị kiểu "dè" này (AudioTrack thẳng, không qua host). Nếu vẫn dè trên máy thật → điều tra plugin `Plugin.Maui.Audio`/volume.
-- **TTS đa nguồn (2026-11-20):** 5 nguồn TTS theo thứ tự ưu tiên: Edge TTS (48kHz/192kbps) → Google TTS (24kHz/64kbps) → FPT AI (cô giáo Ban Mai, cần API key) → Viettel AI (cô giáo Quỳnh Anh, cần API key) → Android TTS (thiết bị, miễn phí, offline). Cache by ID (SHA256 hash text+version). Nút "CHỌN GIỌNG ĐỌC" trên MenuPage cho phép chọn giọng. Splash screen preload chạy background (500ms).
-- **FPT AI header:** dùng `api-key` (có dấu gạch ngang), KHÔNG phải `api_key`. Giọng: `banmai` (cô giáo miền Bắc). API key lưu trong Preferences "fpt_ai_api_key".
+- **TTS đa nguồn (cập nhật 2026-11-21):** 4 nguồn TTS theo thứ tự ưu tiên: Edge TTS (48kHz/192kbps) → Google TTS (24kHz/64kbps) → Viettel AI (cô giáo Quỳnh Anh, cần API key) → Android TTS (thiết bị, miễn phí, offline). Cache by ID (SHA256 hash text+version). Nút "CHỌN GIỌNG ĐỌC" trên MenuPage cho phép chọn giọng.
+- **FPT AI đã bị gỡ (2026-11-21):** họ ngừng cung cấp API cho tài khoản cá nhân. Không khôi phục nguồn này; pref cũ `"fpt"` được tự đổi về `"auto"`.
 - **Viettel AI voice:** `hn-quynhanh` (cô giáo miền Bắc). Token lưu trong Preferences "viettel_ai_api_key".
 - **Volume TTS:** Edge TTS → 0.6, các nguồn khác → 0.5 (giảm clipping). SoundService volume 0.75.
 - **SSML:** Đơn giản hóa — bỏ prosody artificial (pitch/rate/volume). Để neural voice tự xử lý intonation tự nhiên.
-- **Splash screen:** Preload TTS chạy background (fire-and-forget), app navigate ngay sau 500ms. Không chặn navigation.
+- **Splash screen:** app navigate sau 300ms; preload TTS chạy background sau đó 2s (fire-and-forget), không chặn navigation và không cập nhật progress sau khi rời splash. Không ép tải lại cache.
 - **Fast Deployment crash:** `dotnet build -t:Run` dùng Fast Deployment → crash khi launch thủ công. Dùng APK đầy đủ từ `bin/Release/net10.0-android/` hoặc gbuild Target 1 + `adb install`.
 - **Deploy của gbuild im lặng thất bại** (mục 3 bước 4): luôn kiểm `lastUpdateTime` — Target 1 có thể không cài gì.
 - **Launcher activity thật:** `com.vutrungson.lamtoanlop1/crc6445a82788cff09539.MainActivity` — **không phải** `.MainActivity` (báo `Error type 3 / Activity class does not exist`). Khôi phục tên đầy đủ: `& $adb -s emulator-5554 shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER com.vutrungson.lamtoanlop1`.

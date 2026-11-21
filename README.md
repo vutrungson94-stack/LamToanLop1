@@ -5,7 +5,7 @@
 ## Tính năng
 - Học toán: số, phép toán, sắp xếp số, so sánh
 - Khám phá động vật (73 con vật)
-- Giọng đọc TTS đa nguồn (Edge TTS, Google TTS, FPT AI, Viettel AI, Android TTS) với cache offline
+- Giọng đọc TTS đa nguồn (Edge TTS, Google TTS, Viettel AI, Android TTS) với cache offline
 - Chọn giọng đọc trên MenuPage
 - Preload TTS ở background — app mở nhanh
 
