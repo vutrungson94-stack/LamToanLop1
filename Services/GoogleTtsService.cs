@@ -198,15 +198,19 @@ namespace LamToanLop1.Services
                 await semaphore.WaitAsync(cancellationToken);
                 try
                 {
-                    var path = GetCachePath(name);
-                    if (File.Exists(path)) return;
+                    var path = GetCachePath(name);                 // giọng thật
+                    var fallback = GetCachePath(name, natural: false); // giọng máy (dự phòng)
+                    if (File.Exists(path)) return;                 // đã có giọng thật → không làm gì
 
-                    // Thử các nguồn TTS theo thứ tự ưu tiên:
-                    // 1. Edge TTS → 2. Google TTS → 3. Google Dịch (endpoint phụ) → 4. Viettel AI
+                    // Ưu tiên TUYỆT ĐỐI giọng tự nhiên: Edge (neural) → Viettel.
+                    // Chỉ khi cả 2 fail mới tải Google Dịch vào cache DỰ PHÒNG (không lẫn vào giọng thật).
                     bool ok = await DownloadEdgeTts(name, path, cancellationToken);
-                    if (!ok) ok = await DownloadGoogleTts(name, path, cancellationToken);
-                    if (!ok) ok = await DownloadGoogleTtsAlt(name, path, cancellationToken);
-                    if (!ok) await DownloadViettelTts(name, path, cancellationToken);
+                    if (!ok) ok = await DownloadViettelTts(name, path, cancellationToken);
+                    if (!ok && !File.Exists(fallback))
+                    {
+                        ok = await DownloadGoogleTts(name, fallback, cancellationToken);
+                        if (!ok) ok = await DownloadGoogleTtsAlt(name, fallback, cancellationToken);
+                    }
                 }
                 finally
                 {
@@ -219,7 +223,7 @@ namespace LamToanLop1.Services
             await Task.WhenAll(tasks);
 
             // Chỉ đánh dấu ready khi đủ file (thiếu file nào lần sau tải lại file đó)
-            bool allExist = list.All(x => File.Exists(GetCachePath(x)));
+            bool allExist = list.All(x => File.Exists(GetCachePath(x)) || File.Exists(GetCachePath(x, natural: false)));
             if (allExist)
             {
                 await MainThread.InvokeOnMainThreadAsync(() => {
@@ -294,17 +298,17 @@ namespace LamToanLop1.Services
 
 			try
 			{
-                // Chuẩn bị file (Tải nếu chưa có / nếu file cache bị hỏng)
+                // Cache giọng thật (Edge/Viettel) được ƯU TIÊN; cache giọng máy chỉ là dự phòng.
                 var cachePath = GetCachePath(text);
+                var fallbackPath = GetCachePath(text, natural: false);
+                bool naturalExists = await Task.Run(() => IsValidCachedMp3(cachePath));
+                bool fallbackExists = !naturalExists && await Task.Run(() => IsValidCachedMp3(fallbackPath));
+                if (!naturalExists && File.Exists(cachePath))
+                    try { File.Delete(cachePath); } catch { }
+                if (!fallbackExists && File.Exists(fallbackPath))
+                    try { File.Delete(fallbackPath); } catch { }
 
-                // Chỉ quét file cache MỘT lần. Các hàm download bên dưới đã tự kiểm tra
-                // MP3 hợp lệ trước khi ghi vào cache, nên không cần quét lại lần 2.
-                bool fileExists = await Task.Run(() => IsValidCachedMp3(cachePath));
-                bool canPlayCache = fileExists;
-                if (!fileExists && File.Exists(cachePath))
-                {
-                    try { File.Delete(cachePath); } catch { /* bỏ file cache hỏng để tải lại */ }
-                }
+                string? playPath = naturalExists ? cachePath : (fallbackExists ? fallbackPath : null);
 
                 bool hasInternet = false;
                 try { hasInternet = Connectivity.Current.NetworkAccess == NetworkAccess.Internet; } catch { hasInternet = false; }
@@ -316,65 +320,44 @@ namespace LamToanLop1.Services
                 // Giọng FPT đã bị gỡ (họ ngừng API cá nhân) → pref cũ "fpt" dùng auto
                 if (preferredVoice == "fpt") preferredVoice = "auto";
 
-                if (!fileExists && hasInternet && preferredVoice != "android")
+                if (playPath == null && hasInternet && preferredVoice != "android")
                 {
-
-                    // Thử nguồn ưu tiên trước, sau đó fallback theo thứ tự
-                    // 1. Edge TTS (48kHz/192kbps, neural, miễn phí)
-                    // 2. Google TTS (24kHz/64kbps, miễn phí)
-                    // 3. Google Dịch — endpoint phụ (translate.googleapis.com, client=gtx)
-                    // 4. Viettel AI TTS (token nhúng sẵn)
-                    // (FPT/Azure/Google Cloud đã bị gỡ: API trả phí hoặc thẻ bị từ chối;
-                    //  các nguồn còn lại đều miễn phí, không cần key, không cần thẻ)
-
-                    // Nếu người dùng chọn cụ thể → thử nguồn đó trước
+                    // ƯU TIÊN GIỌNG THẬT: 1. Edge neural → 2. Viettel → mới tới Google Dịch.
+                    // (FPT/Azure/Google Cloud đã gỡ: trả phí hoặc thẻ bị từ chối.)
                     bool success = false;
                     if (preferredVoice == "edge" || preferredVoice == "auto")
                     {
-                        success = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token);
+                        success = await DownloadEdgeTts(text, cachePath, token);
                         if (success) usedEdgeTts = true;
                     }
-                    if (!success && (preferredVoice == "google" || preferredVoice == "auto"))
-                    {
-                        success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
-                    }
-                    if (!success && preferredVoice == "auto")
-                    {
-                        success = await GoogleTtsService.DownloadGoogleTtsAlt(text, cachePath, token);
-                    }
                     if (!success && (preferredVoice == "viettel" || preferredVoice == "auto"))
-                    {
-                        success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
-                    }
-                    // Nếu chọn cụ thể mà fail → fallback về auto (thử tất cả còn lại)
+                        success = await DownloadViettelTts(text, cachePath, token);
+                    if (!success && (preferredVoice == "google" || preferredVoice == "auto"))
+                        success = await DownloadGoogleTts(text, fallbackPath, token);
+                    if (!success && preferredVoice == "auto")
+                        success = await DownloadGoogleTtsAlt(text, fallbackPath, token);
+                    // Chọn cụ thể mà fail → thử nguồn thật trước, giọng máy chỉ ở cuối
                     if (!success && preferredVoice != "auto")
                     {
-                        if (!success) { success = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token); if (success) usedEdgeTts = true; }
-                        if (!success) success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
-                        if (!success) success = await GoogleTtsService.DownloadGoogleTtsAlt(text, cachePath, token);
-                        if (!success) success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
+                        if (!success) { success = await DownloadEdgeTts(text, cachePath, token); if (success) usedEdgeTts = true; }
+                        if (!success) success = await DownloadViettelTts(text, cachePath, token);
+                        if (!success) success = await DownloadGoogleTts(text, fallbackPath, token);
+                        if (!success) success = await DownloadGoogleTtsAlt(text, fallbackPath, token);
                     }
-                    // Download thành công ⇒ file đã hợp lệ (được validate trước khi ghi cache).
-                    if (success) canPlayCache = true;
+                    if (success) playPath = File.Exists(cachePath) ? cachePath : fallbackPath;
                 }
-                else if (fileExists)
+                else if (playPath == cachePath)
                 {
-                    // File cache tồn tại — ước lượng nguồn TTS dựa vào kích thước file
-                    // Edge TTS: 48kHz/192kbps (lớn), Google TTS: 24kHz/64kbps (nhỏ)
-                    try
-                    {
-                        var fi = new FileInfo(cachePath);
-                        usedEdgeTts = fi.Length > 8192;
-                    }
+                    // Cache giọng thật: ước lượng nguồn theo kích thước (Edge 48k lớn hơn Viettel)
+                    try { usedEdgeTts = new FileInfo(cachePath).Length > 8192; }
                     catch { usedEdgeTts = false; }
                 }
 
-                // Phát từ cache đã được xác thực ở đầu (hoặc vừa tải thành công)
-                if (canPlayCache && !token.IsCancellationRequested)
+                // Phát file giọng thật nếu có; chỉ dùng giọng máy khi hết cách.
+                if (playPath != null && !token.IsCancellationRequested)
                 {
-                    // Volume theo nguồn TTS: Google TTS (chất lượng thấp) → 0.5, Edge TTS (chất lượng cao) → 0.6
                     float ttsVolume = usedEdgeTts ? 0.6f : 0.5f;
-                    await PlayFile(cachePath, token, ttsVolume);
+                    await PlayFile(playPath, token, ttsVolume);
                 }
                 else
                 {
@@ -934,13 +917,15 @@ namespace LamToanLop1.Services
         }
 
         // ⭐ Phiên bản cache: đổi khi thay đổi giọng/SSML để ép tải lại giọng mới
-        // v8: multi-source (Edge → Google → Viettel). Giữ nguyên version để không ép tải lại cache.
-        // (FPT AI đã bị loại bỏ vì ngừng cung cấp API cho tài khoản cá nhân.)
-        private const string CACHE_VERSION = "v8-multi-source-tts";
+        // v9: tách cache theo CHẤT LƯỢNG GIỌNG — cache giọng thật (Edge/Viettel) không bị
+        // lẫn với cache giọng máy (Google Dịch). Đổi version để ép tải lại sạch, tránh
+        // dùng mãi các file giọng robot đã cache từ bản v8.
+        private const string CACHE_VERSION = "v9-natural-voice";
 
-        private static string GetCachePath(string text)
+        // natural=true  → <hash>.mp3    (Edge/Viettel — giọng neural tự nhiên)
+        // natural=false → <hash>_fb.mp3 (Google Dịch — chỉ dùng khi các nguồn thật fail)
+        private static string GetCachePath(string text, bool natural = true)
 		{
-			// Tạo tên file từ nội dung text + version để cache lại - fallback nếu CacheDirectory null (máy cũ chưa init)
 			var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(CACHE_VERSION + "|" + text)));
 			var cacheDir = FileSystem.CacheDirectory;
 			if (string.IsNullOrEmpty(cacheDir))
@@ -948,7 +933,7 @@ namespace LamToanLop1.Services
 				try { cacheDir = Path.GetTempPath(); } catch { cacheDir = "/tmp"; }
 				try { Directory.CreateDirectory(cacheDir); } catch { }
 			}
-			return Path.Combine(cacheDir, $"{hash}.mp3");
+			return Path.Combine(cacheDir, natural ? $"{hash}.mp3" : $"{hash}_fb.mp3");
 		}
 
         public void Stop()

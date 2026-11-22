@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-11-22
+
+### Thay đổi
+- **Ưu tiên giọng thật, không robot**: thứ tự fallback đổi thành Edge TTS (neural) → Viettel AI → Google Dịch (chỉ dự phòng) → Android TTS. Cache tách thành `<hash>.mp3` (giọng thật) và `<hash>_fb.mp3` (giọng máy) — cache giọng máy không chặn việc tải lại giọng thật. `CACHE_VERSION` v8 → `v9-natural-voice` để xóa cache giọng robot cũ.
+- **Gỡ Azure và Google Cloud TTS**: Azure từ chối free account nhưng authorize ~1 USD thẻ; Google Cloud yêu cầu billing nhưng thẻ nội địa bị từ chối. Thay bằng endpoint phụ của Google Dịch (`translate.googleapis.com?client=gtx`, không key/thẻ, đã kiểm chứng trả MP3 thật).
+- **Không cần cấu hình trên máy khách**: token Viettel nhúng sẵn (`VIETTEL_EMBEDDED_KEY`), bỏ ô nhập key. `AGENTS.md` mục 3.1 ghi nhận hardcode được chấp nhận; gate L5 không nới.
+
 ## [0.2.1] - 2026-11-21
 
 ### Thay đổi
