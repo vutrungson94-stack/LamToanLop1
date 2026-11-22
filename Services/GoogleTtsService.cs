@@ -356,7 +356,7 @@ namespace LamToanLop1.Services
                 // Phát file giọng thật nếu có; chỉ dùng giọng máy khi hết cách.
                 if (playPath != null && !token.IsCancellationRequested)
                 {
-                    float ttsVolume = usedEdgeTts ? 0.6f : 0.5f;
+                    float ttsVolume = usedEdgeTts ? 0.5f : 0.45f;
                     await PlayFile(playPath, token, ttsVolume);
                 }
                 else

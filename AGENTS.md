@@ -136,7 +136,7 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
 - **Azure / Google Cloud đã gỡ bỏ (2026-11-22):** Azure từ chối free account nhưng authorize ~1 USD thẻ; Google Cloud yêu cầu billing mà thẻ nội địa bị từ chối. **Không thêm lại** các nguồn cần thẻ/key — máy khách chỉ cài là dùng.
 - **FPT AI đã bị gỡ (2026-11-21):** họ ngừng cung cấp API cho tài khoản cá nhân. Không khôi phục nguồn này; pref cũ `"fpt"` được tự đổi về `"auto"`.
 - **Viettel AI voice:** `hn-quynhanh` (cô giáo miền Bắc). Token nhúng sẵn `VIETTEL_EMBEDDED_KEY` → máy khách không nhập gì (Preferences "viettel_ai_api_key" chỉ dùng để override).
-- **Volume TTS:** Edge TTS → 0.6, các nguồn khác → 0.5 (giảm clipping). SoundService volume 0.75.
+- **Volume TTS (giảm 2026-11-22 để hạn chế tiếng dè trên emulator):** Edge TTS → 0.5, các nguồn khác → 0.45. SoundService volume 0.7. ⚠️ Tiếng "dè" trên emulator chủ yếu do đường audio host (QEMU → WASAPI) resample 48 kHz — không phải lỗi file; phải **ghi âm trên máy thật** để đánh giá đúng (xem mục 6).
 - **SSML:** Đơn giản hóa — bỏ prosody artificial (pitch/rate/volume). Để neural voice tự xử lý intonation tự nhiên.
 - **Splash screen:** app navigate sau 300ms; preload TTS chạy background sau đó 2s (fire-and-forget), không chặn navigation và không cập nhật progress sau khi rời splash. Lần đầu sau khi đổi `CACHE_VERSION` sẽ tải lại cache (để đổi sang giọng thật) — đây là ngoại lệ có chủ đích, sau đó preload bỏ qua file đã có.
 - **Fast Deployment crash:** `dotnet build -t:Run` dùng Fast Deployment → crash khi launch thủ công. Dùng APK đầy đủ từ `bin/Release/net10.0-android/` hoặc gbuild Target 1 + `adb install`.

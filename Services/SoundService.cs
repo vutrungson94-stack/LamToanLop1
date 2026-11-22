@@ -43,7 +43,7 @@ namespace LamToanLop1.Services
                 // Plugin.Maui.Audio yêu cầu CreatePlayer trên MainThread (API 21) - hiệu ứng nhỏ hơn giọng đọc
                 player = await MainThread.InvokeOnMainThreadAsync(() => _audioManager.CreatePlayer(stream));
                 if (player == null) { try { stream.Dispose(); } catch { } return; }
-                try { player.Volume = 0.75; } catch { }
+                try { player.Volume = 0.7; } catch { }
 
                 lock (_lock) _active.Add((player, stream!));
 
