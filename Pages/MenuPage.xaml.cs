@@ -33,8 +33,8 @@ public partial class MenuPage : ContentPage
         {
             "🤖 Tự động (tốt nhất)",
             "Edge TTS (HoaiMy - Neural)",
-            "Google TTS (miễn phí)",
             "Viettel AI (cô giáo Quỳnh Anh)",
+            "Google TTS (miễn phí)",
             "Android TTS (thiết bị)"
         };
 
@@ -45,8 +45,8 @@ public partial class MenuPage : ContentPage
         {
             "🤖 Tự động (tốt nhất)" => "auto",
             "Edge TTS (HoaiMy - Neural)" => "edge",
-            "Google TTS (miễn phí)" => "google",
             "Viettel AI (cô giáo Quỳnh Anh)" => "viettel",
+            "Google TTS (miễn phí)" => "google",
             "Android TTS (thiết bị)" => "android",
             _ => "auto"
         };
