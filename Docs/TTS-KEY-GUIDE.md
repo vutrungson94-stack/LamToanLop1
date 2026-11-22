@@ -9,10 +9,9 @@
 | **Edge TTS** (ưu tiên, neural 48 kHz) | ❌ Không cần | Dùng endpoint nội bộ `speech.platform.bing.com` + token browser công khai có sẵn trong code | Không giới hạn rõ ràng | — |
 | **Google Dịch** (`translate.google.com/translate_tts?client=tw-ob`) | ❌ Không cần | Endpoint nội bộ của Google Translate | ~200 ký tự/request | — |
 | **Viettel AI / VTCC.AI** (`hn-quynhanh`) | ✅ Token | Đăng ký tại `https://viettelai.vn` → đăng nhập → menu **Token** → copy token | **50.000 ký tự/tháng** (1 tháng đầu), không cần thẻ | `viettel_ai_api_key` |
-| **Google Cloud TTS** (`vi-VN-Neural2-A`) | ✅ API key | `https://console.cloud.google.com` → tạo project → **Enable API "Cloud Text-to-Speech"** → **Credentials → Create API key** | **1 triệu ký tự/tháng** (Neural2), **bắt buộc bật billing** (cần thẻ; có $300 credit cho tài khoản mới) | `google_tts_api_key` |
+| **Google Dịch — endpoint phụ** | ❌ Không cần | `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=vi&q=...` — dùng khi endpoint chính bị chặn/429 | ~200 ký tự/request | — |
 
-> ⚠️ Google Cloud tự bỏ qua nếu key trống — app vẫn chạy bình thường qua Edge/Google Dịch/Viettel/Android.
-> **Azure đã bị gỡ bỏ (2026-11-22):** đăng ký free account bị từ chối nhưng thẻ bị authorize ~1 USD. Không dùng Azure nữa.
+> ⚠️ **Azure và Google Cloud đã bị gỡ bỏ (2026-11-22):** Azure từ chối free account nhưng authorize ~1 USD thẻ; Google Cloud yêu cầu billing mà thẻ nội địa bị từ chối. App chỉ dùng các nguồn **không cần key, không cần thẻ**.
 
 ### Về key trong app
 Theo `AGENTS.md` mục 3.1, máy khách **không nhập/cấu hình gì**: token Viettel được nhúng sẵn (`VIETTEL_EMBEDDED_KEY`), app chạy ngay sau khi build. Không có màn hình Settings nhập key.
@@ -39,5 +38,5 @@ Theo `AGENTS.md` mục 3.1, máy khách **không nhập/cấu hình gì**: token
 
 ## 3. Kết luận
 - **Free thật + tự nhiên + dùng ngay:** Edge TTS → Google Dịch → Viettel AI → Android TTS (đã có trong app, không cần key mới).
-- **Tùy chọn nếu bạn có key free-tier:** Google Cloud TTS. (**Azure đã gỡ:** free account bị từ chối + phát sinh phí xác minh thẻ.)
+- **Đã thử nhưng gỡ bỏ:** Azure (từ chối free account + authorize thẻ) và Google Cloud (yêu cầu billing, thẻ nội địa bị từ chối) — xem NOTE ở đầu file. Không nên quay lại các nguồn này.
 - Không nên tích hợp các nguồn trả phí hoặc app tiêu dùng vào app học toán lớp 1.

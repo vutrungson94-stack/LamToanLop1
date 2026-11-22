@@ -42,9 +42,6 @@ namespace LamToanLop1.Services
         // để máy khách chỉ việc dùng sau khi build, không phải nhập/cấu hình gì.
         private const string VIETTEL_EMBEDDED_KEY = "f4a6505064c70eb599c69b69b977b13a";
 
-        // Nguồn tùy chọn (free-tier nhưng cần key): tự bỏ qua nếu người dùng chưa nhập key.
-        private const string PREF_GOOGLE_TTS_KEY = "google_tts_api_key";
-
         // Hộp thoại chúc mừng hiển thị "GIỎI QUÁ!" + "Bé làm tốt lắm!" - đọc đúng nội dung hộp thoại
         public const string PRAISE_PHRASE = "Giỏi quá! Bé làm tốt lắm!";
         public const string WRONG_PHRASE = "Chưa đúng rồi, bé thử lại nhé!";
@@ -205,12 +202,11 @@ namespace LamToanLop1.Services
                     if (File.Exists(path)) return;
 
                     // Thử các nguồn TTS theo thứ tự ưu tiên:
-                    // 1. Edge TTS → 2. Google TTS → 3. Viettel AI → 4. Google Cloud
-                    // (Google Cloud tự bỏ qua nếu chưa có key free-tier)
+                    // 1. Edge TTS → 2. Google TTS → 3. Google Dịch (endpoint phụ) → 4. Viettel AI
                     bool ok = await DownloadEdgeTts(name, path, cancellationToken);
                     if (!ok) ok = await DownloadGoogleTts(name, path, cancellationToken);
-                    if (!ok) ok = await DownloadViettelTts(name, path, cancellationToken);
-                    if (!ok) await DownloadGoogleCloudTts(name, path, cancellationToken);
+                    if (!ok) ok = await DownloadGoogleTtsAlt(name, path, cancellationToken);
+                    if (!ok) await DownloadViettelTts(name, path, cancellationToken);
                 }
                 finally
                 {
@@ -326,10 +322,10 @@ namespace LamToanLop1.Services
                     // Thử nguồn ưu tiên trước, sau đó fallback theo thứ tự
                     // 1. Edge TTS (48kHz/192kbps, neural, miễn phí)
                     // 2. Google TTS (24kHz/64kbps, miễn phí)
-                    // 3. Viettel AI TTS (token nhúng sẵn)
-                    // 4. Google Cloud TTS (tùy chọn, cần key — tự bỏ qua nếu trống)
-                    // (FPT AI đã bị loại bỏ: họ ngừng cung cấp API cho tài khoản cá nhân;
-                    //  Azure đã bị gỡ: free account bị từ chối và phát sinh phí xác minh thẻ)
+                    // 3. Google Dịch — endpoint phụ (translate.googleapis.com, client=gtx)
+                    // 4. Viettel AI TTS (token nhúng sẵn)
+                    // (FPT/Azure/Google Cloud đã bị gỡ: API trả phí hoặc thẻ bị từ chối;
+                    //  các nguồn còn lại đều miễn phí, không cần key, không cần thẻ)
 
                     // Nếu người dùng chọn cụ thể → thử nguồn đó trước
                     bool success = false;
@@ -342,21 +338,21 @@ namespace LamToanLop1.Services
                     {
                         success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
                     }
+                    if (!success && preferredVoice == "auto")
+                    {
+                        success = await GoogleTtsService.DownloadGoogleTtsAlt(text, cachePath, token);
+                    }
                     if (!success && (preferredVoice == "viettel" || preferredVoice == "auto"))
                     {
                         success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
-                    }
-                    if (!success && preferredVoice == "auto")
-                    {
-                        success = await GoogleTtsService.DownloadGoogleCloudTts(text, cachePath, token);
                     }
                     // Nếu chọn cụ thể mà fail → fallback về auto (thử tất cả còn lại)
                     if (!success && preferredVoice != "auto")
                     {
                         if (!success) { success = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token); if (success) usedEdgeTts = true; }
                         if (!success) success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
+                        if (!success) success = await GoogleTtsService.DownloadGoogleTtsAlt(text, cachePath, token);
                         if (!success) success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
-                        if (!success) success = await GoogleTtsService.DownloadGoogleCloudTts(text, cachePath, token);
                     }
                     // Download thành công ⇒ file đã hợp lệ (được validate trước khi ghi cache).
                     if (success) canPlayCache = true;
@@ -573,31 +569,17 @@ namespace LamToanLop1.Services
 			return false;
 		}
 
-		// --- GOOGLE CLOUD TTS (free tier ~1M ký tự/tháng, cần key; tự bỏ qua nếu trống) ---
-		private static async Task<bool> DownloadGoogleCloudTts(string text, string filePath, CancellationToken token)
+		// --- GOOGLE DỊCH — ENDPOINT PHỤ (translate.googleapis.com, client=gtx) ---
+		// Miễn phí, KHÔNG cần key/thẻ. Dùng khi endpoint translate.google.com bị chặn/429.
+		// Đã kiểm chứng trả MP3 thật (magic FF F3 84), cùng giọng với Google Dịch.
+		private static async Task<bool> DownloadGoogleTtsAlt(string text, string filePath, CancellationToken token)
 		{
-			string key = "";
-			await MainThread.InvokeOnMainThreadAsync(() => {
-				key = Preferences.Get(PREF_GOOGLE_TTS_KEY, "");
-			});
-			if (string.IsNullOrWhiteSpace(key)) return false;
 			try
 			{
-				var payload = new {
-					input = new { text },
-					voice = new { languageCode = "vi-VN", name = "vi-VN-Neural2-A" },
-					audioConfig = new { audioEncoding = "MP3" }
-				};
-				var json = System.Text.Json.JsonSerializer.Serialize(payload);
-				using var request = new HttpRequestMessage(HttpMethod.Post, "https://texttospeech.googleapis.com/v1/text:synthesize");
-				request.Headers.TryAddWithoutValidation("X-Goog-Api-Key", key);
-				request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-				var response = await _httpClient.SendAsync(request, token);
+				var url = $"https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=vi&q={System.Net.WebUtility.UrlEncode(text)}";
+				var response = await _httpClient.GetAsync(url, token);
 				if (!response.IsSuccessStatusCode) return false;
-				var raw = await response.Content.ReadAsStringAsync(token);
-				using var doc = System.Text.Json.JsonDocument.Parse(raw);
-				if (!doc.RootElement.TryGetProperty("audioContent", out var node)) return false;
-				var data = Convert.FromBase64String(node.GetString() ?? "");
+				var data = await response.Content.ReadAsByteArrayAsync(token);
 				return await SaveMp3CacheAsync(data, filePath, token);
 			}
 			catch { RemovePartFile(filePath); return false; }
