@@ -38,6 +38,10 @@ namespace LamToanLop1.Services
         private const string PREF_NUMBER_CACHE_READY = "number_voice_cache_ready";
         private const string PREF_GAME_CACHE_READY = "game_voice_cache_ready";
 
+        // Hardcode được chấp nhận (xem AGENTS.md mục 3): token dùng chung cho mọi bản cài,
+        // để máy khách chỉ việc dùng sau khi build, không phải nhập/cấu hình gì.
+        private const string VIETTEL_EMBEDDED_KEY = "f4a6505064c70eb599c69b69b977b13a";
+
         // Nguồn tùy chọn (free-tier nhưng cần key): tự bỏ qua nếu người dùng chưa nhập key.
         private const string PREF_AZURE_SPEECH_KEY = "azure_speech_key";
         private const string PREF_AZURE_SPEECH_REGION = "azure_speech_region";
@@ -533,7 +537,7 @@ namespace LamToanLop1.Services
 			{
 				string apiKey = "";
 				await MainThread.InvokeOnMainThreadAsync(() => {
-					apiKey = Preferences.Get("viettel_ai_api_key", "");
+					apiKey = Preferences.Get("viettel_ai_api_key", VIETTEL_EMBEDDED_KEY);
 				});
 				if (string.IsNullOrWhiteSpace(apiKey)) return false;
 

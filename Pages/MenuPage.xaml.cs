@@ -53,30 +53,10 @@ public partial class MenuPage : ContentPage
 
         Preferences.Set("preferred_voice", pref);
 
-        // Nguồn cần token: nhắc nhập lần đầu, lưu vào Preferences để GoogleTtsService đọc.
-        if (pref == "viettel")
-            await EnsureApiKeyAsync("viettel_ai_api_key", "Viettel AI",
-                "Dán token lấy tại viettelai.vn/dashboard/token");
-
-        // Phát thử giọng đã chọn
+        // Không yêu cầu người dùng nhập key: token Viettel đã được nhúng sẵn trong
+        // GoogleTtsService (xem VIETTEL_EMBEDDED_KEY). Máy khách chỉ việc dùng.
         string testText = "Xin chào! Bé làm toán vui lắm!";
         await _tts.SpeakAsync(testText);
-    }
-
-    // Nhập key/token ngay trên app (Preferences không sửa tay được vì APK release không debuggable).
-    private async Task EnsureApiKeyAsync(string prefKey, string label, string hint)
-    {
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(Preferences.Get(prefKey, ""))) return;
-            var value = await DisplayPromptAsync(label, hint, "Lưu", "Hủy");
-            if (!string.IsNullOrWhiteSpace(value))
-                Preferences.Set(prefKey, value.Trim());
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[KeyInput] {ex.Message}");
-        }
     }
 
     private void ApplyResponsive()

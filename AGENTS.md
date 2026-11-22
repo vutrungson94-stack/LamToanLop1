@@ -111,6 +111,12 @@ PHÂN TÍCH → SỬA NHỎ NHẤT → _Tests (ALL PASS) → _Build (L5 xanh) �
    - **Kiểm tra chất lượng âm thanh:** sau khi cài xong, mở app vào màn có giọng đọc (số/con vật/câu hỏi), người dùng **ghi âm chất lượng âm thanh bằng phần mềm máy tính** (ví dụ Audacity) khi lắng nghe trên emulator/máy thật, và so sánh trước/sau khi giảm volume TTS (`GoogleTtsService.cs` 0.9 → 0.75). AI CLI không có thiết bị âm thanh vật lý nên không tự thực hiện bước ghi âm này.
 7. **BÁO CÁO:** `git status --short`/`git diff --stat`, kết quả `_Tests` + `_Build` (kèm đường dẫn APK + gate nào đỏ nếu có) + kết quả `_Sync` (commit/push OK hay lỗi gì) + screenshot verify. **Không báo "xong" khi chưa qua đủ bước 3→5.**
 
+### 3.1 Hardcode được chấp nhận (quy định 2026-11-22)
+- **Máy khách chỉ việc dùng**: APK sau khi build phải chạy ngay, **không bắt người dùng nhập key/token/cấu hình gì**. Vì vậy các giá trị không thể loại bỏ được phép hardcode trong source.
+- Trường hợp hiện tại: `VIETTEL_EMBEDDED_KEY` trong `Services/GoogleTtsService.cs` — token dùng chung, nhúng sẵn để mọi bản cài đều đọc được giọng Viettel. Ghi rõ lý do ngay tại chỗ khai báo.
+- Gate L5 **không bị nới**: secret scan vẫn chạy đủ. Nếu scanner báo finding cho hardcode đã được chấp nhận, xử lý bằng **exception có tên + lý do cụ thể** trong cấu hình scan, **không** đổi policy thành `warn|skip` và không tắt gate.
+- Không lạm dụng: chỉ các giá trị thực sự cần thiết để app chạy ngay mới được hardcode; mọi secret khác vẫn phải dùng `${env:…}`/Preferences.
+
 ## 4. Thủ tục thay/nén ảnh con vật (trạng thái hiện tại sau 2026-11-15)
 
 - **Nguồn sự thật:** `D:\HOC_TAP\Android\HinhAnh\LamToanLop1\cac con vat\images cute\cute_*.svg` (73 file) — mỗi SVG **bọc một PNG base64** (không có path vector).
