@@ -43,8 +43,6 @@ namespace LamToanLop1.Services
         private const string VIETTEL_EMBEDDED_KEY = "f4a6505064c70eb599c69b69b977b13a";
 
         // Nguồn tùy chọn (free-tier nhưng cần key): tự bỏ qua nếu người dùng chưa nhập key.
-        private const string PREF_AZURE_SPEECH_KEY = "azure_speech_key";
-        private const string PREF_AZURE_SPEECH_REGION = "azure_speech_region";
         private const string PREF_GOOGLE_TTS_KEY = "google_tts_api_key";
 
         // Hộp thoại chúc mừng hiển thị "GIỎI QUÁ!" + "Bé làm tốt lắm!" - đọc đúng nội dung hộp thoại
@@ -207,12 +205,11 @@ namespace LamToanLop1.Services
                     if (File.Exists(path)) return;
 
                     // Thử các nguồn TTS theo thứ tự ưu tiên:
-                    // 1. Edge TTS → 2. Google TTS → 3. Viettel AI → 4. Azure → 5. Google Cloud
-                    // (Azure/Google Cloud tự bỏ qua nếu chưa có key free-tier)
+                    // 1. Edge TTS → 2. Google TTS → 3. Viettel AI → 4. Google Cloud
+                    // (Google Cloud tự bỏ qua nếu chưa có key free-tier)
                     bool ok = await DownloadEdgeTts(name, path, cancellationToken);
                     if (!ok) ok = await DownloadGoogleTts(name, path, cancellationToken);
                     if (!ok) ok = await DownloadViettelTts(name, path, cancellationToken);
-                    if (!ok) ok = await DownloadAzureTts(name, path, cancellationToken);
                     if (!ok) await DownloadGoogleCloudTts(name, path, cancellationToken);
                 }
                 finally
@@ -329,9 +326,10 @@ namespace LamToanLop1.Services
                     // Thử nguồn ưu tiên trước, sau đó fallback theo thứ tự
                     // 1. Edge TTS (48kHz/192kbps, neural, miễn phí)
                     // 2. Google TTS (24kHz/64kbps, miễn phí)
-                    // 3. Viettel AI TTS (free tier, cần token)
-                    // 4. Azure AI Speech F0 + 5. Google Cloud TTS (free tier, cần key — tự bỏ qua nếu trống)
-                    // (FPT AI đã bị loại bỏ: họ ngừng cung cấp API cho tài khoản cá nhân)
+                    // 3. Viettel AI TTS (token nhúng sẵn)
+                    // 4. Google Cloud TTS (tùy chọn, cần key — tự bỏ qua nếu trống)
+                    // (FPT AI đã bị loại bỏ: họ ngừng cung cấp API cho tài khoản cá nhân;
+                    //  Azure đã bị gỡ: free account bị từ chối và phát sinh phí xác minh thẻ)
 
                     // Nếu người dùng chọn cụ thể → thử nguồn đó trước
                     bool success = false;
@@ -350,8 +348,7 @@ namespace LamToanLop1.Services
                     }
                     if (!success && preferredVoice == "auto")
                     {
-                        success = await GoogleTtsService.DownloadAzureTts(text, cachePath, token);
-                        if (!success) success = await GoogleTtsService.DownloadGoogleCloudTts(text, cachePath, token);
+                        success = await GoogleTtsService.DownloadGoogleCloudTts(text, cachePath, token);
                     }
                     // Nếu chọn cụ thể mà fail → fallback về auto (thử tất cả còn lại)
                     if (!success && preferredVoice != "auto")
@@ -359,7 +356,6 @@ namespace LamToanLop1.Services
                         if (!success) { success = await GoogleTtsService.DownloadEdgeTts(text, cachePath, token); if (success) usedEdgeTts = true; }
                         if (!success) success = await GoogleTtsService.DownloadGoogleTts(text, cachePath, token);
                         if (!success) success = await GoogleTtsService.DownloadViettelTts(text, cachePath, token);
-                        if (!success) success = await GoogleTtsService.DownloadAzureTts(text, cachePath, token);
                         if (!success) success = await GoogleTtsService.DownloadGoogleCloudTts(text, cachePath, token);
                     }
                     // Download thành công ⇒ file đã hợp lệ (được validate trước khi ghi cache).
@@ -575,32 +571,6 @@ namespace LamToanLop1.Services
 			}
 			catch { try { var leftoverPart = filePath + ".part"; if (File.Exists(leftoverPart)) File.Delete(leftoverPart); } catch { } }
 			return false;
-		}
-
-		// --- AZURE AI SPEECH F0 (free tier, cần key + region; tự bỏ qua nếu trống) ---
-		private static async Task<bool> DownloadAzureTts(string text, string filePath, CancellationToken token)
-		{
-			string key = "", region = "";
-			await MainThread.InvokeOnMainThreadAsync(() => {
-				key = Preferences.Get(PREF_AZURE_SPEECH_KEY, "");
-				region = Preferences.Get(PREF_AZURE_SPEECH_REGION, "eastase");
-			});
-			if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(region)) return false;
-			try
-			{
-				// Giọng neural tự nhiên, hợp đọc câu toán lớp 1 (SSML giữ nguyên dấu tiếng Việt).
-				var ssml = $"<speak version='1.0' xml:lang='vi-VN'><voice name='vi-VN-HoaiMyNeural'>{System.Net.WebUtility.HtmlEncode(text)}</voice></speak>";
-				using var request = new HttpRequestMessage(HttpMethod.Post, $"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1");
-				request.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", key);
-				var body = new StringContent(ssml, System.Text.Encoding.UTF8);
-				body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/ssml+xml");
-				request.Content = body;
-				var response = await _httpClient.SendAsync(request, token);
-				if (!response.IsSuccessStatusCode) return false;
-				var data = await response.Content.ReadAsByteArrayAsync(token);
-				return await SaveMp3CacheAsync(data, filePath, token);
-			}
-			catch { RemovePartFile(filePath); return false; }
 		}
 
 		// --- GOOGLE CLOUD TTS (free tier ~1M ký tự/tháng, cần key; tự bỏ qua nếu trống) ---
