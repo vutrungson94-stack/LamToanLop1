@@ -1,12 +1,12 @@
 # L5 Assessment — LamToanLop1 (self-assessed)
 
-- **Ngày:** 2026-11-15
+- **Ngày:** 2026-11-15 · **Cập nhật lần cuối:** 2026-11-22
 - **Phạm vi:** project MAUI `LamToanLop1` + chuỗi công cụ SonVuDev mà project này đi qua trên mỗi lần build: `_Build` (gbuild — CMMI L5-oriented), `_Tests` (gtest), `_Sync` (gsync). Đánh giá dựa trên **code + báo cáo build thật đang nằm trong repo** (`build-reports/`), không dựa trên claim của README/docs.
 - **Không phải** kết quả SCAMPI và không được trích dẫn như một chứng nhận.
 
 ## 1. Bằng chứng (evidence) hiện có
 
-| Gate/cơ chế L5 | Bằng chứng | Trạng thái (2026-11-15) |
+| Gate/cơ chế L5 | Bằng chứng | Trạng thái (2026-11-22) |
 |---|---|---|
 | Preflight + SDK discovery | log gbuild (Tier-1 chain, SDK 10.0.300) | ✅ |
 | Incremental build + content-addressable cache | `.gbuildcache/`, `[Cache] Saved entry` | ✅ |
@@ -22,6 +22,8 @@
 | SARIF / JUnit output | `build-reports/sarif/results.sarif`, `build-reports/junit/results.xml` | ✅ |
 | In-app self-healing | `Services/SelfHealingService.cs` (crash log + crash count + retry), wire trong `MauiProgram.cs`; `AudioManager` fallback silent chống crash thiết bị không có audio | ✅ |
 | Responsive UI / TTS offline pre-cache | `ResponsiveHelper`, `GameData.GetAllSpokenTexts()` + `GoogleTtsService` pre-cache | ✅ |
+| CI L5 gates (mới 2026-11-21) | `.github/workflows/build.yml` job `l5-gates` (6 gate: compile, secret scan, vulnerable packages, SBOM+policy, provenance, compliance) — build/release `needs: l5-gates`; run `44883868636` success, sửa ParserError từ run `44882503659` | ✅ (gap #2 đã đóng) |
+| Chất lượng giọng TTS (mới 2026-11-22) | Fallback Edge neural → Viettel → Google Dịch (dự phòng) → Android; cache tách `<hash>.mp3` / `<hash>_fb.mp3`; `CACHE_VERSION = v9-natural-voice` | ✅ (đã loại giọng robot khỏi cache chính) |
 
 ## 2. Cái thực sự L5-shaped
 
@@ -33,7 +35,7 @@
 ## 3. Còn thiếu để gọi là L5 đầy đủ (gaps — trung thực)
 
 1. **Không có appraisal độc lập** (SCAMPI/appraiser bên ngoài). Đây là tự đánh giá của người/AI làm việc với repo.
-2. **CI (`.github/workflows/build.yml`) chưa chạy L5 gates** — hiện chỉ `dotnet publish` + artifact + release. Không chạy `gtest`, không SAST, không kiểm tra gate trước khi phát hành artifact.
+2. ~~**CI chưa chạy L5 gates**~~ — **ĐÃ ĐÓNG (2026-11-21)**: `.github/workflows/build.yml` có job `l5-gates` với 6 gate; mọi job build/release phải `needs: l5-gates`. Cấu hình nằm trong workflow (không thêm file config của tool vào project — các project độc lập). Run `44883868636` = success. Còn lại: CI tự chạy `gtest` của tool ngoài vẫn chưa (chỉ có 6 gate tự định nghĩa).
 3. **Provenance chưa được ký/attest** vì `GBUILD_GITHUB_REPO` chưa cấu hình → `predicate` chứa placeholder `${env:GBUILD_GITHUB_REPO}`, `reproducible: false`.
 4. **Chưa có incident feed** → không có SLO/MTTR/escape-rate; autotune chỉ đo duration/success cục bộ.
 5. **CAR còn Open chưa đóng** — cần quyết định của chủ project: đóng tay (kèm lý do) hoặc để tự quá hạn theo `CarGate` budget.
@@ -43,7 +45,7 @@
 
 ## 4. Khuyến nghị theo thứ tự ưu tiên
 
-1. **CI**: thêm job chạy `gtest` (validation 6 gate) + gate SAST tối thiểu vào `.github/workflows/build.yml`; chặn artifact nếu gate đỏ.
+1. ~~**CI**: thêm job chạy `gtest` + gate SAST tối thiểu~~ — **ĐÃ LÀM** (job `l5-gates`, 6 gate, chặn artifact/release). Việc còn lại nếu muốn: gọi thẳng `gtest.ps1` từ runner bằng tool path dùng secrets (`D:\HOC_TAP\backup` không có trên GitHub runner).
 2. **Provenance**: set `GBUILD_GITHUB_REPO` (và nếu có, ký artifact) để SBOM được attest; regenerate `provenance.json` với dữ liệu thật.
 3. **CAR**: review 2 record `TransientError` (2026-11-15); đóng/loại theo quyết định chủ project — không để record rêu rêu.
 4. **Incident loop**: map `crash.log` của `SelfHealingService` vào issue tracker để có MTTR/escape-rate thật.

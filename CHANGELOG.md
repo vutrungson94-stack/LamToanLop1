@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3] - 2026-11-22 (cập nhật cuối ngày)
+
+### Thay đổi
+- **Giảm tiếng "dè" trên emulator**: tắt micro host (`hw.audioInput=no`), dùng `CreatePlayer(filePath)` thay vì `CreatePlayer(Stream)`, giảm volume TTS (0.5/0.45) + SoundService (0.7). Không override `QEMU_AUDIO_DAC_FIXED_*` (thử ép 48 kHz thấy dè hơn) — để DAC mặc định 44,1 kHz/S16, Windows endpoint đặt **16-bit/44100 Hz**.
+- **Shortcut emulator hết treo**: launcher `Pixel8Launcher` tự kill emulator offline + xoá lock files, dùng `-no-snapshot-load -no-snapshot-save`. Verify boot 30s/25s, 2 lần liên tiếp.
+- **Tài liệu cập nhật theo thực tế 2026-11-22**: `AGENTS.md` (nguyên nhân audio, cấu hình máy ảo, hardcode được chấp nhận), `README.md`, `Docs/L5-Assessment.md` (gap CI đã đóng), `Docs/TTS-KEY-GUIDE.md`.
+
 ## [0.2.2] - 2026-11-22
 
 ### Thay đổi

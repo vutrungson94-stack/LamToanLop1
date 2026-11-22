@@ -6,4 +6,6 @@ Tóm tắt: SỬA NHỎ NHẤT → `_Tests\gtest.ps1 -Project . -NonInteractive`
 
 3 hệ thống build/test/sync nằm trong thư mục `D:\HOC_TAP\backup` (`_Tests`, `_Build`, `_Sync`), **KHÔNG** recreate vào project.
 
+Máy ảo dùng shortcut Desktop **"Android Emulator - Pixel 8 (API 37).lnk"** → launcher tại `C:\Users\TSV\AndroidLauncher\Pixel8Launcher`. Cấu hình audio/launcher (tắt micro, không override DAC QEMU, snapshot, auto-clean khi treo) xem `AGENTS.md` mục 5 mục "Cấu hình máy ảo đã tối ưu cho máy này". Windows audio endpoint: **16-bit / 44100 Hz**, tắt enhancement.
+
 Hợp đồng frozen: Class game data `GameData` trong `Models/MathEngine.cs` giữ nguyên cấu trúc; chỉ thay **nội dung** `Resources/Images/cute_*.webp`, không đổi tên/đuôi. Chi tiết: `Docs/ADRs/ADR-0001-frozen-game-data-contract.md`, đánh giá L5: `Docs/L5-Assessment.md`.
