@@ -822,18 +822,6 @@ namespace LamToanLop1.Services
             // Đăng ký hủy: Nếu token bị cancel (do gọi Stop), ta set luôn kết quả để thoát hàm này
             using var reg = token.Register(() => _playbackTcs.TrySetCanceled());
 
-            // Mở file trên luồng nền (Background Thread) để không chặn UI
-            Stream? fileStream = null;
-            try
-            {
-                fileStream = await Task.Run(() => File.OpenRead(path), token);
-            }
-            catch
-            {
-                _playbackTcs.TrySetResult(false);
-                return;
-            }
-
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
                 try
@@ -841,30 +829,17 @@ namespace LamToanLop1.Services
                     // Kiểm tra lại lần cuối xem lệnh hủy đã đến chưa
                     if (token.IsCancellationRequested)
                     {
-                        fileStream.Dispose();
                         _playbackTcs.TrySetCanceled();
                         return;
                     }
 
                     CleanupPlayer();
 
-                    // CLEANUP STREAM CŨ
-                    if (_stream != null)
-                    {
-                        try
-                        {
-                            _stream.Dispose();
-                        }
-                        catch { }
-                        _stream = null;
-                    }
-
-                    _stream = fileStream;
-
-                    // CreatePlayer bắt buộc chạy trên MainThread
-                    try { _player = _audioManager.CreatePlayer(_stream); }
-                    catch (Exception ex) { Debug.WriteLine($"[TTS] CreatePlayer failed: {ex.Message}"); fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
-                    if (_player == null) { fileStream.Dispose(); _playbackTcs.TrySetResult(false); return; }
+                    // Truyền thẳng đường dẫn file cho Android MediaPlayer (không qua Stream)
+                    // để tránh một lớp copy/decoded trung gian của plugin gây méo tiếng.
+                    try { _player = _audioManager.CreatePlayer(path); }
+                    catch (Exception ex) { Debug.WriteLine($"[TTS] CreatePlayer failed: {ex.Message}"); _playbackTcs.TrySetResult(false); return; }
+                    if (_player == null) { _playbackTcs.TrySetResult(false); return; }
                     try { _player.Volume = volume; } catch { }
 
                     // LƯU HANDLER VÀ SUBSCRIBE
